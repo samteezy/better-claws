@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>betterClaws Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>betterClaws</h1>
+    <nav>
+      <button class="nav-btn active" data-view="status">Status</button>
+      <button class="nav-btn" data-view="sessions">Sessions</button>
+      <button class="nav-btn" data-view="logs">Logs</button>
+      <button class="nav-btn" data-view="memory">Memory</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Status View -->
+    <section id="view-status" class="view active">
+      <h2>System Status</h2>
+      <div id="status-content" class="content-area">Loading...</div>
+      <h3>Registered Tools</h3>
+      <div id="tools-content" class="content-area"></div>
+      <h3>Configuration</h3>
+      <div id="config-content" class="content-area"></div>
+    </section>
+
+    <!-- Sessions View -->
+    <section id="view-sessions" class="view">
+      <h2>Sessions</h2>
+      <div id="sessions-list" class="content-area">Loading...</div>
+      <div id="session-detail" class="content-area" style="display:none">
+        <h3>Session History</h3>
+        <div id="session-history"></div>
+        <h3>Capability Grants</h3>
+        <div id="session-grants"></div>
+      </div>
+    </section>
+
+    <!-- Logs View -->
+    <section id="view-logs" class="view">
+      <h2>Logs</h2>
+      <div class="filters">
+        <select id="log-event-type">
+          <option value="">All event types</option>
+          <option value="message:inbound">message:inbound</option>
+          <option value="message:outbound">message:outbound</option>
+          <option value="llm:request">llm:request</option>
+          <option value="llm:response">llm:response</option>
+          <option value="tool:invoke">tool:invoke</option>
+          <option value="gate:decision">gate:decision</option>
+          <option value="executor:start">executor:start</option>
+          <option value="executor:result">executor:result</option>
+          <option value="memory:read">memory:read</option>
+          <option value="memory:write">memory:write</option>
+          <option value="memory:curation">memory:curation</option>
+          <option value="session:create">session:create</option>
+          <option value="session:idle">session:idle</option>
+          <option value="config:change">config:change</option>
+        </select>
+        <input id="log-component" type="text" placeholder="Component filter">
+        <input id="log-search" type="text" placeholder="Search...">
+        <button id="log-refresh" class="btn">Refresh</button>
+      </div>
+      <div id="logs-content" class="content-area log-entries">Loading...</div>
+      <div class="pagination">
+        <button id="log-prev" class="btn" disabled>Previous</button>
+        <span id="log-page-info"></span>
+        <button id="log-next" class="btn">Next</button>
+      </div>
+    </section>
+
+    <!-- Memory View -->
+    <section id="view-memory" class="view">
+      <h2>Long-Term Memory</h2>
+      <div class="filters">
+        <select id="mem-category">
+          <option value="">All categories</option>
+          <option value="fact">fact</option>
+          <option value="preference">preference</option>
+          <option value="project">project</option>
+          <option value="entity">entity</option>
+          <option value="procedure">procedure</option>
+        </select>
+        <input id="mem-confidence" type="number" placeholder="Min confidence" min="0" max="1" step="0.1">
+        <button id="mem-refresh" class="btn">Refresh</button>
+      </div>
+      <div id="memory-content" class="content-area">Loading...</div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
