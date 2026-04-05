@@ -430,17 +430,15 @@ This is a hard rule. The `node_modules` directory should contain only `typescrip
 
 ---
 
-## Roadmap (Rough Priority)
+## Repository
 
-1. Core loop: router → LLM client → tool registry → capability gate → executor
-2. Structured logger (needed for everything else)
-3. Session manager + conversation log
-4. Telegram adapter (simplest API to start with)
-5. Basic built-in tools: shell, file-read, file-write, web-fetch
-6. Prompt builder with history windowing
-7. Working memory (per-session)
-8. Long-term memory store + TF-IDF retrieval
-9. Background curation worker
-10. Additional adapters (Discord, Slack, webhook)
-11. Cron/scheduling layer
-12. Web dashboard for session inspection + log viewing
+- **GitHub:** https://github.com/samteezy/better-claws
+- **Issues:** https://github.com/samteezy/better-claws/issues
+
+---
+
+## Workflow
+
+- **Issues as source of truth:** Work is tracked as GitHub issues at https://github.com/samteezy/better-claws/issues. Check open issues with `gh issue list` before starting work.
+- **Commits:** When a commit relates to a GitHub issue, reference it in the commit message (e.g., `Implement prompt builder (#1)`). Use `Fixes #N` or `Closes #N` in the final commit for an issue to auto-close it.
+- **Issue comments:** When the work for an issue is complete (code written, tests passing, committed), add a comment to the issue summarizing what was done using `gh issue comment <number> --body "..."`.
