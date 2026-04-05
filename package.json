@@ -1,0 +1,16 @@
+{
+  "name": "betterclaws",
+  "version": "0.1.0",
+  "description": "A lightweight, secure, self-hosted personal AI assistant gateway",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/src/index.js",
+    "test": "node --test 'dist/tests/**/*.test.js'",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
