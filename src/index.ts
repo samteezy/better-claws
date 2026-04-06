@@ -21,6 +21,8 @@ import type {
 } from "./types.js";
 import { DashboardServer } from "./dashboard/dashboard-server.js";
 import { createAdapter } from "./adapters/adapter-factory.js";
+import { McpClient, McpToolBridge } from "./mcp/index.js";
+import { SkillLoader } from "./skills/index.js";
 
 // ── CLI Adapter ───────────────────────────────────────────────────────────────
 
@@ -101,9 +103,78 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
     builtInTools,
     pluginDirectory: "tools",
     logger,
+    toolPolicies: config.tools?.toolPolicies,
   });
 
   await toolRegistry.loadTools();
+
+  // ── MCP servers ──────────────────────────────────────────────────────────
+  const mcpClients: McpClient[] = [];
+
+  if (config.tools?.mcpServers) {
+    for (const [name, serverConfig] of Object.entries(config.tools.mcpServers)) {
+      try {
+        const client = new McpClient(name, serverConfig, logger);
+        await client.connect();
+        mcpClients.push(client);
+
+        const bridge = new McpToolBridge(client, name, serverConfig, logger);
+        const tools = await bridge.discoverTools();
+        for (const tool of tools) {
+          toolRegistry.register(tool);
+        }
+
+        logger.log({
+          sessionId: null,
+          eventType: "config:change",
+          component: "mcp",
+          payload: { action: "server_ready", server: name, toolCount: tools.length },
+        });
+      } catch (err) {
+        logger.log({
+          sessionId: null,
+          eventType: "config:change",
+          component: "mcp",
+          payload: {
+            action: "server_failed",
+            server: name,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
+    }
+  }
+
+  // ── Skills ───────────────────────────────────────────────────────────────
+  if (config.tools?.skills) {
+    const skillLoader = new SkillLoader(logger);
+    for (const [name, skillConfig] of Object.entries(config.tools.skills)) {
+      try {
+        const tools = await skillLoader.loadSkill(name, skillConfig);
+        for (const tool of tools) {
+          toolRegistry.register(tool);
+        }
+
+        logger.log({
+          sessionId: null,
+          eventType: "config:change",
+          component: "skills",
+          payload: { action: "skill_loaded", skill: name, toolCount: tools.length },
+        });
+      } catch (err) {
+        logger.log({
+          sessionId: null,
+          eventType: "config:change",
+          component: "skills",
+          payload: {
+            action: "skill_failed",
+            skill: name,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
+    }
+  }
 
   const capabilityGate = new CapabilityGate({
     defaultPolicy: config.security.defaultCapabilityPolicy,
@@ -175,6 +246,9 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
     stop: async () => {
       await dashboard?.stop();
       await router.stop();
+      for (const client of mcpClients) {
+        await client.disconnect();
+      }
     },
   };
 }

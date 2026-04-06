@@ -972,4 +972,417 @@ export const notExecute = async () => {};
       );
     });
   });
+
+  describe("register()", () => {
+    it("adds a tool to the registry that appears in getDescriptors()", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const newTool = {
+        descriptor: {
+          name: "dynamic-tool",
+          description: "Dynamically registered tool",
+          parameters: { type: "object" as const },
+          capabilities: ["fs:read"] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: { test: "data" },
+            durationMs: 5,
+          }),
+        },
+      };
+
+      registry.register(newTool);
+
+      const descriptors = registry.getDescriptors();
+      const found = descriptors.find((d) => d.name === "dynamic-tool");
+
+      assert.ok(found !== undefined);
+      assert.equal(found.description, "Dynamically registered tool");
+      assert.deepEqual(found.capabilities, ["fs:read"]);
+    });
+
+    it("throws DUPLICATE_TOOL when registering with conflicting name", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const tool1 = {
+        descriptor: {
+          name: "conflict-tool",
+          description: "First registration",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+      };
+
+      const tool2 = {
+        descriptor: {
+          name: "conflict-tool",
+          description: "Second registration",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+      };
+
+      registry.register(tool1);
+
+      assert.throws(
+        () => registry.register(tool2),
+        (err) => {
+          assert.ok(err instanceof RegistryError);
+          assert.match((err as RegistryError).message, /name already exists/);
+          return true;
+        },
+      );
+    });
+
+    it("logs tool:invoke event with action 'registered'", async () => {
+      const testLogger = createMockLogger();
+      const registry = new ToolRegistry({
+        logger: testLogger,
+      });
+
+      await registry.loadTools();
+
+      const tool = {
+        descriptor: {
+          name: "logged-dynamic-tool",
+          description: "Tool that logs registration",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+      };
+
+      registry.register(tool);
+
+      const logEntry = testLogger.calls.find(
+        (c) => c.eventType === "tool:invoke" && c.payload.action === "registered",
+      );
+
+      assert.ok(logEntry !== undefined);
+      assert.equal(logEntry?.payload.tool, "logged-dynamic-tool");
+    });
+
+    it("makes registered tool accessible via getHandler()", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const tool = {
+        descriptor: {
+          name: "accessible-tool",
+          description: "Test handler access",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: { message: "success" },
+            durationMs: 5,
+          }),
+        },
+      };
+
+      registry.register(tool);
+
+      const handler = registry.getHandler("accessible-tool");
+
+      assert.ok(handler !== undefined);
+      const result = await handler.execute(
+        {},
+        { sessionId: "test", capabilities: [], scratchDir: "/tmp", timeout: 5000, secrets: new Map<string, string>() },
+      );
+
+      assert.deepEqual(result.output, { message: "success" });
+    });
+  });
+
+  describe("remove()", () => {
+    it("removes a tool that was dynamically registered", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const tool = {
+        descriptor: {
+          name: "removable-tool",
+          description: "Tool to remove",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+      };
+
+      registry.register(tool);
+
+      // Verify it exists
+      assert.ok(registry.getHandler("removable-tool") !== undefined);
+
+      // Remove it
+      const removed = registry.remove("removable-tool");
+
+      assert.equal(removed, true);
+      assert.equal(registry.getHandler("removable-tool"), undefined);
+      assert.equal(
+        registry
+          .getDescriptors()
+          .find((d) => d.name === "removable-tool"),
+        undefined,
+      );
+    });
+
+    it("returns false when removing a non-existent tool", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const removed = registry.remove("nonexistent-tool");
+
+      assert.equal(removed, false);
+    });
+
+    it("logs tool:invoke event with action 'removed' when tool is removed", async () => {
+      const testLogger = createMockLogger();
+      const registry = new ToolRegistry({
+        logger: testLogger,
+      });
+
+      await registry.loadTools();
+
+      const tool = {
+        descriptor: {
+          name: "logged-removal-tool",
+          description: "Tool with removal logging",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+      };
+
+      registry.register(tool);
+
+      // Get count of log entries before removal
+      const logCountBeforeRemoval = testLogger.calls.length;
+
+      registry.remove("logged-removal-tool");
+
+      // Check that a new log entry was added for removal
+      const removalLogEntry = testLogger.calls.slice(logCountBeforeRemoval).find(
+        (c) => c.eventType === "tool:invoke" && c.payload.action === "removed",
+      );
+
+      assert.ok(removalLogEntry !== undefined);
+      assert.equal(removalLogEntry?.payload.tool, "logged-removal-tool");
+    });
+
+    it("does not log when removing non-existent tool", async () => {
+      const testLogger = createMockLogger();
+      const registry = new ToolRegistry({
+        logger: testLogger,
+      });
+
+      await registry.loadTools();
+
+      const initialCallCount = testLogger.calls.length;
+
+      registry.remove("nonexistent-tool");
+
+      // No new log should be added
+      assert.equal(testLogger.calls.length, initialCallCount);
+    });
+  });
+
+  describe("getPolicy()", () => {
+    it("returns 'auto' by default for any tool", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const tool = {
+        descriptor: {
+          name: "policy-test-tool",
+          description: "Test policy retrieval",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+      };
+
+      registry.register(tool);
+
+      const policy = registry.getPolicy("policy-test-tool");
+
+      assert.equal(policy, "auto");
+    });
+
+    it("returns configured policy from toolPolicies", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+        toolPolicies: {
+          "restricted-tool": "confirm",
+          "disabled-tool": "disabled",
+        },
+      });
+
+      await registry.loadTools();
+
+      assert.equal(registry.getPolicy("restricted-tool"), "confirm");
+      assert.equal(registry.getPolicy("disabled-tool"), "disabled");
+    });
+
+    it("returns 'auto' for tools not in toolPolicies", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+        toolPolicies: {
+          "specific-tool": "disabled",
+        },
+      });
+
+      await registry.loadTools();
+
+      assert.equal(registry.getPolicy("other-tool"), "auto");
+    });
+
+    it("getDescriptors() filters out disabled tools", async () => {
+      const registry = new ToolRegistry({
+        builtInTools: [
+          {
+            descriptor: {
+              name: "visible-tool",
+              description: "Visible",
+              parameters: { type: "object" as const },
+              capabilities: [] as const,
+            },
+            handler: {
+              execute: async () => ({
+                success: true,
+                output: null,
+                durationMs: 0,
+              }),
+            },
+          },
+          {
+            descriptor: {
+              name: "hidden-tool",
+              description: "Hidden",
+              parameters: { type: "object" as const },
+              capabilities: [] as const,
+            },
+            handler: {
+              execute: async () => ({
+                success: true,
+                output: null,
+                durationMs: 0,
+              }),
+            },
+          },
+        ],
+        logger: mockLogger,
+        toolPolicies: {
+          "hidden-tool": "disabled",
+        },
+      });
+
+      await registry.loadTools();
+
+      const descriptors = registry.getDescriptors();
+
+      assert.equal(descriptors.length, 1);
+      assert.equal(descriptors[0]?.name, "visible-tool");
+    });
+
+    it("getHandler() still returns handler for disabled tools", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+        toolPolicies: {
+          "disabled-tool": "disabled",
+        },
+      });
+
+      await registry.loadTools();
+
+      const tool = {
+        descriptor: {
+          name: "disabled-tool",
+          description: "Disabled but still accessible",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: { test: "data" },
+            durationMs: 5,
+          }),
+        },
+      };
+
+      registry.register(tool);
+
+      // Handler should still be accessible
+      const handler = registry.getHandler("disabled-tool");
+      assert.ok(handler !== undefined);
+
+      // But it should not appear in getDescriptors()
+      const descriptors = registry.getDescriptors();
+      const found = descriptors.find((d) => d.name === "disabled-tool");
+      assert.equal(found, undefined);
+    });
+  });
 });
