@@ -23,6 +23,7 @@ import type { CapabilityGate } from "../../src/tools/capability-gate.js";
 import type { ToolExecutor } from "../../src/tools/executor.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { SecretManager } from "../../src/secrets/secret-manager.js";
+import type { BetterClawsConfig } from "../../src/types.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,15 @@ function createMockSecretManager() {
     revoke(_key: string) { return false; },
   } as unknown as SecretManager;
 }
+
+const TEST_CONFIG: BetterClawsConfig = {
+  gateway: { host: "127.0.0.1", port: 18700 },
+  llm: { baseUrl: "http://localhost:11434/v1", apiKey: "", model: "test", maxTokens: 1024, temperature: 0.7 },
+  adapters: {},
+  security: { defaultCapabilityPolicy: "deny", sandboxTimeout: 30000, stripEnvironment: true, allowPersistentGrants: false },
+  memory: { maxLongTermEntries: 2000, confidenceDecayRate: 0.01, staleThreshold: 0.2, curationIntervalMinutes: 60, curationEnabled: true },
+  logging: { directory: "data/logs", redactSensitive: true, retentionDays: 90 },
+};
 
 function createMockSessionManager() {
   const appendedEntries: unknown[] = [];
@@ -178,6 +188,7 @@ describe("MessageRouter", () => {
       executor: executor as unknown as ToolExecutor,
       secretManager: createMockSecretManager(),
       logger: logger as unknown as StructuredLogger,
+      config: TEST_CONFIG,
     });
 
     return { router, logger, sessionManager, llmClient, toolRegistry, capabilityGate, executor };

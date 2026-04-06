@@ -5,7 +5,8 @@ import {
   type Server,
 } from "node:http";
 import { readFile } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { join, extname, resolve } from "node:path";
+import { timingSafeEqual } from "node:crypto";
 import { BetterClawsError, type BetterClawsConfig } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
@@ -36,6 +37,8 @@ export interface DashboardServerOptions {
   readonly logger: StructuredLogger;
   /** Directory containing static HTML/CSS/JS files */
   readonly staticDir: string;
+  /** Bearer token for API authentication. If omitted, API routes are open. */
+  readonly authToken?: string;
 }
 
 // ── MIME types ──────────────────────────────────────────────────────────────
@@ -58,6 +61,7 @@ export class DashboardServer {
   private readonly context: DashboardContext;
   private readonly logger: StructuredLogger;
   private readonly staticDir: string;
+  private readonly authToken: string | undefined;
   private server: Server | null = null;
 
   constructor(options: DashboardServerOptions) {
@@ -65,7 +69,8 @@ export class DashboardServer {
     this.port = options.port;
     this.context = options.context;
     this.logger = options.logger;
-    this.staticDir = options.staticDir;
+    this.staticDir = resolve(options.staticDir);
+    this.authToken = options.authToken;
   }
 
   async start(): Promise<void> {
@@ -117,8 +122,18 @@ export class DashboardServer {
     const path = url.pathname;
 
     try {
-      // API routes
+      // API routes — require authentication when a token is configured
       if (path.startsWith("/api/")) {
+        if (!this.authenticate(req)) {
+          this.logger.log({
+            sessionId: null,
+            eventType: "config:change",
+            component: "dashboard",
+            payload: { action: "auth_failure", path },
+          });
+          this.sendJson(res, 401, { error: "Unauthorized" });
+          return;
+        }
         return await this.handleApi(req, res, path, url);
       }
 
@@ -330,15 +345,14 @@ export class DashboardServer {
   // ── Static file serving ───────────────────────────────────────────────
 
   private async serveStatic(res: ServerResponse, urlPath: string): Promise<void> {
-    let filePath = urlPath === "/" ? "/index.html" : urlPath;
+    const filePath = urlPath === "/" ? "/index.html" : urlPath;
 
-    // Prevent path traversal
-    if (filePath.includes("..")) {
+    // Prevent path traversal — resolve and verify the path stays within staticDir
+    const fullPath = resolve(this.staticDir, filePath.slice(1));
+    if (!fullPath.startsWith(this.staticDir)) {
       this.sendJson(res, 403, { error: "Forbidden" });
       return;
     }
-
-    const fullPath = join(this.staticDir, filePath);
     const ext = extname(fullPath);
     const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
 
@@ -356,6 +370,22 @@ export class DashboardServer {
         this.sendJson(res, 404, { error: "Not found" });
       }
     }
+  }
+
+  // ── Authentication ────────────────────────────────────────────────
+
+  private authenticate(req: IncomingMessage): boolean {
+    if (!this.authToken) return true; // no token configured — open access
+
+    const header = req.headers["authorization"];
+    if (!header || !header.startsWith("Bearer ")) return false;
+
+    const token = header.slice(7);
+    const tokenBuf = Buffer.from(token);
+    const expectedBuf = Buffer.from(this.authToken);
+
+    if (tokenBuf.byteLength !== expectedBuf.byteLength) return false;
+    return timingSafeEqual(tokenBuf, expectedBuf);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────

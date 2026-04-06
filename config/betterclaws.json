@@ -19,7 +19,9 @@
     "defaultCapabilityPolicy": "deny",
     "sandboxTimeout": 30000,
     "stripEnvironment": true,
-    "allowPersistentGrants": false
+    "allowPersistentGrants": false,
+    "maxMemoryMb": 128,
+    "autoGrantCapabilities": []
   },
   "memory": {
     "maxLongTermEntries": 2000,
@@ -36,6 +38,7 @@
   "dashboard": {
     "enabled": false,
     "host": "127.0.0.1",
-    "port": 18701
+    "port": 18701,
+    "authToken": "env:BC_DASHBOARD_TOKEN"
   }
 }

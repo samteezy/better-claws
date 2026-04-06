@@ -175,7 +175,8 @@ describe("PromptBuilder", () => {
       });
 
       const systemContent = result.messages[0]!.content;
-      assert.ok(systemContent.includes("## Working Memory"));
+      assert.ok(systemContent.includes("<<<RECALLED_DATA:WorkingMemory>>>"));
+      assert.ok(systemContent.includes("<<<END_RECALLED_DATA>>>"));
       assert.ok(systemContent.includes("User prefers concise responses"));
       assert.ok(systemContent.includes("Python 3 times"));
     });
@@ -187,7 +188,7 @@ describe("PromptBuilder", () => {
         tools: [],
       });
 
-      assert.ok(!result.messages[0]!.content.includes("## Working Memory"));
+      assert.ok(!result.messages[0]!.content.includes("RECALLED_DATA:WorkingMemory"));
     });
 
     it("handles empty working memory string gracefully", () => {
@@ -199,7 +200,7 @@ describe("PromptBuilder", () => {
       });
 
       // Empty string is falsy, so section should not be included
-      assert.ok(!result.messages[0]!.content.includes("## Working Memory"));
+      assert.ok(!result.messages[0]!.content.includes("RECALLED_DATA:WorkingMemory"));
     });
   });
 
@@ -216,7 +217,8 @@ describe("PromptBuilder", () => {
       });
 
       const systemContent = result.messages[0]!.content;
-      assert.ok(systemContent.includes("## Relevant Memories"));
+      assert.ok(systemContent.includes("<<<RECALLED_DATA:RelevantMemories>>>"));
+      assert.ok(systemContent.includes("<<<END_RECALLED_DATA>>>"));
       assert.ok(systemContent.includes("User works in software engineering"));
       assert.ok(systemContent.includes("Prefers JavaScript to Python"));
     });
@@ -242,7 +244,7 @@ describe("PromptBuilder", () => {
         longTermMemories: [],
       });
 
-      assert.ok(!result.messages[0]!.content.includes("## Relevant Memories"));
+      assert.ok(!result.messages[0]!.content.includes("RECALLED_DATA:RelevantMemories"));
     });
 
     it("does not include memories section when not provided", () => {
@@ -252,7 +254,7 @@ describe("PromptBuilder", () => {
         tools: [],
       });
 
-      assert.ok(!result.messages[0]!.content.includes("## Relevant Memories"));
+      assert.ok(!result.messages[0]!.content.includes("RECALLED_DATA:RelevantMemories"));
     });
   });
 
@@ -564,8 +566,8 @@ describe("PromptBuilder", () => {
 
       // All components should be present in order: base, working memory, memories, tools
       const baseIndex = systemContent.indexOf("Base system prompt");
-      const memoryIndex = systemContent.indexOf("## Working Memory");
-      const ltIndex = systemContent.indexOf("## Relevant Memories");
+      const memoryIndex = systemContent.indexOf("<<<RECALLED_DATA:WorkingMemory>>>");
+      const ltIndex = systemContent.indexOf("<<<RECALLED_DATA:RelevantMemories>>>");
       const toolIndex = systemContent.indexOf("## Available Tools");
 
       assert.ok(baseIndex !== -1);

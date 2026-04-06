@@ -10,6 +10,7 @@ import {
   type ToolResult,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
+import { redactSecrets } from "../utils/redact.js";
 
 export class ForkedExecutorError extends BetterClawsError {
   constructor(message: string, code: string = "FORKED_EXECUTOR_ERROR") {
@@ -59,6 +60,8 @@ export interface ForkedExecutorOptions {
    * When enabled, only scratchDir, workerScript, and handlerPath are readable.
    */
   readonly enablePermissionFlag?: boolean;
+  /** V8 heap limit for child processes in MB. Default: 128. */
+  readonly maxMemoryMb?: number;
 }
 
 // ── Executor ────────────────────────────────────────────────────────────────
@@ -80,6 +83,7 @@ export class ForkedExecutor {
   private readonly defaultTimeout: number;
   private readonly stripEnvironment: boolean;
   private readonly enablePermissionFlag: boolean;
+  private readonly maxMemoryMb: number;
   private readonly logger: StructuredLogger;
   private readonly workerScript: string;
   private readonly allowedEnvVars: ReadonlySet<string>;
@@ -89,6 +93,7 @@ export class ForkedExecutor {
     this.defaultTimeout = options.defaultTimeout;
     this.stripEnvironment = options.stripEnvironment;
     this.enablePermissionFlag = options.enablePermissionFlag ?? false;
+    this.maxMemoryMb = options.maxMemoryMb ?? 128;
     this.logger = options.logger;
     this.workerScript = options.workerScript ?? this.resolveDefaultWorkerScript();
     this.allowedEnvVars = new Set(options.allowedEnvVars ?? [
@@ -185,13 +190,18 @@ export class ForkedExecutor {
       let resolved = false;
       let stdout = "";
       let stderr = "";
+      const MAX_BUFFER_BYTES = 1_048_576; // 1 MB
 
-      // Capture stdout/stderr
+      // Capture stdout/stderr with buffer size limits
       child.stdout?.on("data", (chunk: Buffer) => {
-        stdout += chunk.toString();
+        if (stdout.length < MAX_BUFFER_BYTES) {
+          stdout += chunk.toString().slice(0, MAX_BUFFER_BYTES - stdout.length);
+        }
       });
       child.stderr?.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString();
+        if (stderr.length < MAX_BUFFER_BYTES) {
+          stderr += chunk.toString().slice(0, MAX_BUFFER_BYTES - stderr.length);
+        }
       });
 
       // Timeout enforcement
@@ -230,23 +240,29 @@ export class ForkedExecutor {
           resolved = true;
           clearTimeout(timer);
 
-          // Log captured output
-          if (stdout || stderr || msg.stdout || msg.stderr) {
+          // Log captured output with redaction
+          const combinedStdout = redactSecrets((stdout + (msg.stdout || "")).slice(0, 10000));
+          const combinedStderr = redactSecrets((stderr + (msg.stderr || "")).slice(0, 10000));
+          if (combinedStdout || combinedStderr) {
             this.logger.log({
               sessionId: context.sessionId,
               eventType: "executor:result",
               component: "forked-executor",
               payload: {
                 action: "captured_output",
-                stdout: (stdout + (msg.stdout || "")).slice(0, 10000),
-                stderr: (stderr + (msg.stderr || "")).slice(0, 10000),
+                stdout: combinedStdout,
+                stderr: combinedStderr,
               },
             });
           }
 
+          const redactedOutput = typeof msg.output === "string"
+            ? redactSecrets(msg.output)
+            : msg.output;
+
           resolve({
             success: msg.success,
-            output: msg.output,
+            output: redactedOutput,
             error: msg.error,
             durationMs: msg.durationMs,
           });
@@ -298,7 +314,7 @@ export class ForkedExecutor {
 
   /** Build Node.js exec arguments for optional hardening. */
   private buildExecArgv(context: ExecutionContext): string[] {
-    const args: string[] = [];
+    const args: string[] = [`--max-old-space-size=${this.maxMemoryMb}`];
 
     // Only apply permission flag when explicitly enabled and supported
     if (this.enablePermissionFlag && this.isPermissionFlagSupported()) {

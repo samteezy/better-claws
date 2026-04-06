@@ -1,11 +1,14 @@
 import {
   BetterClawsError,
+  isCapability,
+  type BetterClawsConfig,
   type ChannelAdapter,
   type ChatMessage,
   type InboundMessage,
   type OutboundMessage,
   type ToolCall,
 } from "../types.js";
+import { validateSchema } from "../utils/schema-validator.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 import type { LlmClient } from "../llm/llm-client.js";
@@ -33,6 +36,7 @@ export interface MessageRouterOptions {
   readonly executor: ToolExecutor;
   readonly secretManager: SecretManager;
   readonly logger: StructuredLogger;
+  readonly config: BetterClawsConfig;
 }
 
 export class MessageRouter {
@@ -43,6 +47,7 @@ export class MessageRouter {
   private readonly executor: ToolExecutor;
   private readonly secretManager: SecretManager;
   private readonly logger: StructuredLogger;
+  private readonly config: BetterClawsConfig;
   private readonly adapters = new Map<string, ChannelAdapter>();
 
   constructor(options: MessageRouterOptions) {
@@ -53,6 +58,7 @@ export class MessageRouter {
     this.executor = options.executor;
     this.secretManager = options.secretManager;
     this.logger = options.logger;
+    this.config = options.config;
   }
 
   registerAdapter(adapter: ChannelAdapter): void {
@@ -199,14 +205,40 @@ export class MessageRouter {
       };
     }
 
-    const grants = this.sessionManager.getGrants(sessionId);
-    const decision = this.capabilityGate.check(descriptor, grants);
+    let grants = this.sessionManager.getGrants(sessionId);
+    let decision = this.capabilityGate.check(descriptor, grants);
 
+    // Fix 8: auto-grant missing capabilities when allowed by config
     if (!decision.allowed) {
-      return {
-        output: null,
-        error: `Tool "${toolName}" denied: ${decision.reason}`,
-      };
+      const autoGrant = this.config.security.autoGrantCapabilities ?? [];
+      const autoGrantSet = new Set(autoGrant);
+      const canAutoGrant = decision.missingCapabilities.every(
+        (cap) => autoGrantSet.has(cap),
+      );
+
+      if (canAutoGrant) {
+        for (const cap of decision.missingCapabilities) {
+          if (isCapability(cap)) {
+            this.sessionManager.grantCapability(sessionId, cap, "session");
+            this.logger.log({
+              sessionId,
+              eventType: "gate:decision",
+              component: "router",
+              payload: { action: "auto_grant", capability: cap, tool: toolName },
+            });
+          }
+        }
+        // Re-check after granting
+        grants = this.sessionManager.getGrants(sessionId);
+        decision = this.capabilityGate.check(descriptor, grants);
+      }
+
+      if (!decision.allowed) {
+        return {
+          output: null,
+          error: `Tool "${toolName}" denied: ${decision.reason}`,
+        };
+      }
     }
 
     const handler = this.toolRegistry.getHandler(toolName);
@@ -230,6 +262,15 @@ export class MessageRouter {
       };
     }
 
+    // Fix 5: validate arguments against the tool's parameter schema
+    const validation = validateSchema(params, descriptor.parameters);
+    if (!validation.valid) {
+      return {
+        output: null,
+        error: `Invalid arguments for tool "${toolName}": ${validation.errors.join("; ")}`,
+      };
+    }
+
     const secrets = this.secretManager.projectForTool(
       descriptor.secrets ?? [],
       sessionId,
@@ -240,7 +281,7 @@ export class MessageRouter {
       sessionId,
       capabilities: [...descriptor.capabilities],
       scratchDir: "",
-      timeout: 30000,
+      timeout: this.config.security.sandboxTimeout ?? 30000,
       secrets,
     });
 

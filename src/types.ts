@@ -222,6 +222,8 @@ export interface SecurityConfig {
   readonly sandboxTimeout: number;
   readonly stripEnvironment: boolean;
   readonly allowPersistentGrants: boolean;
+  readonly maxMemoryMb?: number;
+  readonly autoGrantCapabilities?: readonly string[];
 }
 
 export interface MemoryConfig {
@@ -242,6 +244,7 @@ export interface DashboardConfig {
   readonly enabled: boolean;
   readonly host: string;
   readonly port: number;
+  readonly authToken?: string;
 }
 
 export interface BetterClawsConfig {

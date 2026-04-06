@@ -131,6 +131,7 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
     executor,
     secretManager,
     logger,
+    config,
   });
 
   // ── Config-driven adapters ───────────────────────────────────────────────
@@ -155,6 +156,7 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
       port: dashCfg.port,
       staticDir,
       logger,
+      authToken: dashCfg.authToken,
       context: {
         sessionManager,
         logger,

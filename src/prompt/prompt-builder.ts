@@ -3,6 +3,10 @@ import {
   type ChatMessage,
   type ToolDescriptor,
 } from "../types.js";
+import {
+  sanitizeMemoryContent,
+  wrapMemoryBlock,
+} from "../utils/prompt-sanitizer.js";
 
 export class PromptBuilderError extends BetterClawsError {
   constructor(message: string, code: string = "PROMPT_BUILDER_ERROR") {
@@ -87,16 +91,19 @@ export class PromptBuilder {
   private assembleSystemContent(input: BuildInput): string {
     const parts: string[] = [this.systemPrompt];
 
-    // Inject working memory if present (placeholder for #4)
+    // Inject working memory if present, sanitized against prompt injection
     if (input.workingMemory) {
-      parts.push(`\n## Working Memory\n\n${input.workingMemory}`);
+      const sanitized = sanitizeMemoryContent(input.workingMemory);
+      parts.push(`\n${wrapMemoryBlock("WorkingMemory", sanitized)}`);
     }
 
-    // Inject long-term memories if present (placeholder for #5)
+    // Inject long-term memories if present, sanitized against prompt injection
     if (input.longTermMemories && input.longTermMemories.length > 0) {
-      parts.push(
-        `\n## Relevant Memories\n\n${input.longTermMemories.map((m) => `- ${m}`).join("\n")}`,
-      );
+      const sanitizedMemories = input.longTermMemories
+        .map((m) => sanitizeMemoryContent(m, 500))
+        .map((m) => `- ${m}`)
+        .join("\n");
+      parts.push(`\n${wrapMemoryBlock("RelevantMemories", sanitizedMemories)}`);
     }
 
     // Inject tool declarations
