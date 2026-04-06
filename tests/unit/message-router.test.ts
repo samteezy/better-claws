@@ -107,6 +107,7 @@ function createMockToolRegistry() {
     getDescriptors() { return descriptors; },
     getDescriptor(name: string) { return descriptors.find(d => d.name === name); },
     getHandler(name: string) { return handlers.get(name); },
+    getPolicy() { return "auto" as const; },
     registerTool(d: ToolDescriptor, h: ToolHandler) {
       descriptors.push(d);
       handlers.set(d.name, h);

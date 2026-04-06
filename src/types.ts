@@ -247,6 +247,29 @@ export interface DashboardConfig {
   readonly authToken?: string;
 }
 
+/** Per-tool access policy: auto-execute, require user confirmation, or fully disabled. */
+export type ToolPolicy = "auto" | "confirm" | "disabled";
+
+export interface McpServerConfig {
+  readonly command: string;
+  readonly args?: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+  readonly capabilities?: readonly Capability[];
+  readonly defaultPolicy?: ToolPolicy;
+}
+
+export interface SkillConfig {
+  readonly path: string;
+  readonly enabled?: boolean;
+  readonly defaultPolicy?: ToolPolicy;
+}
+
+export interface ToolsConfig {
+  readonly mcpServers?: Readonly<Record<string, McpServerConfig>>;
+  readonly skills?: Readonly<Record<string, SkillConfig>>;
+  readonly toolPolicies?: Readonly<Record<string, ToolPolicy>>;
+}
+
 export interface BetterClawsConfig {
   readonly gateway: GatewayConfig;
   readonly llm: LlmConfig;
@@ -256,6 +279,7 @@ export interface BetterClawsConfig {
   readonly logging: LoggingConfig;
   readonly dashboard?: DashboardConfig;
   readonly secrets?: Readonly<Record<string, string>>;
+  readonly tools?: ToolsConfig;
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────

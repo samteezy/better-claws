@@ -197,6 +197,21 @@ export class MessageRouter {
       payload: { tool: toolName },
     });
 
+    // Check tool policy before proceeding
+    const policy = this.toolRegistry.getPolicy(toolName);
+    if (policy === "disabled") {
+      return {
+        output: null,
+        error: `Tool "${toolName}" is disabled`,
+      };
+    }
+    if (policy === "confirm") {
+      return {
+        output: null,
+        error: `Tool "${toolName}" requires user confirmation (not yet supported in this adapter)`,
+      };
+    }
+
     const descriptor = this.toolRegistry.getDescriptor(toolName);
     if (!descriptor) {
       return {
