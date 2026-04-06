@@ -74,8 +74,9 @@
       if (data.sessions.length === 0) {
         html = "<p>No active sessions</p>";
       } else {
-        data.sessions.forEach(function (id) {
-          html += '<div class="session-item" data-id="' + esc(id) + '">' + esc(id) + "</div>";
+        data.sessions.forEach(function (s) {
+          var label = esc(s.adapterId) + " / " + esc(s.channelId) + " (" + esc(s.id) + ")";
+          html += '<div class="session-item" data-id="' + esc(s.id) + '">' + label + "</div>";
         });
       }
       document.getElementById("sessions-list").innerHTML = html;

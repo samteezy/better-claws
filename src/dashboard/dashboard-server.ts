@@ -202,11 +202,15 @@ export class DashboardServer {
   // ── Session endpoints ─────────────────────────────────────────────────
 
   private handleGetSessions(res: ServerResponse): void {
-    // SessionManager doesn't expose a list method on the interface,
-    // but we can use checkIdleSessions to get session state indirectly.
-    // For the dashboard, we access the internal sessions via the public API.
-    const idle = this.context.sessionManager.checkIdleSessions();
-    this.sendJson(res, 200, { sessions: idle, count: idle.length });
+    const sessions = this.context.sessionManager.list().map((s) => ({
+      id: s.id,
+      adapterId: s.state.adapterId,
+      channelId: s.state.channelId,
+      senderId: s.state.senderId,
+      createdAt: s.state.createdAt,
+      lastActivityAt: s.state.lastActivityAt,
+    }));
+    this.sendJson(res, 200, { sessions, count: sessions.length });
   }
 
   private async handleGetSessionHistory(res: ServerResponse, path: string): Promise<void> {

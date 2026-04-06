@@ -197,6 +197,10 @@ export class SessionManager {
     }
   }
 
+  list(): Session[] {
+    return Array.from(this.sessions.values());
+  }
+
   checkIdleSessions(): string[] {
     const now = Date.now();
     const idle: string[] = [];

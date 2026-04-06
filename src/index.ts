@@ -14,7 +14,6 @@ import { join } from "node:path";
 import { builtInTools } from "./tools/built-in/index.js";
 import { SecretManager } from "./secrets/secret-manager.js";
 import { seedFromConfig } from "./secrets/seed.js";
-import { fileURLToPath } from "node:url";
 import type {
   BetterClawsConfig,
   ChannelAdapter,
@@ -228,8 +227,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
 
   if (dashboardEnabled) {
     const dashCfg = config.dashboard ?? { enabled: true, host: "127.0.0.1", port: 18701 };
-    const srcDir = fileURLToPath(new URL(".", import.meta.url));
-    const staticDir = join(srcDir, "dashboard", "public");
+    const staticDir = join(process.cwd(), "src", "dashboard", "public");
 
     dashboard = new DashboardServer({
       host: dashCfg.host,
@@ -288,7 +286,7 @@ async function main(): Promise<void> {
   console.log(`LLM: ${config.llm.model} @ ${config.llm.baseUrl}`);
 
   const { router, dashboard, adapterNames, stop } = await createApp(config, {
-    dashboard: dashboardFlag,
+    dashboard: dashboardFlag || undefined,
     configPath: resolvedConfigPath,
     rawConfig,
   });
