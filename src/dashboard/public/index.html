@@ -14,6 +14,8 @@
       <button class="nav-btn" data-view="sessions">Sessions</button>
       <button class="nav-btn" data-view="logs">Logs</button>
       <button class="nav-btn" data-view="memory">Memory</button>
+      <button class="nav-btn" data-view="tools">Tools</button>
+      <button class="nav-btn" data-view="config">Config</button>
     </nav>
   </header>
 
@@ -22,10 +24,6 @@
     <section id="view-status" class="view active">
       <h2>System Status</h2>
       <div id="status-content" class="content-area">Loading...</div>
-      <h3>Registered Tools</h3>
-      <div id="tools-content" class="content-area"></div>
-      <h3>Configuration</h3>
-      <div id="config-content" class="content-area"></div>
     </section>
 
     <!-- Sessions View -->
@@ -89,6 +87,26 @@
         <button id="mem-refresh" class="btn">Refresh</button>
       </div>
       <div id="memory-content" class="content-area">Loading...</div>
+    </section>
+
+    <!-- Tools View -->
+    <section id="view-tools" class="view">
+      <h2>Tool Management</h2>
+      <p class="view-desc">Set access policies for each tool: auto-execute, require confirmation, or disable entirely.</p>
+      <div id="tools-content" class="content-area">Loading...</div>
+    </section>
+
+    <!-- Config View -->
+    <section id="view-config" class="view">
+      <h2>Configuration</h2>
+      <p class="view-desc">Edit the runtime configuration. Changes are saved to disk. Some settings require a restart.</p>
+      <div id="config-editor-area" class="content-area">
+        <textarea id="config-editor" spellcheck="false"></textarea>
+        <div class="config-actions">
+          <span id="config-status"></span>
+          <button id="config-save" class="btn btn-primary">Save Configuration</button>
+        </div>
+      </div>
     </section>
   </main>
 

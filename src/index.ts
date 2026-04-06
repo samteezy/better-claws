@@ -1,5 +1,7 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { StructuredLogger } from "./logger/structured-logger.js";
 import { LlmClient } from "./llm/llm-client.js";
@@ -77,7 +79,11 @@ class CliAdapter implements ChannelAdapter {
 
 // ── App Factory ───────────────────────────────────────────────────────────────
 
-export async function createApp(config: BetterClawsConfig, options?: { dashboard?: boolean }): Promise<{
+export async function createApp(config: BetterClawsConfig, options?: {
+  dashboard?: boolean;
+  configPath?: string;
+  rawConfig?: Record<string, unknown>;
+}): Promise<{
   router: MessageRouter;
   dashboard: DashboardServer | null;
   adapterNames: readonly string[];
@@ -237,6 +243,8 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
         config,
         logsDirectory: config.logging.directory,
         memoryDirectory: "data/memory",
+        configPath: options?.configPath,
+        rawConfig: options?.rawConfig,
       },
     });
 
@@ -265,11 +273,25 @@ async function main(): Promise<void> {
   const config = await loadConfig(configPath);
   const dashboardFlag = process.argv.includes("--dashboard");
 
+  // Load raw config for dashboard editing (before env resolution)
+  const resolvedConfigPath = resolve(configPath ?? "config/betterclaws.json");
+  let rawConfig: Record<string, unknown> = {};
+  try {
+    const raw = await readFile(resolvedConfigPath, "utf-8");
+    rawConfig = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    // Config file may not exist — start with empty object
+  }
+
   console.log(`betterClaws v0.1.0`);
   console.log(`Config: ${configPath ?? "config/betterclaws.json"}`);
   console.log(`LLM: ${config.llm.model} @ ${config.llm.baseUrl}`);
 
-  const { router, dashboard, adapterNames, stop } = await createApp(config, { dashboard: dashboardFlag });
+  const { router, dashboard, adapterNames, stop } = await createApp(config, {
+    dashboard: dashboardFlag,
+    configPath: resolvedConfigPath,
+    rawConfig,
+  });
 
   if (dashboard) {
     const dashCfg = config.dashboard ?? { host: "127.0.0.1", port: 18701 };

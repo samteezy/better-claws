@@ -270,6 +270,7 @@ export interface ToolsConfig {
   readonly toolPolicies?: Readonly<Record<string, ToolPolicy>>;
 }
 
+
 export interface BetterClawsConfig {
   readonly gateway: GatewayConfig;
   readonly llm: LlmConfig;

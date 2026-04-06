@@ -7,9 +7,10 @@ import {
 import { readFile } from "node:fs/promises";
 import { join, extname, resolve } from "node:path";
 import { timingSafeEqual } from "node:crypto";
-import { BetterClawsError, type BetterClawsConfig } from "../types.js";
+import { BetterClawsError, type BetterClawsConfig, type ToolPolicy } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
+import { saveConfig } from "../config.js";
 
 export class DashboardError extends BetterClawsError {
   constructor(message: string, code: string = "DASHBOARD_ERROR") {
@@ -23,11 +24,15 @@ export class DashboardError extends BetterClawsError {
 export interface DashboardContext {
   readonly sessionManager: SessionManager;
   readonly logger: StructuredLogger;
-  readonly config: BetterClawsConfig;
+  config: BetterClawsConfig;
   readonly logsDirectory: string;
   readonly memoryDirectory?: string;
   readonly toolDescriptors?: readonly { name: string; description: string; capabilities: readonly string[] }[];
   readonly adapterStatuses?: ReadonlyMap<string, { connected: boolean; name: string }>;
+  /** Path to the config file on disk. Required for config save operations. */
+  readonly configPath?: string;
+  /** Raw config as read from disk (with env: references intact). Used for saving. */
+  rawConfig?: Record<string, unknown>;
 }
 
 export interface DashboardServerOptions {
@@ -149,35 +154,45 @@ export class DashboardServer {
   // ── API handlers ────────────────────────────────────────────────────────
 
   private async handleApi(
-    _req: IncomingMessage,
+    req: IncomingMessage,
     res: ServerResponse,
     path: string,
     url: URL,
   ): Promise<void> {
+    const method = (req.method ?? "GET").toUpperCase();
+
     switch (true) {
       // Sessions
-      case path === "/api/sessions":
+      case path === "/api/sessions" && method === "GET":
         return this.handleGetSessions(res);
-      case path.startsWith("/api/sessions/") && path.endsWith("/history"):
+      case path.startsWith("/api/sessions/") && path.endsWith("/history") && method === "GET":
         return await this.handleGetSessionHistory(res, path);
-      case path.startsWith("/api/sessions/") && path.endsWith("/grants"):
+      case path.startsWith("/api/sessions/") && path.endsWith("/grants") && method === "GET":
         return this.handleGetSessionGrants(res, path);
 
       // Logs
-      case path === "/api/logs":
+      case path === "/api/logs" && method === "GET":
         return await this.handleGetLogs(res, url);
 
       // Memory
-      case path === "/api/memory":
+      case path === "/api/memory" && method === "GET":
         return await this.handleGetMemory(res, url);
 
       // System
-      case path === "/api/status":
+      case path === "/api/status" && method === "GET":
         return this.handleGetStatus(res);
-      case path === "/api/tools":
+      case path === "/api/tools" && method === "GET":
         return this.handleGetTools(res);
-      case path === "/api/config":
+      case path === "/api/config" && method === "GET":
         return this.handleGetConfig(res);
+
+      // Tool policy management
+      case path === "/api/tools/policy" && method === "POST":
+        return await this.handleSetToolPolicy(req, res);
+
+      // Config editing
+      case path === "/api/config" && method === "PUT":
+        return await this.handleUpdateConfig(req, res);
 
       default:
         this.sendJson(res, 404, { error: "API endpoint not found" });
@@ -330,9 +345,12 @@ export class DashboardServer {
   }
 
   private handleGetTools(res: ServerResponse): void {
-    this.sendJson(res, 200, {
-      tools: this.context.toolDescriptors ?? [],
-    });
+    const policies = this.context.config.tools?.toolPolicies ?? {};
+    const tools = (this.context.toolDescriptors ?? []).map(t => ({
+      ...t,
+      policy: policies[t.name] ?? "auto",
+    }));
+    this.sendJson(res, 200, { tools });
   }
 
   private handleGetConfig(res: ServerResponse): void {
@@ -340,6 +358,145 @@ export class DashboardServer {
     const config = JSON.parse(JSON.stringify(this.context.config)) as Record<string, unknown>;
     this.redactSecrets(config);
     this.sendJson(res, 200, { config });
+  }
+
+  // ── Tool policy management ─────────────────────────────────────────────
+
+  private async handleSetToolPolicy(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await this.readRequestBody(req);
+    if (!body) {
+      this.sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    const toolName = body["tool"];
+    const policy = body["policy"];
+
+    if (typeof toolName !== "string" || toolName.length === 0) {
+      this.sendJson(res, 400, { error: 'Missing required field: "tool"' });
+      return;
+    }
+
+    const validPolicies: readonly ToolPolicy[] = ["auto", "confirm", "disabled"];
+    if (typeof policy !== "string" || !validPolicies.includes(policy as ToolPolicy)) {
+      this.sendJson(res, 400, { error: `"policy" must be one of: ${validPolicies.join(", ")}` });
+      return;
+    }
+
+    // Update in-memory config
+    const currentPolicies = { ...(this.context.config.tools?.toolPolicies ?? {}) };
+    if (policy === "auto") {
+      // "auto" is the default — remove the entry to keep config clean
+      delete currentPolicies[toolName];
+    } else {
+      currentPolicies[toolName] = policy as ToolPolicy;
+    }
+
+    this.context.config = {
+      ...this.context.config,
+      tools: {
+        ...this.context.config.tools,
+        toolPolicies: currentPolicies,
+      },
+    };
+
+    // Persist to disk
+    await this.persistConfig({ tools: { ...this.context.config.tools, toolPolicies: currentPolicies } });
+
+    this.logger.log({
+      sessionId: null,
+      eventType: "config:change",
+      component: "dashboard",
+      payload: { action: "set_tool_policy", tool: toolName, policy },
+    });
+
+    this.sendJson(res, 200, { tool: toolName, policy });
+  }
+
+  // ── Config editing ──────────────────────────────────────────────────────
+
+  private async handleUpdateConfig(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await this.readRequestBody(req);
+    if (!body) {
+      this.sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    // Validate it's a plain object
+    if (typeof body !== "object" || Array.isArray(body)) {
+      this.sendJson(res, 400, { error: "Config must be a JSON object" });
+      return;
+    }
+
+    // Persist the full raw config to disk
+    try {
+      await this.persistConfig(body);
+    } catch (err) {
+      this.sendJson(res, 500, {
+        error: `Failed to save config: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return;
+    }
+
+    this.logger.log({
+      sessionId: null,
+      eventType: "config:change",
+      component: "dashboard",
+      payload: { action: "config_updated" },
+    });
+
+    this.sendJson(res, 200, { saved: true, note: "Some changes may require a restart to take effect." });
+  }
+
+  // ── Config persistence helper ───────────────────────────────────────────
+
+  private async persistConfig(updates: Record<string, unknown>): Promise<void> {
+    if (!this.context.rawConfig) {
+      throw new DashboardError("No raw config available for saving", "NO_RAW_CONFIG");
+    }
+
+    // Merge updates into raw config
+    for (const [key, value] of Object.entries(updates)) {
+      this.context.rawConfig[key] = value;
+    }
+
+    await saveConfig(this.context.rawConfig, this.context.configPath);
+  }
+
+  // ── Request body parsing ────────────────────────────────────────────────
+
+  private readRequestBody(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      const maxSize = 1024 * 1024; // 1MB
+
+      req.on("data", (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > maxSize) {
+          req.destroy();
+          resolve(null);
+          return;
+        }
+        chunks.push(chunk);
+      });
+
+      req.on("end", () => {
+        try {
+          const raw = Buffer.concat(chunks).toString("utf-8");
+          const parsed = JSON.parse(raw) as unknown;
+          if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+            resolve(parsed as Record<string, unknown>);
+          } else {
+            resolve(null);
+          }
+        } catch {
+          resolve(null);
+        }
+      });
+
+      req.on("error", () => resolve(null));
+    });
   }
 
   // ── Static file serving ───────────────────────────────────────────────

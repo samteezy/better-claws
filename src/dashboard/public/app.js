@@ -25,6 +25,8 @@
       case "sessions": loadSessions(); break;
       case "logs": loadLogs(); break;
       case "memory": loadMemory(); break;
+      case "tools": loadTools(); break;
+      case "config": loadConfig(); break;
     }
   }
 
@@ -61,26 +63,6 @@
       }
 
       document.getElementById("status-content").innerHTML = html;
-    });
-
-    api("/api/tools").then(function (data) {
-      var html = "";
-      if (data.tools.length === 0) {
-        html = "<p>No tools registered</p>";
-      } else {
-        data.tools.forEach(function (t) {
-          html += '<div class="tool-item">';
-          html += '<div class="tool-name">' + esc(t.name) + "</div>";
-          html += '<div class="tool-desc">' + esc(t.description) + "</div>";
-          html += '<div class="tool-caps">Capabilities: ' + esc(t.capabilities.join(", ") || "none") + "</div>";
-          html += "</div>";
-        });
-      }
-      document.getElementById("tools-content").innerHTML = html;
-    });
-
-    api("/api/config").then(function (data) {
-      document.getElementById("config-content").innerHTML = "<pre>" + esc(JSON.stringify(data.config, null, 2)) + "</pre>";
     });
   }
 
@@ -187,6 +169,98 @@
   document.getElementById("log-next").addEventListener("click", function () {
     logOffset += logLimit;
     loadLogs();
+  });
+
+  // ── Tools View ──────────────────────────────────────────────────────────
+
+  function loadTools() {
+    api("/api/tools").then(function (data) {
+      var html = "";
+      if (data.tools.length === 0) {
+        html = "<p>No tools registered</p>";
+      } else {
+        data.tools.forEach(function (t) {
+          var policy = t.policy || "auto";
+          html += '<div class="tool-item tool-item-managed">';
+          html += '<div class="tool-info">';
+          html += '<div class="tool-name">' + esc(t.name) + "</div>";
+          html += '<div class="tool-desc">' + esc(t.description) + "</div>";
+          html += '<div class="tool-caps">Capabilities: ' + esc(t.capabilities.join(", ") || "none") + "</div>";
+          html += "</div>";
+          html += '<div class="tool-policy">';
+          html += '<select class="policy-select" data-tool="' + esc(t.name) + '">';
+          html += '<option value="auto"' + (policy === "auto" ? " selected" : "") + '>Auto</option>';
+          html += '<option value="confirm"' + (policy === "confirm" ? " selected" : "") + '>Confirm</option>';
+          html += '<option value="disabled"' + (policy === "disabled" ? " selected" : "") + '>Disabled</option>';
+          html += "</select>";
+          html += "</div>";
+          html += "</div>";
+        });
+      }
+      document.getElementById("tools-content").innerHTML = html;
+
+      // Bind change events
+      document.querySelectorAll(".policy-select").forEach(function (sel) {
+        sel.addEventListener("change", function () {
+          var toolName = sel.dataset.tool;
+          var newPolicy = sel.value;
+          fetch("/api/tools/policy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tool: toolName, policy: newPolicy }),
+          }).then(function (r) { return r.json(); }).then(function (result) {
+            if (result.error) {
+              sel.style.borderColor = "#f85149";
+            } else {
+              sel.style.borderColor = "#3fb950";
+              setTimeout(function () { sel.style.borderColor = ""; }, 1500);
+            }
+          });
+        });
+      });
+    });
+  }
+
+  // ── Config View ─────────────────────────────────────────────────────────
+
+  function loadConfig() {
+    api("/api/config").then(function (data) {
+      var editor = document.getElementById("config-editor");
+      editor.value = JSON.stringify(data.config, null, 2);
+      document.getElementById("config-status").textContent = "";
+    });
+  }
+
+  document.getElementById("config-save").addEventListener("click", function () {
+    var editor = document.getElementById("config-editor");
+    var statusEl = document.getElementById("config-status");
+    var parsed;
+
+    try {
+      parsed = JSON.parse(editor.value);
+    } catch (e) {
+      statusEl.textContent = "Invalid JSON: " + e.message;
+      statusEl.className = "config-error";
+      return;
+    }
+
+    statusEl.textContent = "Saving...";
+    statusEl.className = "";
+
+    fetch("/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(parsed),
+    }).then(function (r) { return r.json(); }).then(function (result) {
+      if (result.error) {
+        statusEl.textContent = result.error;
+        statusEl.className = "config-error";
+      } else {
+        statusEl.textContent = "Saved. " + (result.note || "");
+        statusEl.className = "config-success";
+        setTimeout(function () { statusEl.textContent = ""; }, 4000);
+      }
+    });
   });
 
   // ── Memory View ─────────────────────────────────────────────────────────

@@ -171,3 +171,59 @@ pre {
 .chat-role.assistant { color: #3fb950; }
 .chat-role.tool { color: #d2a8ff; }
 .chat-role.system { color: #d29922; }
+
+.view-desc { font-size: 13px; color: #8b949e; margin-bottom: 16px; }
+
+/* Tool management */
+.tool-item-managed {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.tool-info { flex: 1; min-width: 0; }
+.tool-policy { flex-shrink: 0; }
+.policy-select {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.3s;
+}
+.policy-select:hover { border-color: #58a6ff; }
+
+/* Config editor */
+#config-editor {
+  width: 100%;
+  min-height: 400px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 13px;
+  padding: 12px;
+  border-radius: 6px;
+  resize: vertical;
+  tab-size: 2;
+  line-height: 1.5;
+}
+#config-editor:focus { outline: none; border-color: #58a6ff; }
+.config-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  gap: 12px;
+}
+.btn-primary {
+  background: #238636;
+  border-color: #2ea043;
+  color: #fff;
+}
+.btn-primary:hover { background: #2ea043; }
+.config-error { color: #f85149; font-size: 13px; }
+.config-success { color: #3fb950; font-size: 13px; }
