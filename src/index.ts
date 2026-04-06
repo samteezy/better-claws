@@ -78,6 +78,7 @@ class CliAdapter implements ChannelAdapter {
 export async function createApp(config: BetterClawsConfig, options?: { dashboard?: boolean }): Promise<{
   router: MessageRouter;
   dashboard: DashboardServer | null;
+  adapterNames: readonly string[];
   stop: () => Promise<void>;
 }> {
   const logger = new StructuredLogger({
@@ -135,10 +136,12 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
   });
 
   // ── Config-driven adapters ───────────────────────────────────────────────
+  const adapterNames: string[] = [];
   for (const [name, adapterConfig] of Object.entries(config.adapters)) {
     if (adapterConfig.enabled) {
       const adapter = createAdapter(name, adapterConfig, logger);
       router.registerAdapter(adapter);
+      adapterNames.push(adapter.name);
     }
   }
 
@@ -172,6 +175,7 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
   return {
     router,
     dashboard,
+    adapterNames,
     stop: async () => {
       await dashboard?.stop();
       await router.stop();
@@ -191,11 +195,17 @@ async function main(): Promise<void> {
   console.log(`Config: ${configPath ?? "config/betterclaws.json"}`);
   console.log(`LLM: ${config.llm.model} @ ${config.llm.baseUrl}`);
 
-  const { router, dashboard, stop } = await createApp(config, { dashboard: dashboardFlag });
+  const { router, dashboard, adapterNames, stop } = await createApp(config, { dashboard: dashboardFlag });
 
   if (dashboard) {
     const dashCfg = config.dashboard ?? { host: "127.0.0.1", port: 18701 };
     console.log(`Dashboard: http://${dashCfg.host}:${dashCfg.port}`);
+  }
+
+  if (adapterNames.length > 0) {
+    console.log(`Adapters: ${adapterNames.join(", ")}`);
+  } else {
+    console.log(`Adapters: none configured`);
   }
 
   console.log(`Type a message to chat. Ctrl+C to quit.\n`);
