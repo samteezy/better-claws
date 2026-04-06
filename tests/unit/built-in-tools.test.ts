@@ -526,5 +526,206 @@ describe("Built-in tools", () => {
         }
       });
     });
+
+    describe("SSRF protection (private/internal IP blocking)", () => {
+      it("blocks requests to 127.0.0.1 (localhost IPv4)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://127.0.0.1:8080/api" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to localhost hostname", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://localhost:3000/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to ::1 (IPv6 loopback)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://[::1]:8000/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to 10.x.x.x (class A private range)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://10.0.0.1/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to 10.255.255.255 (class A private range)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://10.255.255.255/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to 172.16.x.x (class B private range)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://172.16.0.1/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to 172.31.x.x (class B private range upper bound)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://172.31.255.255/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to 192.168.x.x (class C private range)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://192.168.1.1/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to 169.254.x.x (link-local range)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://169.254.169.254/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to 0.x.x.x (loopback range)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://0.0.0.0/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to fe80:: (IPv6 link-local)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://[fe80::1]/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to fc00:: (IPv6 unique local address)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://[fc00::1]/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("blocks requests to fd00:: (IPv6 unique local address)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://[fd00::1]/" },
+            makeContext(tempDir),
+          );
+
+          assert.strictEqual(result.success, false);
+          assert.ok(result.error);
+          assert.ok(result.error?.includes("private") || result.error?.includes("Blocked"));
+        });
+      });
+
+      it("allows requests to public IPv4 addresses (network error is ok)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://8.8.8.8/" },
+            makeContext(tempDir),
+          );
+
+          // Network error expected in tests, but should NOT be a blocked request error
+          assert.ok(
+            !result.error?.includes("private") && !result.error?.includes("Blocked"),
+            `Expected network error, not blocked error. Got: ${result.error}`,
+          );
+        });
+      });
+
+      it("allows requests to public domains (network error is ok)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            { url: "http://example.com/" },
+            makeContext(tempDir),
+          );
+
+          // Network error expected in tests, but should NOT be a blocked request error
+          assert.ok(
+            !result.error?.includes("private") && !result.error?.includes("Blocked"),
+            `Expected network error, not blocked error. Got: ${result.error}`,
+          );
+        });
+      });
+    });
   });
 });

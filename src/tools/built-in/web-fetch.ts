@@ -75,6 +75,16 @@ export const handler: ToolHandler = {
       };
     }
 
+    // SSRF protection: block requests to private/internal IP ranges
+    if (isPrivateHost(parsed.hostname)) {
+      return {
+        success: false,
+        output: null,
+        error: `Blocked request to private/internal address: ${parsed.hostname}`,
+        durationMs: Date.now() - start,
+      };
+    }
+
     const method =
       typeof params["method"] === "string"
         ? params["method"].toUpperCase()
@@ -139,3 +149,34 @@ export const handler: ToolHandler = {
     }
   },
 };
+
+// ── SSRF protection ───────────────────────────────────────────────────────
+
+const PRIVATE_IP_PREFIXES = [
+  "10.",
+  "172.16.", "172.17.", "172.18.", "172.19.",
+  "172.20.", "172.21.", "172.22.", "172.23.",
+  "172.24.", "172.25.", "172.26.", "172.27.",
+  "172.28.", "172.29.", "172.30.", "172.31.",
+  "192.168.",
+  "169.254.",
+  "127.",
+  "0.",
+];
+
+function isPrivateHost(hostname: string): boolean {
+  // Block localhost variants
+  if (hostname === "localhost" || hostname === "[::1]") return true;
+
+  // Block private IPv4 ranges
+  for (const prefix of PRIVATE_IP_PREFIXES) {
+    if (hostname.startsWith(prefix)) return true;
+  }
+
+  // Block IPv6 loopback and link-local
+  if (hostname.startsWith("[fe80:") || hostname.startsWith("[fc") || hostname.startsWith("[fd")) {
+    return true;
+  }
+
+  return false;
+}

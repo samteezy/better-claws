@@ -52,6 +52,9 @@ const OP_IDENTIFY = 2;
 const OP_HEARTBEAT_ACK = 11;
 const OP_HELLO = 10;
 
+/** Maximum inbound message length in characters. Messages exceeding this are truncated. */
+const MAX_MESSAGE_LENGTH = 32_768;
+
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
 export interface DiscordAdapterOptions {
@@ -295,12 +298,16 @@ export class DiscordAdapter implements ChannelAdapter {
 
     if (!msg.content) return;
 
+    const text = msg.content.length > MAX_MESSAGE_LENGTH
+      ? msg.content.slice(0, MAX_MESSAGE_LENGTH)
+      : msg.content;
+
     const inbound: InboundMessage = {
       id: msg.id,
       adapterId: "discord",
       channelId: msg.channel_id,
       senderId: msg.author.id,
-      text: msg.content,
+      text,
       timestamp: new Date(msg.timestamp).getTime(),
       raw: msg,
     };
@@ -314,7 +321,7 @@ export class DiscordAdapter implements ChannelAdapter {
         channelId: msg.channel_id,
         senderId: msg.author.id,
         senderName: msg.author.username,
-        textLength: msg.content.length,
+        textLength: text.length,
       },
     });
 
