@@ -15,6 +15,18 @@ import * as os from "node:os";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+function createMockSecretManager(): SecretManager {
+  const store = new Map<string, string>();
+  return {
+    register(key: string, value: string) { store.set(key, value); },
+    get(key: string) { return store.get(key) ?? ""; },
+    has(key: string) { return store.has(key); },
+    keys() { return [...store.keys()]; },
+    revoke(key: string) { return store.delete(key); },
+    projectForTool: () => new Map(),
+  } as unknown as SecretManager;
+}
+
 function createMockLogger(): StructuredLogger & { logs: Array<Record<string, unknown>> } {
   const logs: Array<Record<string, unknown>> = [];
   return {
@@ -128,9 +140,11 @@ describe("Telegram → Router integration", () => {
       logger,
     });
 
+    const mockSecrets = createMockSecretManager();
+    mockSecrets.register("llm:apiKey", "test-key", "config" as never);
     const llmClient = new LlmClient({
       baseUrl: "http://mock-llm:11434/v1",
-      apiKey: "test-key",
+      secretManager: mockSecrets,
       model: "test-model",
       maxTokens: 1024,
       temperature: 0.7,
@@ -175,7 +189,7 @@ describe("Telegram → Router integration", () => {
       toolRegistry,
       capabilityGate,
       executor,
-      secretManager: { projectForTool: () => new Map() } as unknown as SecretManager,
+      secretManager: createMockSecretManager(),
       logger,
     });
 
@@ -299,7 +313,7 @@ describe("Telegram → Router integration", () => {
 
     const llmClient = new LlmClient({
       baseUrl: "http://mock-llm:11434/v1",
-      apiKey: "",
+      secretManager: createMockSecretManager(),
       model: "test",
       maxTokens: 512,
       temperature: 0,
@@ -336,7 +350,7 @@ describe("Telegram → Router integration", () => {
       toolRegistry,
       capabilityGate,
       executor,
-      secretManager: { projectForTool: () => new Map() } as unknown as SecretManager,
+      secretManager: createMockSecretManager(),
       logger,
     });
 
@@ -445,7 +459,7 @@ describe("Telegram → Router integration", () => {
 
     const llmClient = new LlmClient({
       baseUrl: "http://mock-llm:11434/v1",
-      apiKey: "",
+      secretManager: createMockSecretManager(),
       model: "test",
       maxTokens: 512,
       temperature: 0,
@@ -482,7 +496,7 @@ describe("Telegram → Router integration", () => {
       toolRegistry,
       capabilityGate,
       executor,
-      secretManager: { projectForTool: () => new Map() } as unknown as SecretManager,
+      secretManager: createMockSecretManager(),
       logger,
     });
 

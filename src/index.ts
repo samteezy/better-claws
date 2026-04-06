@@ -84,9 +84,12 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
     redactSensitive: config.logging.redactSensitive,
   });
 
+  const secretManager = new SecretManager({ logger });
+  seedFromConfig(secretManager, config);
+
   const llmClient = new LlmClient({
     baseUrl: config.llm.baseUrl,
-    apiKey: config.llm.apiKey,
+    secretManager,
     model: config.llm.model,
     maxTokens: config.llm.maxTokens,
     temperature: config.llm.temperature,
@@ -112,9 +115,6 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
     stripEnvironment: config.security.stripEnvironment,
     logger,
   });
-
-  const secretManager = new SecretManager({ logger });
-  seedFromConfig(secretManager, config);
 
   const sessionManager = new SessionManager({
     sessionsDirectory: "data/sessions",

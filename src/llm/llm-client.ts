@@ -6,6 +6,7 @@ import {
   type ToolDescriptor,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
+import type { SecretManager } from "../secrets/secret-manager.js";
 
 export class LlmError extends BetterClawsError {
   constructor(
@@ -21,7 +22,8 @@ export class LlmError extends BetterClawsError {
 
 export interface LlmClientOptions {
   readonly baseUrl: string;
-  readonly apiKey: string;
+  readonly secretManager: SecretManager;
+  readonly secretKey?: string;
   readonly model: string;
   readonly maxTokens: number;
   readonly temperature: number;
@@ -74,7 +76,8 @@ const BASE_DELAY_MS = 1000;
 
 export class LlmClient {
   private readonly baseUrl: string;
-  private readonly apiKey: string;
+  private readonly secretManager: SecretManager;
+  private readonly secretKey: string;
   private readonly model: string;
   private readonly maxTokens: number;
   private readonly temperature: number;
@@ -82,7 +85,8 @@ export class LlmClient {
 
   constructor(options: LlmClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
-    this.apiKey = options.apiKey;
+    this.secretManager = options.secretManager;
+    this.secretKey = options.secretKey ?? "llm:apiKey";
     this.model = options.model;
     this.maxTokens = options.maxTokens;
     this.temperature = options.temperature;
@@ -225,8 +229,8 @@ export class LlmClient {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (this.apiKey) {
-      headers["Authorization"] = `Bearer ${this.apiKey}`;
+    if (this.secretManager.has(this.secretKey)) {
+      headers["Authorization"] = `Bearer ${this.secretManager.get(this.secretKey)}`;
     }
     return headers;
   }
