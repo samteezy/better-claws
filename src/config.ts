@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   BetterClawsError,
@@ -161,4 +161,25 @@ export async function loadConfig(
   const resolved = resolveEnvSecrets(merged) as BetterClawsConfig;
 
   return resolved;
+}
+
+/**
+ * Write config back to disk. Secrets that were resolved from env vars
+ * are NOT written — only the raw JSON structure is saved.
+ * The caller is responsible for providing the raw (unresolved) config.
+ */
+export async function saveConfig(
+  config: Record<string, unknown>,
+  configPath?: string,
+): Promise<void> {
+  const filePath = resolve(configPath ?? "config/betterclaws.json");
+  const json = JSON.stringify(config, null, 2) + "\n";
+  try {
+    await writeFile(filePath, json, "utf-8");
+  } catch (err) {
+    throw new ConfigError(
+      `Failed to write config at "${filePath}": ${err instanceof Error ? err.message : String(err)}`,
+      "WRITE_ERROR",
+    );
+  }
 }
