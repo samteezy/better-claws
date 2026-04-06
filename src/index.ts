@@ -163,10 +163,13 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const config = await loadConfig();
+  const configFlagIndex = process.argv.indexOf("--config");
+  const configPath = configFlagIndex !== -1 ? process.argv[configFlagIndex + 1] : undefined;
+  const config = await loadConfig(configPath);
   const dashboardFlag = process.argv.includes("--dashboard");
 
   console.log(`betterClaws v0.1.0`);
+  console.log(`Config: ${configPath ?? "config/betterclaws.json"}`);
   console.log(`LLM: ${config.llm.model} @ ${config.llm.baseUrl}`);
 
   const { router, dashboard, stop } = await createApp(config, { dashboard: dashboardFlag });
