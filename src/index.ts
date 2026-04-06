@@ -8,12 +8,15 @@ import { CapabilityGate } from "./tools/capability-gate.js";
 import { ToolExecutor } from "./tools/executor.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { MessageRouter } from "./router/message-router.js";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   BetterClawsConfig,
   ChannelAdapter,
   InboundMessage,
   OutboundMessage,
 } from "./types.js";
+import { DashboardServer } from "./dashboard/dashboard-server.js";
 
 // ── CLI Adapter ───────────────────────────────────────────────────────────────
 
@@ -68,8 +71,9 @@ class CliAdapter implements ChannelAdapter {
 
 // ── App Factory ───────────────────────────────────────────────────────────────
 
-export async function createApp(config: BetterClawsConfig): Promise<{
+export async function createApp(config: BetterClawsConfig, options?: { dashboard?: boolean }): Promise<{
   router: MessageRouter;
+  dashboard: DashboardServer | null;
   stop: () => Promise<void>;
 }> {
   const logger = new StructuredLogger({
@@ -120,9 +124,37 @@ export async function createApp(config: BetterClawsConfig): Promise<{
     logger,
   });
 
+  // ── Dashboard ────────────────────────────────────────────────────────────
+  const dashboardEnabled = options?.dashboard ?? config.dashboard?.enabled ?? false;
+  let dashboard: DashboardServer | null = null;
+
+  if (dashboardEnabled) {
+    const dashCfg = config.dashboard ?? { enabled: true, host: "127.0.0.1", port: 18701 };
+    const srcDir = fileURLToPath(new URL(".", import.meta.url));
+    const staticDir = join(srcDir, "dashboard", "public");
+
+    dashboard = new DashboardServer({
+      host: dashCfg.host,
+      port: dashCfg.port,
+      staticDir,
+      logger,
+      context: {
+        sessionManager,
+        logger,
+        config,
+        logsDirectory: config.logging.directory,
+        memoryDirectory: "data/memory",
+      },
+    });
+
+    await dashboard.start();
+  }
+
   return {
     router,
+    dashboard,
     stop: async () => {
+      await dashboard?.stop();
       await router.stop();
     },
   };
@@ -132,12 +164,19 @@ export async function createApp(config: BetterClawsConfig): Promise<{
 
 async function main(): Promise<void> {
   const config = await loadConfig();
+  const dashboardFlag = process.argv.includes("--dashboard");
 
   console.log(`betterClaws v0.1.0`);
   console.log(`LLM: ${config.llm.model} @ ${config.llm.baseUrl}`);
-  console.log(`Type a message to chat. Ctrl+C to quit.\n`);
 
-  const { router, stop } = await createApp(config);
+  const { router, dashboard, stop } = await createApp(config, { dashboard: dashboardFlag });
+
+  if (dashboard) {
+    const dashCfg = config.dashboard ?? { host: "127.0.0.1", port: 18701 };
+    console.log(`Dashboard: http://${dashCfg.host}:${dashCfg.port}`);
+  }
+
+  console.log(`Type a message to chat. Ctrl+C to quit.\n`);
 
   const cliAdapter = new CliAdapter();
   router.registerAdapter(cliAdapter);

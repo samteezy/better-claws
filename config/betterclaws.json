@@ -32,5 +32,10 @@
     "directory": "data/logs",
     "redactSensitive": true,
     "retentionDays": 90
+  },
+  "dashboard": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 18701
   }
 }

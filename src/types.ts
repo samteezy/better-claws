@@ -221,6 +221,12 @@ export interface LoggingConfig {
   readonly retentionDays: number;
 }
 
+export interface DashboardConfig {
+  readonly enabled: boolean;
+  readonly host: string;
+  readonly port: number;
+}
+
 export interface BetterClawsConfig {
   readonly gateway: GatewayConfig;
   readonly llm: LlmConfig;
@@ -228,6 +234,7 @@ export interface BetterClawsConfig {
   readonly security: SecurityConfig;
   readonly memory: MemoryConfig;
   readonly logging: LoggingConfig;
+  readonly dashboard?: DashboardConfig;
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────
