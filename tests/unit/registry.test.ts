@@ -197,7 +197,7 @@ export const execute = async (params, context) => {
           () => registry.loadTools(),
           (err) => {
             assert.ok(err instanceof RegistryError);
-            assert.match((err as RegistryError).message, /Duplicate tool name/);
+            assert.match((err as RegistryError).message, /conflicts with existing tool/);
             return true;
           },
         );
@@ -596,6 +596,380 @@ export const notExecute = async () => {};
       } finally {
         await rm(toolsDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe("built-in tools", () => {
+    it("built-in tools appear in getDescriptors()", async () => {
+      const builtInDescriptor = {
+        name: "built-in-test-tool",
+        description: "A built-in test tool",
+        parameters: { type: "object" as const, properties: { input: { type: "string" } } },
+        capabilities: ["fs:read"] as const,
+      };
+
+      const builtInHandler = {
+        execute: async () => ({
+          success: true,
+          output: { received: "test" },
+          durationMs: 10,
+        }),
+      };
+
+      const registry = new ToolRegistry({
+        builtInTools: [
+          {
+            descriptor: builtInDescriptor,
+            handler: builtInHandler,
+          },
+        ],
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const descriptors = registry.getDescriptors();
+      assert.equal(descriptors.length, 1);
+      assert.equal(descriptors[0]?.name, "built-in-test-tool");
+      assert.equal(descriptors[0]?.description, "A built-in test tool");
+      assert.deepEqual(descriptors[0]?.capabilities, ["fs:read"]);
+    });
+
+    it("built-in tools are accessible via getHandler()", async () => {
+      const builtInDescriptor = {
+        name: "handler-test-tool",
+        description: "Test handler retrieval",
+        parameters: { type: "object" as const },
+        capabilities: [] as const,
+      };
+
+      const testPayload = { test: "data" };
+      const builtInHandler = {
+        execute: async () => ({
+          success: true,
+          output: testPayload,
+          durationMs: 5,
+        }),
+      };
+
+      const registry = new ToolRegistry({
+        builtInTools: [
+          {
+            descriptor: builtInDescriptor,
+            handler: builtInHandler,
+          },
+        ],
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const handler = registry.getHandler("handler-test-tool");
+      assert.ok(handler !== undefined);
+      assert.ok(handler);
+
+      // Verify the handler works correctly
+      const result = await handler.execute(
+        {},
+        { sessionId: "test", capabilities: [], scratchDir: "/tmp", timeout: 5000 },
+      );
+      assert.deepEqual(result.output, testPayload);
+    });
+
+    it("plugin name conflicting with built-in throws DUPLICATE_TOOL", async () => {
+      const toolsDir = await mkdtemp(join(tmpdir(), "registry-builtin-conflict-"));
+      try {
+        const builtInDescriptor = {
+          name: "conflict-tool",
+          description: "Built-in tool",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        };
+
+        const builtInHandler = {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        };
+
+        // Create a plugin with the same name
+        const pluginDir = join(toolsDir, "conflict-tool");
+        await mkdir(pluginDir);
+
+        const pluginDescriptor = {
+          name: "conflict-tool",
+          description: "Plugin tool",
+          parameters: { type: "object" },
+          capabilities: [],
+        };
+
+        await writeFile(join(pluginDir, "descriptor.json"), JSON.stringify(pluginDescriptor));
+        await writeFile(join(pluginDir, "handler.js"), "export const execute = async () => {};");
+
+        const registry = new ToolRegistry({
+          builtInTools: [
+            {
+              descriptor: builtInDescriptor,
+              handler: builtInHandler,
+            },
+          ],
+          pluginDirectory: toolsDir,
+          logger: mockLogger,
+        });
+
+        await assert.rejects(
+          () => registry.loadTools(),
+          (err) => {
+            assert.ok(err instanceof RegistryError);
+            assert.match(
+              (err as RegistryError).message,
+              /conflicts with existing tool/,
+            );
+            return true;
+          },
+        );
+      } finally {
+        await rm(toolsDir, { recursive: true, force: true });
+      }
+    });
+
+    it("built-in tools and plugins coexist", async () => {
+      const toolsDir = await mkdtemp(join(tmpdir(), "registry-coexist-"));
+      try {
+        const builtInDescriptor = {
+          name: "builtin-tool",
+          description: "Built-in tool",
+          parameters: { type: "object" as const },
+          capabilities: ["fs:read"] as const,
+        };
+
+        const builtInHandler = {
+          execute: async () => ({
+            success: true,
+            output: { source: "builtin" },
+            durationMs: 5,
+          }),
+        };
+
+        // Create a plugin with a different name
+        const pluginDir = join(toolsDir, "plugin-tool");
+        await mkdir(pluginDir);
+
+        const pluginDescriptor = {
+          name: "plugin-tool",
+          description: "Plugin tool",
+          parameters: { type: "object" },
+          capabilities: ["fs:write"],
+        };
+
+        await writeFile(join(pluginDir, "descriptor.json"), JSON.stringify(pluginDescriptor));
+        await writeFile(join(pluginDir, "handler.js"), "export const execute = async () => {};");
+
+        const registry = new ToolRegistry({
+          builtInTools: [
+            {
+              descriptor: builtInDescriptor,
+              handler: builtInHandler,
+            },
+          ],
+          pluginDirectory: toolsDir,
+          logger: mockLogger,
+        });
+
+        await registry.loadTools();
+
+        const descriptors = registry.getDescriptors();
+        assert.equal(descriptors.length, 2);
+
+        const names = descriptors.map((d) => d.name).sort();
+        assert.deepEqual(names, ["builtin-tool", "plugin-tool"]);
+
+        // Verify both handlers are accessible
+        const builtinHandler = registry.getHandler("builtin-tool");
+        const pluginHandler = registry.getHandler("plugin-tool");
+
+        assert.ok(builtinHandler !== undefined);
+        assert.ok(pluginHandler !== undefined);
+      } finally {
+        await rm(toolsDir, { recursive: true, force: true });
+      }
+    });
+
+    it("built-in tools log with source: 'built-in'", async () => {
+      const builtInDescriptor = {
+        name: "logging-builtin-tool",
+        description: "Tool that logs",
+        parameters: { type: "object" as const },
+        capabilities: [] as const,
+      };
+
+      const builtInHandler = {
+        execute: async () => ({
+          success: true,
+          output: null,
+          durationMs: 0,
+        }),
+      };
+
+      const testLogger = createMockLogger();
+      const registry = new ToolRegistry({
+        builtInTools: [
+          {
+            descriptor: builtInDescriptor,
+            handler: builtInHandler,
+          },
+        ],
+        logger: testLogger,
+      });
+
+      await registry.loadTools();
+
+      // Find the tool:invoke log entry for the built-in tool
+      const logEntry = testLogger.calls.find(
+        (c) =>
+          c.eventType === "tool:invoke" &&
+          c.payload.action === "loaded" &&
+          c.payload.tool === "logging-builtin-tool",
+      );
+
+      assert.ok(logEntry !== undefined);
+      assert.equal(logEntry?.payload.source, "built-in");
+    });
+
+    it("pluginDirectory alias works with toolsDirectory", async () => {
+      const toolsDir = await mkdtemp(join(tmpdir(), "registry-alias-"));
+      try {
+        const toolDir = join(toolsDir, "alias-test-tool");
+        await mkdir(toolDir);
+
+        const descriptor = {
+          name: "alias-test-tool",
+          description: "Tool for testing alias",
+          parameters: { type: "object" },
+          capabilities: [],
+        };
+
+        await writeFile(join(toolDir, "descriptor.json"), JSON.stringify(descriptor));
+        await writeFile(join(toolDir, "handler.js"), "export const execute = async () => {};");
+
+        // Use deprecated toolsDirectory option (should work as alias)
+        const registry = new ToolRegistry({
+          toolsDirectory: toolsDir,
+          logger: mockLogger,
+        });
+
+        await registry.loadTools();
+
+        const descriptors = registry.getDescriptors();
+        assert.equal(descriptors.length, 1);
+        assert.equal(descriptors[0]?.name, "alias-test-tool");
+      } finally {
+        await rm(toolsDir, { recursive: true, force: true });
+      }
+    });
+
+    it("multiple built-in tools are all registered", async () => {
+      const builtInTool1 = {
+        descriptor: {
+          name: "builtin-1",
+          description: "First built-in",
+          parameters: { type: "object" as const },
+          capabilities: ["fs:read"] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: { id: 1 },
+            durationMs: 5,
+          }),
+        },
+      };
+
+      const builtInTool2 = {
+        descriptor: {
+          name: "builtin-2",
+          description: "Second built-in",
+          parameters: { type: "object" as const },
+          capabilities: ["fs:write"] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: { id: 2 },
+            durationMs: 5,
+          }),
+        },
+      };
+
+      const registry = new ToolRegistry({
+        builtInTools: [builtInTool1, builtInTool2],
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const descriptors = registry.getDescriptors();
+      assert.equal(descriptors.length, 2);
+
+      const names = descriptors.map((d) => d.name).sort();
+      assert.deepEqual(names, ["builtin-1", "builtin-2"]);
+
+      // Verify both are accessible
+      assert.ok(registry.getHandler("builtin-1") !== undefined);
+      assert.ok(registry.getHandler("builtin-2") !== undefined);
+    });
+
+    it("duplicate built-in tool names throw DUPLICATE_TOOL", async () => {
+      const tool1 = {
+        descriptor: {
+          name: "duplicate-builtin",
+          description: "First",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+      };
+
+      const tool2 = {
+        descriptor: {
+          name: "duplicate-builtin",
+          description: "Second",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+      };
+
+      const registry = new ToolRegistry({
+        builtInTools: [tool1, tool2],
+        logger: mockLogger,
+      });
+
+      await assert.rejects(
+        () => registry.loadTools(),
+        (err) => {
+          assert.ok(err instanceof RegistryError);
+          assert.match(
+            (err as RegistryError).message,
+            /Duplicate built-in tool name/,
+          );
+          return true;
+        },
+      );
     });
   });
 });

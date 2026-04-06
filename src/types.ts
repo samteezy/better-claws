@@ -114,6 +114,11 @@ export interface ExecutionContext {
   readonly timeout: number;
 }
 
+export interface BuiltInToolModule {
+  readonly descriptor: ToolDescriptor;
+  readonly handler: ToolHandler;
+}
+
 // ── Capability Gate ───────────────────────────────────────────────────────────
 
 export type GrantScope = "session" | "persistent";

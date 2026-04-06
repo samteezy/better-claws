@@ -9,6 +9,7 @@ import { ToolExecutor } from "./tools/executor.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { MessageRouter } from "./router/message-router.js";
 import { join } from "node:path";
+import { builtInTools } from "./tools/built-in/index.js";
 import { fileURLToPath } from "node:url";
 import type {
   BetterClawsConfig,
@@ -91,7 +92,8 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
   });
 
   const toolRegistry = new ToolRegistry({
-    toolsDirectory: "tools",
+    builtInTools,
+    pluginDirectory: "tools",
     logger,
   });
 

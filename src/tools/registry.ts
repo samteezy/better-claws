@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
   BetterClawsError,
   isCapability,
+  type BuiltInToolModule,
   type ToolDescriptor,
   type ToolHandler,
 } from "../types.js";
@@ -16,50 +17,79 @@ export class RegistryError extends BetterClawsError {
   }
 }
 
-interface RegisteredTool {
+export interface RegisteredTool {
   readonly descriptor: ToolDescriptor;
   readonly handler: ToolHandler;
 }
 
 export interface ToolRegistryOptions {
-  readonly toolsDirectory: string;
+  readonly builtInTools?: readonly BuiltInToolModule[];
+  readonly pluginDirectory?: string;
+  /** @deprecated Use pluginDirectory */
+  readonly toolsDirectory?: string;
   readonly logger: StructuredLogger;
 }
 
 export class ToolRegistry {
-  private readonly toolsDirectory: string;
+  private readonly builtInTools: readonly BuiltInToolModule[];
+  private readonly pluginDirectory: string | null;
   private readonly logger: StructuredLogger;
   private readonly tools = new Map<string, RegisteredTool>();
 
   constructor(options: ToolRegistryOptions) {
-    this.toolsDirectory = options.toolsDirectory;
+    this.builtInTools = options.builtInTools ?? [];
+    this.pluginDirectory =
+      options.pluginDirectory ?? options.toolsDirectory ?? null;
     this.logger = options.logger;
   }
 
   async loadTools(): Promise<void> {
+    // Phase 1: Register built-in tools (compile-time typed, no validation needed)
+    for (const tool of this.builtInTools) {
+      if (this.tools.has(tool.descriptor.name)) {
+        throw new RegistryError(
+          `Duplicate built-in tool name "${tool.descriptor.name}"`,
+          "DUPLICATE_TOOL",
+        );
+      }
+      this.tools.set(tool.descriptor.name, {
+        descriptor: tool.descriptor,
+        handler: tool.handler,
+      });
+      this.logger.log({
+        sessionId: null,
+        eventType: "tool:invoke",
+        component: "registry",
+        payload: { action: "loaded", tool: tool.descriptor.name, source: "built-in" },
+      });
+    }
+
+    // Phase 2: Load user-defined plugin tools from plugin directory
+    if (!this.pluginDirectory) return;
+
     let entries: string[];
     try {
-      entries = await readdir(this.toolsDirectory);
+      entries = await readdir(this.pluginDirectory);
     } catch (err) {
       if (
         err instanceof Error &&
         "code" in err &&
         (err as NodeJS.ErrnoException).code === "ENOENT"
       ) {
-        return; // no tools directory — that's fine
+        return; // no plugin directory — that's fine
       }
       throw new RegistryError(
-        `Failed to read tools directory: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to read plugin directory: ${err instanceof Error ? err.message : String(err)}`,
         "READ_ERROR",
       );
     }
 
     for (const entry of entries) {
-      const toolDir = join(this.toolsDirectory, entry);
+      const toolDir = join(this.pluginDirectory, entry);
       const stats = await stat(toolDir);
       if (!stats.isDirectory()) continue;
 
-      await this.loadTool(toolDir, entry);
+      await this.loadPlugin(toolDir, entry);
     }
   }
 
@@ -75,7 +105,7 @@ export class ToolRegistry {
     return this.tools.get(toolName)?.handler;
   }
 
-  private async loadTool(toolDir: string, dirName: string): Promise<void> {
+  private async loadPlugin(toolDir: string, dirName: string): Promise<void> {
     const descriptorPath = join(toolDir, "descriptor.json");
     let rawDescriptor: unknown;
 
@@ -93,7 +123,7 @@ export class ToolRegistry {
 
     if (this.tools.has(descriptor.name)) {
       throw new RegistryError(
-        `Duplicate tool name "${descriptor.name}" (from "${dirName}")`,
+        `Plugin "${dirName}" conflicts with existing tool "${descriptor.name}"`,
         "DUPLICATE_TOOL",
       );
     }
@@ -118,7 +148,7 @@ export class ToolRegistry {
       sessionId: null,
       eventType: "tool:invoke",
       component: "registry",
-      payload: { action: "loaded", tool: descriptor.name },
+      payload: { action: "loaded", tool: descriptor.name, source: "plugin" },
     });
   }
 

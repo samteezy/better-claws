@@ -246,19 +246,9 @@ describe("WorkingMemory", () => {
 
   describe("capability gate flow", () => {
     it("memory:write capability is declared in tool descriptor", async () => {
-      const { readFile } = await import("node:fs/promises");
-      const { join } = await import("node:path");
-
-      const descriptorPath = join(
-        process.cwd(),
-        "tools",
-        "memory-update",
-        "descriptor.json",
+      const { descriptor } = await import(
+        "../../src/tools/built-in/memory-update.js"
       );
-      const content = await readFile(descriptorPath, "utf-8");
-      const descriptor = JSON.parse(content) as {
-        capabilities: string[];
-      };
 
       assert.ok(
         descriptor.capabilities.includes("memory:write"),
