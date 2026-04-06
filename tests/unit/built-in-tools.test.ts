@@ -27,6 +27,7 @@ function makeContext(tempDir: string): ExecutionContext {
     capabilities: [],
     scratchDir: tempDir,
     timeout: 5000,
+    secrets: new Map<string, string>(),
   };
 }
 

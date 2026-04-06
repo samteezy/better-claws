@@ -91,6 +91,7 @@ export interface ToolDescriptor {
   readonly description: string;
   readonly parameters: JsonSchema;
   readonly capabilities: readonly Capability[];
+  readonly secrets?: readonly string[];
 }
 
 export interface ToolHandler {
@@ -112,6 +113,7 @@ export interface ExecutionContext {
   readonly capabilities: readonly Capability[];
   readonly scratchDir: string;
   readonly timeout: number;
+  readonly secrets: ReadonlyMap<string, string>;
 }
 
 export interface BuiltInToolModule {
@@ -160,6 +162,9 @@ export const EVENT_TYPES = [
   "session:create",
   "session:idle",
   "config:change",
+  "secret:access",
+  "secret:register",
+  "secret:revoke",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -240,6 +245,7 @@ export interface BetterClawsConfig {
   readonly memory: MemoryConfig;
   readonly logging: LoggingConfig;
   readonly dashboard?: DashboardConfig;
+  readonly secrets?: Readonly<Record<string, string>>;
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────

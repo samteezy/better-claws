@@ -22,12 +22,26 @@ import type { ToolRegistry } from "../../src/tools/registry.js";
 import type { CapabilityGate } from "../../src/tools/capability-gate.js";
 import type { ToolExecutor } from "../../src/tools/executor.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
+import type { SecretManager } from "../../src/secrets/secret-manager.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 function createMockLogger() {
   const logs: Array<Record<string, unknown>> = [];
   return { logs, log(e: Record<string, unknown>) { logs.push(e); }, async flush() {}, async close() {} } as unknown as StructuredLogger & { logs: typeof logs };
+}
+
+function createMockSecretManager() {
+  return {
+    projectForTool(_allowedKeys: readonly string[], _sessionId: string, _toolName: string) {
+      return new Map<string, string>();
+    },
+    register() {},
+    get(_key: string) { return ""; },
+    has(_key: string) { return false; },
+    keys() { return []; },
+    revoke(_key: string) { return false; },
+  } as unknown as SecretManager;
 }
 
 function createMockSessionManager() {
@@ -162,6 +176,7 @@ describe("MessageRouter", () => {
       toolRegistry: toolRegistry as unknown as ToolRegistry,
       capabilityGate: capabilityGate as unknown as CapabilityGate,
       executor: executor as unknown as ToolExecutor,
+      secretManager: createMockSecretManager(),
       logger: logger as unknown as StructuredLogger,
     });
 

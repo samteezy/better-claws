@@ -15,6 +15,7 @@ interface WorkerMessage {
     readonly capabilities: readonly string[];
     readonly scratchDir: string;
     readonly timeout: number;
+    readonly secrets: readonly (readonly [string, string])[];
   };
 }
 
@@ -64,7 +65,12 @@ process.on("message", async (msg: WorkerMessage) => {
       return;
     }
 
-    const result = await handler.execute(msg.params, msg.context) as {
+    const contextWithSecrets = {
+      ...msg.context,
+      secrets: new Map(msg.context.secrets) as ReadonlyMap<string, string>,
+    };
+
+    const result = await handler.execute(msg.params, contextWithSecrets) as {
       success: boolean;
       output: unknown;
       error?: string;

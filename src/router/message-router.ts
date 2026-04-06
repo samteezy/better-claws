@@ -12,6 +12,7 @@ import type { LlmClient } from "../llm/llm-client.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { CapabilityGate } from "../tools/capability-gate.js";
 import type { ToolExecutor } from "../tools/executor.js";
+import type { SecretManager } from "../secrets/secret-manager.js";
 
 export class RouterError extends BetterClawsError {
   constructor(message: string, code: string = "ROUTER_ERROR") {
@@ -30,6 +31,7 @@ export interface MessageRouterOptions {
   readonly toolRegistry: ToolRegistry;
   readonly capabilityGate: CapabilityGate;
   readonly executor: ToolExecutor;
+  readonly secretManager: SecretManager;
   readonly logger: StructuredLogger;
 }
 
@@ -39,6 +41,7 @@ export class MessageRouter {
   private readonly toolRegistry: ToolRegistry;
   private readonly capabilityGate: CapabilityGate;
   private readonly executor: ToolExecutor;
+  private readonly secretManager: SecretManager;
   private readonly logger: StructuredLogger;
   private readonly adapters = new Map<string, ChannelAdapter>();
 
@@ -48,6 +51,7 @@ export class MessageRouter {
     this.toolRegistry = options.toolRegistry;
     this.capabilityGate = options.capabilityGate;
     this.executor = options.executor;
+    this.secretManager = options.secretManager;
     this.logger = options.logger;
   }
 
@@ -226,11 +230,18 @@ export class MessageRouter {
       };
     }
 
+    const secrets = this.secretManager.projectForTool(
+      descriptor.secrets ?? [],
+      sessionId,
+      toolName,
+    );
+
     const result = await this.executor.execute(handler, params, {
       sessionId,
       capabilities: [...descriptor.capabilities],
       scratchDir: "",
       timeout: 30000,
+      secrets,
     });
 
     await this.sessionManager.appendToLog(sessionId, {
