@@ -10,6 +10,8 @@ import { SessionManager } from "./sessions/session-manager.js";
 import { MessageRouter } from "./router/message-router.js";
 import { join } from "node:path";
 import { builtInTools } from "./tools/built-in/index.js";
+import { SecretManager } from "./secrets/secret-manager.js";
+import { seedFromConfig } from "./secrets/seed.js";
 import { fileURLToPath } from "node:url";
 import type {
   BetterClawsConfig,
@@ -111,6 +113,9 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
     logger,
   });
 
+  const secretManager = new SecretManager({ logger });
+  seedFromConfig(secretManager, config);
+
   const sessionManager = new SessionManager({
     sessionsDirectory: "data/sessions",
     idleTimeoutMs: 30 * 60 * 1000, // 30 minutes
@@ -123,6 +128,7 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
     toolRegistry,
     capabilityGate,
     executor,
+    secretManager,
     logger,
   });
 

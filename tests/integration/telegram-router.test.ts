@@ -8,6 +8,7 @@ import { ToolRegistry } from "../../src/tools/registry.js";
 import { CapabilityGate } from "../../src/tools/capability-gate.js";
 import { ToolExecutor } from "../../src/tools/executor.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
+import type { SecretManager } from "../../src/secrets/secret-manager.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -174,6 +175,7 @@ describe("Telegram → Router integration", () => {
       toolRegistry,
       capabilityGate,
       executor,
+      secretManager: { projectForTool: () => new Map() } as unknown as SecretManager,
       logger,
     });
 
@@ -334,6 +336,7 @@ describe("Telegram → Router integration", () => {
       toolRegistry,
       capabilityGate,
       executor,
+      secretManager: { projectForTool: () => new Map() } as unknown as SecretManager,
       logger,
     });
 
@@ -479,6 +482,7 @@ describe("Telegram → Router integration", () => {
       toolRegistry,
       capabilityGate,
       executor,
+      secretManager: { projectForTool: () => new Map() } as unknown as SecretManager,
       logger,
     });
 

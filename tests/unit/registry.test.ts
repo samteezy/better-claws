@@ -671,7 +671,7 @@ export const notExecute = async () => {};
       // Verify the handler works correctly
       const result = await handler.execute(
         {},
-        { sessionId: "test", capabilities: [], scratchDir: "/tmp", timeout: 5000 },
+        { sessionId: "test", capabilities: [], scratchDir: "/tmp", timeout: 5000, secrets: new Map<string, string>() },
       );
       assert.deepEqual(result.output, testPayload);
     });

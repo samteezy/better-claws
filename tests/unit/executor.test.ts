@@ -72,6 +72,7 @@ describe("ToolExecutor", () => {
         capabilities: ["fs:read"],
         scratchDir: "", // Will be filled by executor
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       const result = await executor.execute(handler, { test: "input" }, context);
@@ -109,6 +110,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 100,
+        secrets: new Map<string, string>(),
       };
 
       const result = await executor.execute(handler, {}, context);
@@ -148,6 +150,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       const result = await executor.execute(handler, {}, context);
@@ -182,6 +185,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);
@@ -220,6 +224,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       const result = await executor.execute(handler, {}, context);
@@ -253,6 +258,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);
@@ -300,6 +306,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 100,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);
@@ -344,6 +351,7 @@ describe("ToolExecutor", () => {
         capabilities: ["fs:read"],
         scratchDir: "", // Will be populated
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, originalContext);
@@ -379,6 +387,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);
@@ -414,6 +423,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);
@@ -447,6 +457,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);
@@ -487,6 +498,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 100,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);
@@ -522,6 +534,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);
@@ -573,6 +586,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, testParams, context);
@@ -606,6 +620,7 @@ describe("ToolExecutor", () => {
         capabilities: ["fs:read", "fs:write", "net:outbound"],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);
@@ -641,6 +656,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       const result = await executor.execute(handler, {}, context);
@@ -676,6 +692,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       const result1 = await executor.execute(handler, {}, context);
@@ -713,6 +730,7 @@ describe("ToolExecutor", () => {
         capabilities: [],
         scratchDir: "",
         timeout: 5000,
+        secrets: new Map<string, string>(),
       };
 
       await executor.execute(handler, {}, context);

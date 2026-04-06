@@ -199,11 +199,32 @@ export class ToolRegistry {
       }
     }
 
+    // Validate optional secrets field
+    let secrets: readonly string[] | undefined;
+    if (obj["secrets"] !== undefined) {
+      if (!Array.isArray(obj["secrets"])) {
+        throw new RegistryError(
+          `Descriptor for "${dirName}" has invalid "secrets" field (expected array)`,
+          "INVALID_DESCRIPTOR",
+        );
+      }
+      for (const s of obj["secrets"]) {
+        if (typeof s !== "string" || s.length === 0) {
+          throw new RegistryError(
+            `Descriptor for "${dirName}" has invalid secret key: "${String(s)}"`,
+            "INVALID_DESCRIPTOR",
+          );
+        }
+      }
+      secrets = obj["secrets"] as string[];
+    }
+
     return {
       name: obj["name"] as string,
       description: obj["description"] as string,
       parameters: obj["parameters"] as ToolDescriptor["parameters"],
       capabilities: obj["capabilities"] as unknown as ToolDescriptor["capabilities"],
+      ...(secrets ? { secrets } : {}),
     };
   }
 

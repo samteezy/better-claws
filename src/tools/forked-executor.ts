@@ -28,6 +28,7 @@ interface WorkerRequest {
     readonly capabilities: readonly string[];
     readonly scratchDir: string;
     readonly timeout: number;
+    readonly secrets: readonly (readonly [string, string])[];
   };
 }
 
@@ -217,6 +218,7 @@ export class ForkedExecutor {
               capabilities: [...context.capabilities],
               scratchDir: context.scratchDir,
               timeout: context.timeout,
+              secrets: [...context.secrets.entries()],
             },
           };
           child.send(request);

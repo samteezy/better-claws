@@ -90,6 +90,7 @@ describe("ForkedExecutor", () => {
       capabilities: overrides?.capabilities ?? [],
       scratchDir: "",
       timeout: overrides?.timeout ?? 5000,
+      secrets: overrides?.secrets ?? new Map<string, string>(),
     };
   }
 
