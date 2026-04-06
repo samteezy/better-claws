@@ -66,6 +66,10 @@ Dashboard: HTTP server at configurable port for session inspection and log viewi
 
 Telegram, Discord, Slack, Webhook. CLI adapter in `src/index.ts` for local testing.
 
+## README
+
+The README is end-user focused. Keep it that way when updating. It should cover: what betterClaws is, how to set it up, how to configure it, how to connect chat platforms, built-in and custom tools, capabilities, security model (user-facing invariants), dashboard, and memory. Do not add internal architecture, project structure, component deep-dives, or test details — those belong here in CLAUDE.md.
+
 ## Repository
 
 - **GitHub:** https://github.com/samteezy/better-claws
