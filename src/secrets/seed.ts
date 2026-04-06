@@ -18,6 +18,12 @@ export function seedFromConfig(
     if (adapter?.secret) {
       manager.register(`adapter:${name}:secret`, adapter.secret, "env");
     }
+    if (adapter?.apiUrl) {
+      manager.register(`adapter:${name}:apiUrl`, adapter.apiUrl, "env");
+    }
+    if (adapter?.number) {
+      manager.register(`adapter:${name}:number`, adapter.number, "env");
+    }
   }
 
   // Register user-defined secrets from config.secrets section

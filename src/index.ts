@@ -20,6 +20,7 @@ import type {
   OutboundMessage,
 } from "./types.js";
 import { DashboardServer } from "./dashboard/dashboard-server.js";
+import { createAdapter } from "./adapters/adapter-factory.js";
 
 // ── CLI Adapter ───────────────────────────────────────────────────────────────
 
@@ -131,6 +132,14 @@ export async function createApp(config: BetterClawsConfig, options?: { dashboard
     secretManager,
     logger,
   });
+
+  // ── Config-driven adapters ───────────────────────────────────────────────
+  for (const [name, adapterConfig] of Object.entries(config.adapters)) {
+    if (adapterConfig.enabled) {
+      const adapter = createAdapter(name, adapterConfig, logger);
+      router.registerAdapter(adapter);
+    }
+  }
 
   // ── Dashboard ────────────────────────────────────────────────────────────
   const dashboardEnabled = options?.dashboard ?? config.dashboard?.enabled ?? false;

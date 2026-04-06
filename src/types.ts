@@ -208,6 +208,13 @@ export interface AdapterConfig {
   readonly enabled: boolean;
   readonly token?: string;
   readonly secret?: string;
+  // Signal
+  readonly apiUrl?: string;
+  readonly number?: string;
+  // Webhook
+  readonly host?: string;
+  readonly port?: number;
+  readonly path?: string;
 }
 
 export interface SecurityConfig {
