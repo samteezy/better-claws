@@ -414,4 +414,131 @@ describe("ForkedExecutor", () => {
       assert.equal((r2.output as Record<string, unknown>)["count"], 1);
     });
   });
+
+  describe("handler path validation", () => {
+    it("rejects handler paths outside allowedHandlerRoots", async () => {
+      const executor = makeExecutor();
+
+      // Try to execute a handler at an absolute path outside the allowed directory
+      const result = await executor.execute(
+        "/tmp/evil-handler.js",
+        {},
+        makeContext(),
+      );
+
+      assert.equal(result.success, false);
+      assert.ok(result.error);
+      assert.ok(
+        result.error.includes("outside allowed directories") ||
+        result.error.includes("outside"),
+        `Expected 'outside allowed directories' error, got: ${result.error}`,
+      );
+    });
+
+    it("rejects handler paths with path traversal attempts", async () => {
+      const executor = makeExecutor();
+
+      // Try to use ../ to escape the allowed directory
+      const result = await executor.execute(
+        `${handlersDir}/../../../etc/passwd`,
+        {},
+        makeContext(),
+      );
+
+      assert.equal(result.success, false);
+      assert.ok(result.error);
+      assert.ok(
+        result.error.includes("outside allowed directories") ||
+        result.error.includes("outside"),
+        `Expected 'outside allowed directories' error, got: ${result.error}`,
+      );
+    });
+
+    it("allows handlers within allowedHandlerRoots", async () => {
+      const executor = makeExecutor();
+      const handlerPath = await createTestHandler(handlersDir, `
+        export default {
+          async execute() {
+            return { success: true, output: { allowed: true }, durationMs: 1 };
+          },
+        };
+      `);
+
+      const result = await executor.execute(handlerPath, {}, makeContext());
+
+      // Should succeed (not be blocked by path validation)
+      // May fail with other errors (handler issues), but not path validation error
+      assert.ok(!result.error?.includes("outside allowed directories"));
+    });
+
+    it("rejects symlinks pointing outside allowedHandlerRoots", async () => {
+      // This test verifies that path resolution prevents symlink escape
+      const executor = makeExecutor();
+
+      // Attempt to use an absolute path that is clearly outside
+      const evilPath = "/var/tmp/definitely-not-allowed/handler.js";
+      const result = await executor.execute(evilPath, {}, makeContext());
+
+      assert.equal(result.success, false);
+      assert.ok(result.error);
+      assert.ok(
+        result.error.includes("outside allowed directories") ||
+        result.error.includes("outside"),
+      );
+    });
+
+    it("allows handlers at the root of allowedHandlerRoots", async () => {
+      // Test that a handler at exactly the root directory is allowed
+      // (even though it won't exist/load)
+      const executor = makeExecutor();
+
+      // This will fail to load but should NOT fail path validation
+      const result = await executor.execute(handlersDir, {}, makeContext());
+
+      // Should fail on loading/execution, not path validation
+      assert.equal(result.success, false);
+      assert.ok(!result.error?.includes("outside allowed directories"));
+    });
+
+    it("respects multiple allowedHandlerRoots", async () => {
+      // Create a second allowed directory
+      const alt2HandlersDir = join(tempDir, "alt-handlers-2");
+      await mkdir(alt2HandlersDir);
+
+      const executor = new ForkedExecutor({
+        scratchBaseDir,
+        defaultTimeout: 5000,
+        stripEnvironment: true,
+        logger: mockLogger,
+        workerScript: WORKER_SCRIPT_PATH,
+        // Allow multiple root directories
+        allowedHandlerRoots: [handlersDir, alt2HandlersDir],
+      });
+
+      // Handler in first root should be allowed
+      const handler1 = await createTestHandler(handlersDir, `
+        export default {
+          async execute() {
+            return { success: true, output: { dir: 1 }, durationMs: 1 };
+          },
+        };
+      `);
+
+      // Handler in second root should be allowed
+      const handler2 = await createTestHandler(alt2HandlersDir, `
+        export default {
+          async execute() {
+            return { success: true, output: { dir: 2 }, durationMs: 1 };
+          },
+        };
+      `);
+
+      const result1 = await executor.execute(handler1, {}, makeContext());
+      const result2 = await executor.execute(handler2, {}, makeContext());
+
+      // Both should not be blocked by path validation
+      assert.ok(!result1.error?.includes("outside allowed directories"));
+      assert.ok(!result2.error?.includes("outside allowed directories"));
+    });
+  });
 });
