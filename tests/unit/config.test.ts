@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { writeFile, mkdir, rmdir } from "node:fs/promises";
+import { writeFile, rmdir } from "node:fs/promises";
 import { mkdtemp } from "node:fs";
 import { promisify } from "node:util";
 import { join } from "node:path";
@@ -10,7 +10,7 @@ import {
   ConfigError,
   DEFAULT_CONFIG,
 } from "../../src/config.js";
-import type { BetterClawsConfig } from "../../src/types.js";
+
 
 const mkdtempAsync = promisify(mkdtemp);
 

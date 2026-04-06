@@ -6,12 +6,8 @@ import {
   type Capability,
   type ChatMessage,
   type GrantScope,
-  type InboundMessage,
-  type OutboundMessage,
   type SessionLogEntry,
   type SessionState,
-  type ToolCall,
-  type ToolResult,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 

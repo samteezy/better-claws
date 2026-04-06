@@ -5,9 +5,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SessionManager, SessionError } from "../../src/sessions/session-manager.js";
 import type {
-  InboundMessage,
-  OutboundMessage,
-  ToolResult,
   SessionLogEntry,
 } from "../../src/types.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";

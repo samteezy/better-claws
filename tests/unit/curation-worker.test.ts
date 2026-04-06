@@ -1,13 +1,11 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import {
   CurationWorker,
-  CurationError,
   type CurationLlmClient,
-  type CurationCycleResult,
 } from "../../src/memory/curation-worker.js";
 import { LongTermStore } from "../../src/memory/long-term-store.js";
 import { SessionManager } from "../../src/sessions/session-manager.js";

@@ -2,7 +2,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   Scheduler,
-  SchedulerError,
   type ScheduleDefinition,
 } from "../../src/scheduler/scheduler.js";
 import { CronParseError } from "../../src/scheduler/cron-parser.js";

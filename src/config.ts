@@ -3,12 +3,6 @@ import { resolve } from "node:path";
 import {
   BetterClawsError,
   type BetterClawsConfig,
-  type GatewayConfig,
-  type LlmConfig,
-  type SecurityConfig,
-  type MemoryConfig,
-  type LoggingConfig,
-  type AdapterConfig,
 } from "./types.js";
 
 export class ConfigError extends BetterClawsError {

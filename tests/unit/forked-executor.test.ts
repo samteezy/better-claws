@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { ForkedExecutor, ForkedExecutorError } from "../../src/tools/forked-executor.js";
+import { ForkedExecutor } from "../../src/tools/forked-executor.js";
 import type { ExecutionContext } from "../../src/types.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 
@@ -304,8 +304,6 @@ describe("ForkedExecutor", () => {
 
     it("scratch directory is created and cleaned up", async () => {
       const executor = makeExecutor();
-      let capturedScratchDir: string | undefined;
-
       const handlerPath = await createTestHandler(handlersDir, `
         import { existsSync } from "node:fs";
         export default {

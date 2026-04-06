@@ -1,4 +1,4 @@
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -296,7 +296,7 @@ describe("MessageRouter", () => {
       });
 
       const { router } = createRouter({ llmClient });
-      const response = await router.handleMessage(makeInbound("Call unknown"));
+      await router.handleMessage(makeInbound("Call unknown"));
 
       const secondCall = llmClient.capturedMessages[1];
       assert.ok(secondCall);
@@ -325,7 +325,7 @@ describe("MessageRouter", () => {
       });
 
       const { router } = createRouter({ llmClient, toolRegistry });
-      const response = await router.handleMessage(makeInbound("Bad args"));
+      await router.handleMessage(makeInbound("Bad args"));
 
       const secondCall = llmClient.capturedMessages[1];
       assert.ok(secondCall);
@@ -386,7 +386,7 @@ describe("MessageRouter", () => {
       }
 
       const { router } = createRouter({ llmClient, toolRegistry });
-      const response = await router.handleMessage(makeInbound("Loop"));
+      await router.handleMessage(makeInbound("Loop"));
 
       // Should have stopped after MAX_TOOL_ITERATIONS (10) + 1 initial = 11 calls max
       // The last response will be a tool_call response but iteration limit stops the loop

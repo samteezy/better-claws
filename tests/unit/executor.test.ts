@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ToolExecutor } from "../../src/tools/executor.js";
-import type { ToolHandler, ExecutionContext, ToolResult } from "../../src/types.js";
+import type { ToolHandler, ExecutionContext } from "../../src/types.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 
 function createMockLogger() {
@@ -132,7 +132,7 @@ describe("ToolExecutor", () => {
       let capturedScratchDir: string | undefined;
 
       const handler: ToolHandler = {
-        execute: async (params, context) => {
+        execute: async (_params, context) => {
           capturedScratchDir = context.scratchDir;
           // Verify it's a real directory
           const stats = await stat(context.scratchDir);
@@ -170,7 +170,7 @@ describe("ToolExecutor", () => {
       let capturedScratchDir: string | undefined;
 
       const handler: ToolHandler = {
-        execute: async (params, context) => {
+        execute: async (_params, context) => {
           capturedScratchDir = context.scratchDir;
           return {
             success: true,
@@ -247,7 +247,7 @@ describe("ToolExecutor", () => {
       let capturedScratchDir: string | undefined;
 
       const handler: ToolHandler = {
-        execute: async (params, context) => {
+        execute: async (_params, context) => {
           capturedScratchDir = context.scratchDir;
           throw new Error("Test error");
         },
@@ -288,7 +288,7 @@ describe("ToolExecutor", () => {
       let capturedScratchDir: string | undefined;
 
       const handler: ToolHandler = {
-        execute: async (params, context) => {
+        execute: async (_params, context) => {
           capturedScratchDir = context.scratchDir;
           await new Promise((resolve) => {
             setTimeout(resolve, 500);
@@ -336,7 +336,7 @@ describe("ToolExecutor", () => {
       let receivedContext: ExecutionContext | undefined;
 
       const handler: ToolHandler = {
-        execute: async (params, context) => {
+        execute: async (_params, context) => {
           receivedContext = context;
           return {
             success: true,
@@ -605,7 +605,7 @@ describe("ToolExecutor", () => {
       let receivedCapabilities: unknown;
 
       const handler: ToolHandler = {
-        execute: async (params, context) => {
+        execute: async (_params, context) => {
           receivedCapabilities = context.capabilities;
           return {
             success: true,
@@ -715,7 +715,7 @@ describe("ToolExecutor", () => {
       const scratchDirs: string[] = [];
 
       const handler: ToolHandler = {
-        execute: async (params, context) => {
+        execute: async (_params, context) => {
           scratchDirs.push(context.scratchDir);
           return {
             success: true,

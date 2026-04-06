@@ -32,9 +32,6 @@ interface WorkerResult {
 const capturedStdout: string[] = [];
 const capturedStderr: string[] = [];
 
-const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-const originalStderrWrite = process.stderr.write.bind(process.stderr);
-
 process.stdout.write = (chunk: string | Uint8Array): boolean => {
   capturedStdout.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
   return true;

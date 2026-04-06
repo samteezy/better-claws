@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { ExecutionContext, ToolHandler } from "../../src/types.js";
+import type { ExecutionContext } from "../../src/types.js";
 import { handler as shellHandler } from "../../src/tools/built-in/shell.js";
 import { handler as fileReadHandler } from "../../src/tools/built-in/file-read.js";
 import { handler as fileWriteHandler } from "../../src/tools/built-in/file-write.js";

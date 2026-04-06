@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { PromptBuilder, PromptBuilderError } from "../../src/prompt/prompt-builder.js";
+import { PromptBuilder } from "../../src/prompt/prompt-builder.js";
 import type { ChatMessage, ToolDescriptor } from "../../src/types.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────

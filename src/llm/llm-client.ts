@@ -3,7 +3,6 @@ import {
   type ChatMessage,
   type LlmResponse,
   type LlmStreamChunk,
-  type ToolCall,
   type ToolDescriptor,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
