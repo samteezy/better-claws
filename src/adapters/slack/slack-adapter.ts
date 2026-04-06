@@ -40,6 +40,9 @@ interface SlackApiResponse {
   readonly url?: string;
 }
 
+/** Maximum inbound message length in characters. Messages exceeding this are truncated. */
+const MAX_MESSAGE_LENGTH = 32_768;
+
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
 export interface SlackAdapterOptions {
@@ -303,12 +306,16 @@ export class SlackAdapter implements ChannelAdapter {
 
     if (!event.text) return;
 
+    const text = event.text.length > MAX_MESSAGE_LENGTH
+      ? event.text.slice(0, MAX_MESSAGE_LENGTH)
+      : event.text;
+
     const inbound: InboundMessage = {
       id: event.event_ts,
       adapterId: "slack",
       channelId: event.channel,
       senderId: event.user,
-      text: event.text,
+      text,
       timestamp: parseFloat(event.ts) * 1000,
       raw: event,
     };
@@ -321,7 +328,7 @@ export class SlackAdapter implements ChannelAdapter {
         eventTs: event.event_ts,
         channelId: event.channel,
         senderId: event.user,
-        textLength: event.text.length,
+        textLength: text.length,
       },
     });
 

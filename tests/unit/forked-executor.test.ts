@@ -81,6 +81,7 @@ describe("ForkedExecutor", () => {
       stripEnvironment: overrides?.stripEnvironment ?? true,
       logger: mockLogger,
       workerScript: WORKER_SCRIPT_PATH,
+      allowedHandlerRoots: [handlersDir],
     });
   }
 
@@ -190,6 +191,7 @@ describe("ForkedExecutor", () => {
         stripEnvironment: false,
         logger: mockLogger,
         workerScript: WORKER_SCRIPT_PATH,
+        allowedHandlerRoots: [handlersDir],
       });
 
       const handlerPath = await createTestHandler(handlersDir, `

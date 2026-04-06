@@ -62,6 +62,8 @@ export interface ForkedExecutorOptions {
   readonly enablePermissionFlag?: boolean;
   /** V8 heap limit for child processes in MB. Default: 128. */
   readonly maxMemoryMb?: number;
+  /** Allowed root directories for handler paths. Validated before execution. */
+  readonly allowedHandlerRoots?: readonly string[];
 }
 
 // ── Executor ────────────────────────────────────────────────────────────────
@@ -87,6 +89,7 @@ export class ForkedExecutor {
   private readonly logger: StructuredLogger;
   private readonly workerScript: string;
   private readonly allowedEnvVars: ReadonlySet<string>;
+  private readonly allowedHandlerRoots: readonly string[];
 
   constructor(options: ForkedExecutorOptions) {
     this.scratchBaseDir = options.scratchBaseDir;
@@ -97,8 +100,13 @@ export class ForkedExecutor {
     this.logger = options.logger;
     this.workerScript = options.workerScript ?? this.resolveDefaultWorkerScript();
     this.allowedEnvVars = new Set(options.allowedEnvVars ?? [
-      "NODE_PATH", "PATH", "HOME", "LANG", "TERM",
+      "NODE_PATH", "HOME", "LANG", "TERM",
     ]);
+    this.allowedHandlerRoots = options.allowedHandlerRoots ?? [
+      resolvePath("tools"),
+      resolvePath("dist", "src", "tools"),
+      resolvePath("src", "tools"),
+    ];
   }
 
   async execute(
@@ -106,6 +114,21 @@ export class ForkedExecutor {
     params: Record<string, unknown>,
     context: ExecutionContext,
   ): Promise<ToolResult> {
+    // Validate handler path is within allowed directories
+    const resolvedHandler = resolvePath(handlerPath);
+    const withinAllowed = this.allowedHandlerRoots.some(root => {
+      const prefix = root.endsWith("/") ? root : root + "/";
+      return resolvedHandler === root || resolvedHandler.startsWith(prefix);
+    });
+    if (!withinAllowed) {
+      return {
+        success: false,
+        output: null,
+        error: `Handler path is outside allowed directories: ${handlerPath}`,
+        durationMs: 0,
+      };
+    }
+
     const scratchDir = await this.createScratchDir(context.sessionId);
     const timeout = context.timeout || this.defaultTimeout;
 
@@ -188,6 +211,7 @@ export class ForkedExecutor {
       });
 
       let resolved = false;
+      let timedOut = false;
       let stdout = "";
       let stderr = "";
       const MAX_BUFFER_BYTES = 1_048_576; // 1 MB
@@ -204,15 +228,22 @@ export class ForkedExecutor {
         }
       });
 
-      // Timeout enforcement
+      // Timeout enforcement — SIGTERM first, SIGKILL after grace period
+      const GRACEFUL_SHUTDOWN_MS = 3000;
       const timer = setTimeout(() => {
         if (!resolved) {
-          resolved = true;
-          child.kill("SIGKILL");
-          reject(new ForkedExecutorError(
-            `Execution timed out after ${context.timeout}ms`,
-            "TIMEOUT",
-          ));
+          timedOut = true;
+          child.kill("SIGTERM");
+          setTimeout(() => {
+            if (!resolved) {
+              resolved = true;
+              child.kill("SIGKILL");
+              reject(new ForkedExecutorError(
+                `Execution timed out after ${context.timeout}ms`,
+                "TIMEOUT",
+              ));
+            }
+          }, GRACEFUL_SHUTDOWN_MS);
         }
       }, context.timeout);
 
@@ -274,10 +305,17 @@ export class ForkedExecutor {
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
-          reject(new ForkedExecutorError(
-            `Worker process exited with code ${code} without sending a result`,
-            "WORKER_EXIT",
-          ));
+          if (timedOut) {
+            reject(new ForkedExecutorError(
+              `Execution timed out after ${context.timeout}ms`,
+              "TIMEOUT",
+            ));
+          } else {
+            reject(new ForkedExecutorError(
+              `Worker process exited with code ${code} without sending a result`,
+              "WORKER_EXIT",
+            ));
+          }
         }
       });
 
@@ -299,6 +337,15 @@ export class ForkedExecutor {
 
   private buildEnvironment(): Record<string, string> {
     if (!this.stripEnvironment) {
+      this.logger.log({
+        sessionId: null,
+        eventType: "executor:result",
+        component: "forked-executor",
+        payload: {
+          action: "env_warning",
+          message: "stripEnvironment is disabled — full parent environment will be inherited by child process",
+        },
+      });
       return { ...process.env } as Record<string, string>;
     }
 
@@ -315,6 +362,18 @@ export class ForkedExecutor {
   /** Build Node.js exec arguments for optional hardening. */
   private buildExecArgv(context: ExecutionContext): string[] {
     const args: string[] = [`--max-old-space-size=${this.maxMemoryMb}`];
+
+    if (!this.enablePermissionFlag) {
+      this.logger.log({
+        sessionId: null,
+        eventType: "executor:result",
+        component: "forked-executor",
+        payload: {
+          action: "permission_warning",
+          message: "Node --experimental-permission is disabled — child processes have unrestricted filesystem access",
+        },
+      });
+    }
 
     // Only apply permission flag when explicitly enabled and supported
     if (this.enablePermissionFlag && this.isPermissionFlagSupported()) {

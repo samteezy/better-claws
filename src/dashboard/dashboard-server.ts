@@ -402,7 +402,7 @@ export class DashboardServer {
         obj[key] = "[REDACTED]";
       } else if (
         typeof value === "string" &&
-        /^(apikey|api_key|token|secret|password|credential)$/i.test(key)
+        /(?:api_?key|token|secret|password|credential|auth)/i.test(key)
       ) {
         obj[key] = "[REDACTED]";
       } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {

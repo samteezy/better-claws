@@ -47,6 +47,9 @@ interface TelegramApiResponse<T> {
   readonly error_code?: number;
 }
 
+/** Maximum inbound message length in characters. Messages exceeding this are truncated. */
+const MAX_MESSAGE_LENGTH = 32_768;
+
 // ── Adapter ──────────────────────────────────────────────────────────────────
 
 export interface TelegramAdapterOptions {
@@ -178,7 +181,10 @@ export class TelegramAdapter implements ChannelAdapter {
     if (!update.message?.text) return;
 
     const msg = update.message;
-    const text = msg.text as string;
+    const rawText = msg.text as string;
+    const text = rawText.length > MAX_MESSAGE_LENGTH
+      ? rawText.slice(0, MAX_MESSAGE_LENGTH)
+      : rawText;
     const senderId = msg.from
       ? String(msg.from.id)
       : "unknown";
