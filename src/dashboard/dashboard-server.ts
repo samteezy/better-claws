@@ -349,7 +349,8 @@ export class DashboardServer {
 
     // Prevent path traversal — resolve and verify the path stays within staticDir
     const fullPath = resolve(this.staticDir, filePath.slice(1));
-    if (!fullPath.startsWith(this.staticDir)) {
+    const safePrefix = this.staticDir.endsWith("/") ? this.staticDir : this.staticDir + "/";
+    if (fullPath !== this.staticDir && !fullPath.startsWith(safePrefix)) {
       this.sendJson(res, 403, { error: "Forbidden" });
       return;
     }
