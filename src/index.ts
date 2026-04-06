@@ -9,7 +9,9 @@ import { ToolRegistry } from "./tools/registry.js";
 import { CapabilityGate } from "./tools/capability-gate.js";
 import { ToolExecutor } from "./tools/executor.js";
 import { SessionManager } from "./sessions/session-manager.js";
-import { MessageRouter } from "./router/message-router.js";
+import { SessionCompactor } from "./sessions/compactor.js";
+import { MessageRouter, SYSTEM_PROMPT } from "./router/message-router.js";
+import { PromptBuilder } from "./prompt/prompt-builder.js";
 import { join } from "node:path";
 import { builtInTools } from "./tools/built-in/index.js";
 import { SecretManager } from "./secrets/secret-manager.js";
@@ -200,6 +202,14 @@ export async function createApp(config: BetterClawsConfig, options?: {
     logger,
   });
 
+  const compactionCfg = config.compaction;
+  const compactor = compactionCfg?.enabled
+    ? new SessionCompactor({ sessionManager, llmClient, compactionConfig: compactionCfg, logger })
+    : undefined;
+  const promptBuilder = compactionCfg?.enabled
+    ? new PromptBuilder({ systemPrompt: SYSTEM_PROMPT, tokenBudget: compactionCfg.tokenBudget })
+    : undefined;
+
   const router = new MessageRouter({
     sessionManager,
     llmClient,
@@ -209,6 +219,8 @@ export async function createApp(config: BetterClawsConfig, options?: {
     secretManager,
     logger,
     config,
+    compactor,
+    promptBuilder,
   });
 
   // ── Config-driven adapters ───────────────────────────────────────────────

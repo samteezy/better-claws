@@ -129,28 +129,46 @@ export class SessionManager {
     }
 
     const lines = content.trim().split("\n").filter(Boolean);
+
+    // Parse all entries, then find the last compaction point.
+    // Everything before (and including) the last compaction is replaced by its summary.
+    const parsed: SessionLogEntry[] = [];
+    for (const line of lines) {
+      try {
+        parsed.push(JSON.parse(line) as SessionLogEntry);
+      } catch {
+        // skip malformed lines
+      }
+    }
+
+    let lastCompactionIdx = -1;
+    let compactionSummary = "";
+    for (let i = 0; i < parsed.length; i++) {
+      const entry = parsed[i]!;
+      if (entry.type === "compaction") {
+        lastCompactionIdx = i;
+        compactionSummary = entry.summary;
+      }
+    }
+
     const messages: ChatMessage[] = [];
 
-    for (const line of lines) {
-      let entry: SessionLogEntry;
-      try {
-        entry = JSON.parse(line) as SessionLogEntry;
-      } catch {
-        continue; // skip malformed lines
-      }
+    if (lastCompactionIdx !== -1) {
+      messages.push({
+        role: "user",
+        content: `[Conversation summary: ${compactionSummary}]`,
+      });
+    }
 
+    const startIdx = lastCompactionIdx + 1;
+    for (let i = startIdx; i < parsed.length; i++) {
+      const entry = parsed[i]!;
       switch (entry.type) {
         case "inbound":
-          messages.push({
-            role: "user",
-            content: entry.message.text,
-          });
+          messages.push({ role: "user", content: entry.message.text });
           break;
         case "outbound":
-          messages.push({
-            role: "assistant",
-            content: entry.message.text,
-          });
+          messages.push({ role: "assistant", content: entry.message.text });
           break;
         case "toolResult":
           messages.push({
@@ -158,6 +176,11 @@ export class SessionManager {
             content: JSON.stringify(entry.result.output),
             tool_call_id: entry.toolName,
           });
+          break;
+        case "toolCall":
+        case "compaction":
+          // toolCall is captured inline in the messages array by the router;
+          // compaction entries are handled above via the summary scan.
           break;
       }
     }

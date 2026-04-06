@@ -11,11 +11,13 @@ import {
 import { validateSchema } from "../utils/schema-validator.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
+import type { SessionCompactor } from "../sessions/compactor.js";
 import type { LlmClient } from "../llm/llm-client.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { CapabilityGate } from "../tools/capability-gate.js";
 import type { ToolExecutor } from "../tools/executor.js";
 import type { SecretManager } from "../secrets/secret-manager.js";
+import type { PromptBuilder } from "../prompt/prompt-builder.js";
 
 export class RouterError extends BetterClawsError {
   constructor(message: string, code: string = "ROUTER_ERROR") {
@@ -26,7 +28,7 @@ export class RouterError extends BetterClawsError {
 
 const MAX_TOOL_ITERATIONS = 10;
 
-const SYSTEM_PROMPT = `You are betterClaws, a personal AI assistant. You can use tools when they are available. Be helpful, concise, and accurate. If you are unsure about something, say so.`;
+export const SYSTEM_PROMPT = `You are betterClaws, a personal AI assistant. You can use tools when they are available. Be helpful, concise, and accurate. If you are unsure about something, say so.`;
 
 export interface MessageRouterOptions {
   readonly sessionManager: SessionManager;
@@ -37,6 +39,8 @@ export interface MessageRouterOptions {
   readonly secretManager: SecretManager;
   readonly logger: StructuredLogger;
   readonly config: BetterClawsConfig;
+  readonly compactor?: SessionCompactor;
+  readonly promptBuilder?: PromptBuilder;
 }
 
 export class MessageRouter {
@@ -48,6 +52,8 @@ export class MessageRouter {
   private readonly secretManager: SecretManager;
   private readonly logger: StructuredLogger;
   private readonly config: BetterClawsConfig;
+  private readonly compactor: SessionCompactor | undefined;
+  private readonly promptBuilder: PromptBuilder | undefined;
   private readonly adapters = new Map<string, ChannelAdapter>();
 
   constructor(options: MessageRouterOptions) {
@@ -59,6 +65,8 @@ export class MessageRouter {
     this.secretManager = options.secretManager;
     this.logger = options.logger;
     this.config = options.config;
+    this.compactor = options.compactor;
+    this.promptBuilder = options.promptBuilder;
   }
 
   registerAdapter(adapter: ChannelAdapter): void {
@@ -108,7 +116,71 @@ export class MessageRouter {
         message,
       });
 
-      const history = await this.sessionManager.getHistory(session.id);
+      // Command parsing
+      const cmd = message.text.trim();
+
+      if (cmd === "/new" || cmd === "/reset") {
+        await this.sessionManager.close(session.id);
+        return {
+          channelId: message.channelId,
+          text: "Session cleared. Starting fresh.",
+        };
+      }
+
+      if (cmd === "/compact") {
+        if (!this.compactor) {
+          return {
+            channelId: message.channelId,
+            text: "Compaction is not configured.",
+          };
+        }
+        const result = await this.compactor.compact(session.id);
+        if (result.compressedTurnCount === 0) {
+          const reply: OutboundMessage = {
+            channelId: message.channelId,
+            text: "Nothing to compact yet.",
+          };
+          await this.sessionManager.appendToLog(session.id, { type: "outbound", message: reply });
+          return reply;
+        }
+        const reply: OutboundMessage = {
+          channelId: message.channelId,
+          text: `Compaction complete. Summarised ${result.compressedTurnCount} turns (${result.summaryLength} chars).`,
+        };
+        await this.sessionManager.appendToLog(session.id, { type: "outbound", message: reply });
+        return reply;
+      }
+
+      let history = await this.sessionManager.getHistory(session.id);
+
+      // Auto-compaction: if token usage is approaching the budget, compact first
+      if (
+        this.compactor &&
+        this.promptBuilder &&
+        this.config.compaction?.enabled
+      ) {
+        const compCfg = this.config.compaction;
+        const { estimatedTokens } = this.promptBuilder.build({
+          history,
+          tools: this.toolRegistry.getDescriptors(),
+        });
+        if (estimatedTokens > compCfg.tokenBudget - compCfg.reserveTokens) {
+          try {
+            await this.compactor.compact(session.id);
+            history = await this.sessionManager.getHistory(session.id);
+          } catch (err) {
+            this.logger.log({
+              sessionId: session.id,
+              eventType: "session:compaction",
+              component: "router",
+              payload: {
+                success: false,
+                error: err instanceof Error ? err.message : String(err),
+              },
+            });
+          }
+        }
+      }
 
       const messages: ChatMessage[] = [
         { role: "system", content: SYSTEM_PROMPT },

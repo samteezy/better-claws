@@ -24,6 +24,8 @@ import type { ToolExecutor } from "../../src/tools/executor.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { SecretManager } from "../../src/secrets/secret-manager.js";
 import type { BetterClawsConfig } from "../../src/types.js";
+import type { SessionCompactor } from "../../src/sessions/compactor.js";
+import type { PromptBuilder } from "../../src/prompt/prompt-builder.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -70,6 +72,7 @@ function createMockSessionManager() {
     },
     async getHistory() { return [] as ChatMessage[]; },
     getGrants() { return new Map<string, GrantScope>(); },
+    async close() {},
   } as unknown as SessionManager & { appendedEntries: unknown[] };
 }
 
@@ -77,6 +80,7 @@ function createMockLlmClient() {
   const responses: LlmResponse[] = [];
   let callCount = 0;
   const capturedMessages: ChatMessage[][] = [];
+  const capturedOptions: Array<Record<string, unknown>> = [];
 
   const defaultResponse: LlmResponse = {
     message: { role: "assistant", content: "Default response" },
@@ -87,15 +91,18 @@ function createMockLlmClient() {
   return {
     get callCount() { return callCount; },
     get capturedMessages() { return capturedMessages; },
+    get capturedOptions() { return capturedOptions; },
     pushResponse(r: LlmResponse) { responses.push(r); },
-    async chat(messages: readonly ChatMessage[]) {
+    async chat(messages: readonly ChatMessage[], _tools?: unknown, options?: Record<string, unknown>) {
       callCount++;
       capturedMessages.push([...messages]);
+      if (options) capturedOptions.push(options);
       return responses.shift() ?? defaultResponse;
     },
   } as unknown as LlmClient & {
     callCount: number;
     capturedMessages: ChatMessage[][];
+    capturedOptions: Array<Record<string, unknown>>;
     pushResponse(r: LlmResponse): void;
   };
 }
@@ -153,6 +160,26 @@ function makeToolCall(name: string, args: string = "{}"): ToolCall {
   return { id: "call-1", type: "function", function: { name, arguments: args } };
 }
 
+function createMockCompactor() {
+  return {
+    async compact(_sessionId: string) {
+      return { compressedTurnCount: 2, summaryLength: 50 };
+    },
+  } as unknown as SessionCompactor;
+}
+
+function createMockPromptBuilder() {
+  let estimatedTokens = 100;
+  return {
+    build(_input: Record<string, unknown>) {
+      return { estimatedTokens };
+    },
+    setEstimatedTokens(tokens: number) {
+      estimatedTokens = tokens;
+    },
+  } as unknown as PromptBuilder & { setEstimatedTokens(tokens: number): void };
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("MessageRouter", () => {
@@ -173,6 +200,8 @@ describe("MessageRouter", () => {
     toolRegistry?: ReturnType<typeof createMockToolRegistry>;
     capabilityGate?: ReturnType<typeof createMockCapabilityGate>;
     executor?: ReturnType<typeof createMockExecutor>;
+    compactor?: ReturnType<typeof createMockCompactor>;
+    promptBuilder?: ReturnType<typeof createMockPromptBuilder>;
   }) {
     const logger = overrides?.logger ?? createMockLogger();
     const sessionManager = overrides?.sessionManager ?? createMockSessionManager();
@@ -180,6 +209,8 @@ describe("MessageRouter", () => {
     const toolRegistry = overrides?.toolRegistry ?? createMockToolRegistry();
     const capabilityGate = overrides?.capabilityGate ?? createMockCapabilityGate();
     const executor = overrides?.executor ?? createMockExecutor();
+    const compactor = overrides?.compactor;
+    const promptBuilder = overrides?.promptBuilder;
 
     const router = new MessageRouter({
       sessionManager: sessionManager as unknown as SessionManager,
@@ -190,9 +221,11 @@ describe("MessageRouter", () => {
       secretManager: createMockSecretManager(),
       logger: logger as unknown as StructuredLogger,
       config: TEST_CONFIG,
+      compactor: compactor as unknown as SessionCompactor,
+      promptBuilder: promptBuilder as unknown as PromptBuilder,
     });
 
-    return { router, logger, sessionManager, llmClient, toolRegistry, capabilityGate, executor };
+    return { router, logger, sessionManager, llmClient, toolRegistry, capabilityGate, executor, compactor, promptBuilder };
   }
 
   describe("handleMessage() — text response", () => {
@@ -436,6 +469,330 @@ describe("MessageRouter", () => {
              ((l as Record<string, unknown>)["payload"] as Record<string, unknown>)["tool"] === "logged-tool",
       );
       assert.ok(toolInvokeLog, "should log tool:invoke event");
+    });
+  });
+
+  describe("command handling", () => {
+    it("/new closes session and returns success message", async () => {
+      const sessionManager = createMockSessionManager();
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+      const response = await router.handleMessage(makeInbound("/new"));
+
+      assert.equal(response.text, "Session cleared. Starting fresh.");
+      assert.ok(sessionManager.appendedEntries.some(
+        (e) => (e as Record<string, unknown>).type === "inbound"
+      ), "should append inbound message before command check");
+    });
+
+    it("/reset closes session and returns success message", async () => {
+      const sessionManager = createMockSessionManager();
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+      const response = await router.handleMessage(makeInbound("/reset"));
+
+      assert.equal(response.text, "Session cleared. Starting fresh.");
+    });
+
+    it("/compact returns error when compactor not provided", async () => {
+      const llmClient = createMockLlmClient();
+      const { router } = createRouter({ llmClient, compactor: undefined });
+
+      const response = await router.handleMessage(makeInbound("/compact"));
+
+      assert.equal(response.text, "Compaction is not configured.");
+    });
+
+    it("/compact returns 'nothing to compact' when compressor returns zero", async () => {
+      const sessionManager = createMockSessionManager();
+      const llmClient = createMockLlmClient();
+      const compactor = createMockCompactor();
+      (compactor as unknown as Record<string, unknown>).compact = async () => ({
+        compressedTurnCount: 0,
+        summaryLength: 0,
+      });
+
+      const { router } = createRouter({ sessionManager, llmClient, compactor });
+      const response = await router.handleMessage(makeInbound("/compact"));
+
+      assert.equal(response.text, "Nothing to compact yet.");
+      assert.ok(sessionManager.appendedEntries.some(
+        (e) => (e as Record<string, unknown>).type === "outbound"
+      ), "should append reply to log");
+    });
+
+    it("/compact returns status message with turn count", async () => {
+      const sessionManager = createMockSessionManager();
+      const llmClient = createMockLlmClient();
+      const compactor = createMockCompactor();
+
+      const { router } = createRouter({ sessionManager, llmClient, compactor });
+      const response = await router.handleMessage(makeInbound("/compact"));
+
+      assert.ok(response.text.includes("Compaction complete"));
+      assert.ok(response.text.includes("Summarised 2 turns"));
+      assert.ok(response.text.includes("50 chars"));
+    });
+
+    it("/compact appends reply to session log on success", async () => {
+      const sessionManager = createMockSessionManager();
+      const llmClient = createMockLlmClient();
+      const compactor = createMockCompactor();
+
+      const { router } = createRouter({ sessionManager, llmClient, compactor });
+      await router.handleMessage(makeInbound("/compact"));
+
+      const outboundEntries = sessionManager.appendedEntries.filter(
+        (e) => (e as Record<string, unknown>).type === "outbound"
+      );
+      assert.ok(outboundEntries.length > 0, "should append outbound reply");
+    });
+  });
+
+  describe("auto-compaction", () => {
+    it("does not trigger when compaction not configured", async () => {
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Response" },
+        usage: { promptTokens: 10, completionTokens: 5 },
+        raw: {},
+      });
+
+      const configWithoutCompaction: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        compaction: undefined,
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: createMockToolRegistry() as unknown as ToolRegistry,
+        capabilityGate: createMockCapabilityGate() as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithoutCompaction,
+      });
+
+      await router.handleMessage(makeInbound("Test"));
+
+      // LLM should be called once (no auto-compaction)
+      assert.equal(llmClient.callCount, 1);
+    });
+
+    it("does not trigger when config.compaction.enabled is false", async () => {
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Response" },
+        usage: { promptTokens: 10, completionTokens: 5 },
+        raw: {},
+      });
+
+      const configDisabled: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        compaction: {
+          enabled: false,
+          tokenBudget: 1024,
+          reserveTokens: 512,
+          keepRecentTokens: 100,
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: createMockToolRegistry() as unknown as ToolRegistry,
+        capabilityGate: createMockCapabilityGate() as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configDisabled,
+      });
+
+      await router.handleMessage(makeInbound("Test"));
+
+      assert.equal(llmClient.callCount, 1);
+    });
+
+    it("does not trigger when estimatedTokens <= tokenBudget - reserveTokens", async () => {
+      const promptBuilder = createMockPromptBuilder();
+      promptBuilder.setEstimatedTokens(256); // Well under 1024 - 512 = 512
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Response" },
+        usage: { promptTokens: 10, completionTokens: 5 },
+        raw: {},
+      });
+
+      const compactor = createMockCompactor();
+      (compactor as unknown as Record<string, unknown>).compactCalled = false;
+      (compactor as unknown as Record<string, unknown>).compact = async () => {
+        (compactor as unknown as Record<string, unknown>).compactCalled = true;
+        return { compressedTurnCount: 0, summaryLength: 0 };
+      };
+
+      const { router } = createRouter({
+        llmClient,
+        compactor,
+        promptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Test"));
+
+      assert.equal((compactor as unknown as Record<string, unknown>).compactCalled, false);
+    });
+
+    it("triggers compaction when estimatedTokens > tokenBudget - reserveTokens", async () => {
+      const promptBuilder = createMockPromptBuilder();
+      promptBuilder.setEstimatedTokens(800); // Exceeds 1024 - 512 = 512
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Response" },
+        usage: { promptTokens: 10, completionTokens: 5 },
+        raw: {},
+      });
+
+      const compactor = createMockCompactor();
+      let compactCalled = false;
+      (compactor as unknown as Record<string, unknown>).compact = async () => {
+        compactCalled = true;
+        return { compressedTurnCount: 3, summaryLength: 100 };
+      };
+
+      const configWithCompaction: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        compaction: {
+          enabled: true,
+          tokenBudget: 1024,
+          reserveTokens: 512,
+          keepRecentTokens: 100,
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: createMockToolRegistry() as unknown as ToolRegistry,
+        capabilityGate: createMockCapabilityGate() as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithCompaction,
+        compactor: compactor as unknown as SessionCompactor,
+        promptBuilder: promptBuilder as unknown as PromptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Test"));
+
+      assert.equal(compactCalled, true);
+    });
+
+    it("re-fetches history after auto-compaction", async () => {
+      const sessionManager = createMockSessionManager();
+      const originalGetHistory = sessionManager.getHistory;
+      let getHistoryCalls = 0;
+
+      (sessionManager as unknown as Record<string, unknown>).getHistory = async (sessionId: string) => {
+        getHistoryCalls++;
+        return originalGetHistory(sessionId);
+      };
+
+      const promptBuilder = createMockPromptBuilder();
+      promptBuilder.setEstimatedTokens(800);
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Response" },
+        usage: { promptTokens: 10, completionTokens: 5 },
+        raw: {},
+      });
+
+      const compactor = createMockCompactor();
+
+      const configWithCompaction: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        compaction: {
+          enabled: true,
+          tokenBudget: 1024,
+          reserveTokens: 512,
+          keepRecentTokens: 100,
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: sessionManager as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: createMockToolRegistry() as unknown as ToolRegistry,
+        capabilityGate: createMockCapabilityGate() as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithCompaction,
+        compactor: compactor as unknown as SessionCompactor,
+        promptBuilder: promptBuilder as unknown as PromptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Test"));
+
+      // getHistory should be called twice: once for auto-compaction check, once after compact
+      assert.ok(getHistoryCalls >= 2, `getHistory called ${getHistoryCalls} times`);
+    });
+
+    it("swallows compaction errors and continues with LLM response", async () => {
+      const promptBuilder = createMockPromptBuilder();
+      promptBuilder.setEstimatedTokens(800);
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Response after failed compact" },
+        usage: { promptTokens: 10, completionTokens: 5 },
+        raw: {},
+      });
+
+      const compactor = createMockCompactor();
+      (compactor as unknown as Record<string, unknown>).compact = async () => {
+        throw new Error("Compaction failed");
+      };
+
+      const logger = createMockLogger();
+      const configWithCompaction: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        compaction: {
+          enabled: true,
+          tokenBudget: 1024,
+          reserveTokens: 512,
+          keepRecentTokens: 100,
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: createMockToolRegistry() as unknown as ToolRegistry,
+        capabilityGate: createMockCapabilityGate() as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: logger as unknown as StructuredLogger,
+        config: configWithCompaction,
+        compactor: compactor as unknown as SessionCompactor,
+        promptBuilder: promptBuilder as unknown as PromptBuilder,
+      });
+
+      const response = await router.handleMessage(makeInbound("Test"));
+
+      // Should still return the LLM response despite compaction error
+      assert.equal(response.text, "Response after failed compact");
+
+      // Error should be logged
+      const errorLog = logger.logs.find(
+        (l) => (l as Record<string, unknown>).eventType === "session:compaction" &&
+               ((l as Record<string, unknown>).payload as Record<string, unknown>).success === false
+      );
+      assert.ok(errorLog, "should log compaction error");
     });
   });
 });

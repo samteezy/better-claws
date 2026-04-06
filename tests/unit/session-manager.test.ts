@@ -533,4 +533,210 @@ describe("SessionManager", () => {
       assert.equal(retrieved, undefined);
     });
   });
+
+  describe("getHistory() — compaction entries", () => {
+    it("prepends synthetic user summary message when compaction entry is present", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const compactionEntry = {
+        type: "compaction" as const,
+        summary: "User asked about Python, assistant explained loops",
+        compressedTurnCount: 4,
+        createdAt: Date.now(),
+      };
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "What about recursion?",
+          timestamp: Date.now(),
+        },
+      };
+
+      const { appendFile } = await import("node:fs/promises");
+      await appendFile(session.logPath, JSON.stringify(compactionEntry) + "\n", "utf-8");
+      await sessionManager.appendToLog(session.id, inboundEntry);
+
+      const history = await sessionManager.getHistory(session.id);
+
+      assert.ok(history.length >= 2, "should have compaction summary + inbound message");
+      assert.equal(history[0]?.role, "user");
+      assert.ok(
+        history[0]?.content.includes("[Conversation summary:"),
+        "first message should be summary",
+      );
+      assert.ok(
+        history[0]?.content.includes("User asked about Python"),
+        "summary should contain original text",
+      );
+      assert.equal(history[1]?.content, "What about recursion?");
+    });
+
+    it("uses only the last compaction entry when multiple compaction entries exist", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const { appendFile } = await import("node:fs/promises");
+      await appendFile(
+        session.logPath,
+        JSON.stringify({
+          type: "compaction",
+          summary: "First summary",
+          compressedTurnCount: 2,
+          createdAt: Date.now(),
+        }) + "\n",
+        "utf-8",
+      );
+
+      await appendFile(
+        session.logPath,
+        JSON.stringify({
+          type: "compaction",
+          summary: "Second summary",
+          compressedTurnCount: 3,
+          createdAt: Date.now() + 1000,
+        }) + "\n",
+        "utf-8",
+      );
+
+      const history = await sessionManager.getHistory(session.id);
+
+      assert.equal(history.length, 1, "should have one summary message");
+      assert.ok(history[0]?.content.includes("Second summary"));
+    });
+
+    it("formats summary message as [Conversation summary: <text>]", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const summaryText = "Important facts from conversation";
+      const compactionEntry = {
+        type: "compaction" as const,
+        summary: summaryText,
+        compressedTurnCount: 5,
+        createdAt: Date.now(),
+      };
+
+      const { appendFile } = await import("node:fs/promises");
+      await appendFile(session.logPath, JSON.stringify(compactionEntry) + "\n", "utf-8");
+
+      const history = await sessionManager.getHistory(session.id);
+
+      assert.ok(history.length >= 1);
+      assert.equal(
+        history[0]?.content,
+        `[Conversation summary: ${summaryText}]`,
+        "format should match exactly",
+      );
+    });
+
+    it("includes post-compaction messages after summary", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const { appendFile } = await import("node:fs/promises");
+      await appendFile(
+        session.logPath,
+        JSON.stringify({
+          type: "compaction",
+          summary: "Summarised history",
+          compressedTurnCount: 4,
+          createdAt: Date.now(),
+        }) + "\n",
+        "utf-8",
+      );
+
+      const userMsg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "User message",
+          timestamp: Date.now(),
+        },
+      };
+
+      const assistantMsg: SessionLogEntry = {
+        type: "outbound",
+        message: {
+          channelId: "chat-123",
+          text: "Assistant message",
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, userMsg);
+      await sessionManager.appendToLog(session.id, assistantMsg);
+
+      const history = await sessionManager.getHistory(session.id);
+
+      assert.equal(history.length, 3);
+      assert.ok(history[0]?.content.includes("[Conversation summary:"));
+      assert.equal(history[1]?.role, "user");
+      assert.equal(history[1]?.content, "User message");
+      assert.equal(history[2]?.role, "assistant");
+      assert.equal(history[2]?.content, "Assistant message");
+    });
+
+    it("returns only summary message when log has only compaction entry with no post-compaction messages", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const { appendFile } = await import("node:fs/promises");
+      await appendFile(
+        session.logPath,
+        JSON.stringify({
+          type: "compaction",
+          summary: "Entire conversation summary",
+          compressedTurnCount: 10,
+          createdAt: Date.now(),
+        }) + "\n",
+        "utf-8",
+      );
+
+      const history = await sessionManager.getHistory(session.id);
+
+      assert.equal(history.length, 1);
+      assert.ok(history[0]?.content.includes("[Conversation summary:"));
+      assert.ok(history[0]?.content.includes("Entire conversation summary"));
+    });
+
+    it("returns messages as before when log has no compaction entries", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const userEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "User message",
+          timestamp: Date.now(),
+        },
+      };
+
+      const assistantEntry: SessionLogEntry = {
+        type: "outbound",
+        message: {
+          channelId: "chat-123",
+          text: "Assistant message",
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, userEntry);
+      await sessionManager.appendToLog(session.id, assistantEntry);
+
+      const history = await sessionManager.getHistory(session.id);
+
+      assert.equal(history.length, 2);
+      assert.equal(history[0]?.role, "user");
+      assert.equal(history[0]?.content, "User message");
+      assert.equal(history[1]?.role, "assistant");
+      assert.equal(history[1]?.content, "Assistant message");
+      // Should not have synthetic summary message
+      assert.ok(!history.some((m) => m.content.includes("[Conversation summary:")));
+    });
+  });
 });

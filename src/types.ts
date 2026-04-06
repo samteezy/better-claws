@@ -161,6 +161,7 @@ export const EVENT_TYPES = [
   "memory:curation",
   "session:create",
   "session:idle",
+  "session:compaction",
   "config:change",
   "secret:access",
   "secret:register",
@@ -271,6 +272,18 @@ export interface ToolsConfig {
 }
 
 
+export interface CompactionConfig {
+  readonly enabled: boolean;
+  /** Total context budget to measure against. Should match llm.maxTokens or less. */
+  readonly tokenBudget: number;
+  /** Tokens of headroom to reserve before triggering auto-compaction. Default: 512. */
+  readonly reserveTokens: number;
+  /** Tokens of recent history to preserve during compaction. Default: 1000. */
+  readonly keepRecentTokens: number;
+  /** Optional model override used only for summarisation calls. */
+  readonly weakModel?: string;
+}
+
 export interface BetterClawsConfig {
   readonly gateway: GatewayConfig;
   readonly llm: LlmConfig;
@@ -281,6 +294,7 @@ export interface BetterClawsConfig {
   readonly dashboard?: DashboardConfig;
   readonly secrets?: Readonly<Record<string, string>>;
   readonly tools?: ToolsConfig;
+  readonly compaction?: CompactionConfig;
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────
@@ -316,4 +330,10 @@ export type SessionLogEntry =
   | { readonly type: "inbound"; readonly message: InboundMessage }
   | { readonly type: "outbound"; readonly message: OutboundMessage }
   | { readonly type: "toolCall"; readonly toolCall: ToolCall }
-  | { readonly type: "toolResult"; readonly toolName: string; readonly result: ToolResult };
+  | { readonly type: "toolResult"; readonly toolName: string; readonly result: ToolResult }
+  | {
+      readonly type: "compaction";
+      readonly summary: string;
+      readonly compressedTurnCount: number;
+      readonly createdAt: number;
+    };

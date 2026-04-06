@@ -96,14 +96,16 @@ export class LlmClient {
   async chat(
     messages: readonly ChatMessage[],
     tools?: readonly ToolDescriptor[],
+    options?: { readonly model?: string },
   ): Promise<LlmResponse> {
-    const body = this.buildRequestBody(messages, tools, false);
+    const effectiveModel = options?.model ?? this.model;
+    const body = this.buildRequestBody(messages, tools, false, effectiveModel);
 
     this.logger.log({
       sessionId: null,
       eventType: "llm:request",
       component: "llm",
-      payload: { model: this.model, messageCount: messages.length },
+      payload: { model: effectiveModel, messageCount: messages.length },
     });
 
     const response = await this.fetchWithRetry(
@@ -144,6 +146,7 @@ export class LlmClient {
       eventType: "llm:response",
       component: "llm",
       payload: {
+        model: effectiveModel,
         role: message.role,
         contentLength: message.content.length,
         toolCalls: message.tool_calls?.length ?? 0,
@@ -158,15 +161,17 @@ export class LlmClient {
   async *chatStream(
     messages: readonly ChatMessage[],
     tools?: readonly ToolDescriptor[],
+    options?: { readonly model?: string },
   ): AsyncGenerator<LlmStreamChunk> {
-    const body = this.buildRequestBody(messages, tools, true);
+    const effectiveModel = options?.model ?? this.model;
+    const body = this.buildRequestBody(messages, tools, true, effectiveModel);
 
     this.logger.log({
       sessionId: null,
       eventType: "llm:request",
       component: "llm",
       payload: {
-        model: this.model,
+        model: effectiveModel,
         messageCount: messages.length,
         stream: true,
       },
@@ -192,9 +197,10 @@ export class LlmClient {
     messages: readonly ChatMessage[],
     tools: readonly ToolDescriptor[] | undefined,
     stream: boolean,
+    modelOverride?: string,
   ): Record<string, unknown> {
     const body: Record<string, unknown> = {
-      model: this.model,
+      model: modelOverride ?? this.model,
       messages: messages.map((m) => {
         const msg: Record<string, unknown> = {
           role: m.role,

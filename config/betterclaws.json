@@ -40,5 +40,12 @@
     "host": "127.0.0.1",
     "port": 18701,
     "authToken": "env:BC_DASHBOARD_TOKEN"
+  },
+  "compaction": {
+    "enabled": false,
+    "tokenBudget": 3584,
+    "reserveTokens": 512,
+    "keepRecentTokens": 1000,
+    "weakModel": "qwen3:1.5b"
   }
 }
