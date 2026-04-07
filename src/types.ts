@@ -161,6 +161,8 @@ export const EVENT_TYPES = [
   "memory:curation",
   "session:create",
   "session:idle",
+  "session:close",
+  "session:recover",
   "session:compaction",
   "config:change",
   "secret:access",

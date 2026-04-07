@@ -215,6 +215,16 @@ export async function createApp(config: BetterClawsConfig, options?: {
     logger,
   });
 
+  const recoveredCount = await sessionManager.recover();
+  if (recoveredCount > 0) {
+    logger.log({
+      sessionId: null,
+      eventType: "session:recover",
+      component: "session",
+      payload: { action: "startup_recovery", count: recoveredCount },
+    });
+  }
+
   const compactionCfg = config.compaction;
   const compactor = compactionCfg?.enabled
     ? new SessionCompactor({ sessionManager, llmClient, weakLlmClient: weakLlmClient ?? undefined, compactionConfig: compactionCfg, logger })

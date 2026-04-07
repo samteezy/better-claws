@@ -481,9 +481,9 @@ describe("MessageRouter", () => {
       const response = await router.handleMessage(makeInbound("/new"));
 
       assert.equal(response.text, "Session cleared. Starting fresh.");
-      assert.ok(sessionManager.appendedEntries.some(
+      assert.ok(!sessionManager.appendedEntries.some(
         (e) => (e as Record<string, unknown>).type === "inbound"
-      ), "should append inbound message before command check");
+      ), "should not append inbound message for /new command");
     });
 
     it("/reset closes session and returns success message", async () => {

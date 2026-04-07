@@ -477,14 +477,14 @@ describe("SessionManager", () => {
       assert.equal(retrieved, undefined, "session should be removed");
     });
 
-    it("logs session:idle event", async () => {
+    it("logs session:close event", async () => {
       const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
 
       await sessionManager.close(session.id);
 
-      const idleLog = logger.logs.find((l) => l.eventType === "session:idle");
-      assert.ok(idleLog, "should log session:idle event");
-      assert.equal(idleLog.sessionId, session.id);
+      const closeLog = logger.logs.find((l) => l.eventType === "session:close");
+      assert.ok(closeLog, "should log session:close event");
+      assert.equal(closeLog.sessionId, session.id);
     });
 
     it("is idempotent (closing again does not error)", async () => {
@@ -494,6 +494,556 @@ describe("SessionManager", () => {
       await sessionManager.close(session.id); // Should not error
 
       assert.ok(true, "should not throw error on double close");
+    });
+
+    it("archives the session log file with timestamp suffix", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+      const originalLogPath = session.logPath;
+
+      const { existsSync } = await import("node:fs");
+      const { readdir } = await import("node:fs/promises");
+
+      // Before close, original file should exist
+      assert.ok(existsSync(originalLogPath), "original log file should exist before close");
+
+      await sessionManager.close(session.id);
+
+      // After close, original file should not exist
+      assert.ok(!existsSync(originalLogPath), "original log file should not exist after close");
+
+      // An archived file should exist matching pattern {id}.{timestamp}.jsonl
+      const files = await readdir(sessionManager["sessionsDirectory"]);
+      const archivePattern = new RegExp(`^${session.id}\\.\\d+\\.jsonl$`);
+      const archiveFiles = files.filter((f) => archivePattern.test(f));
+
+      assert.equal(archiveFiles.length, 1, "should have exactly one archived file");
+      assert.ok(archiveFiles[0]?.includes(session.id), "archived filename should contain session id");
+    });
+
+    it("does not throw when closing session with no log file", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      // Don't write any entries, so no log file exists
+      await sessionManager.close(session.id);
+
+      assert.ok(true, "should not throw error when log file does not exist");
+    });
+
+    it("logs archivePath in payload", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Test",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+      await sessionManager.close(session.id);
+
+      const closeLog = logger.logs.find((l) => l.eventType === "session:close");
+      assert.ok(closeLog, "should have close log entry");
+      assert.ok(
+        typeof closeLog.payload.archivePath === "string",
+        "payload should contain archivePath string",
+      );
+      assert.ok(
+        closeLog.payload.archivePath.includes(session.id),
+        "archivePath should contain session id",
+      );
+    });
+  });
+
+  describe("recover()", () => {
+    it("recovers session from valid .jsonl file with inbound entry", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+
+      // Create a fresh SessionManager pointing to the same directory
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      const count = await recoveredManager.recover();
+
+      assert.equal(count, 1, "should recover 1 session");
+      const recovered = recoveredManager.get(session.id);
+      assert.ok(recovered, "recovered session should exist");
+      assert.equal(recovered.state.adapterId, "telegram");
+      assert.equal(recovered.state.channelId, "chat-123");
+      assert.equal(recovered.state.senderId, "user-456");
+    });
+
+    it("extracted session has correct createdAt from first message timestamp", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const firstTimestamp = Date.now() - 5000;
+      const inboundEntry1: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "First message",
+          timestamp: firstTimestamp,
+        },
+      };
+
+      const inboundEntry2: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-2",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Second message",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry1);
+      await sessionManager.appendToLog(session.id, inboundEntry2);
+
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      await recoveredManager.recover();
+      const recovered = recoveredManager.get(session.id);
+
+      assert.ok(recovered, "should have recovered session");
+      assert.equal(recovered.state.createdAt, firstTimestamp, "createdAt should match first timestamp");
+    });
+
+    it("extracted session has correct lastActivityAt from latest message timestamp", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const baseTime = 1700000000000;
+      const firstTimestamp = baseTime;
+      const lastTimestamp = baseTime + 5000;
+
+      const inboundEntry1: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "First message",
+          timestamp: firstTimestamp,
+        },
+      };
+
+      const inboundEntry2: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-2",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Second message with latest timestamp",
+          timestamp: lastTimestamp,
+        },
+      };
+
+      // Manually write entries to simulate recovery scenario
+      const { appendFile } = await import("node:fs/promises");
+      await appendFile(session.logPath, JSON.stringify(inboundEntry1) + "\n", "utf-8");
+      await appendFile(session.logPath, JSON.stringify(inboundEntry2) + "\n", "utf-8");
+
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      await recoveredManager.recover();
+      const recovered = recoveredManager.get(session.id);
+
+      assert.ok(recovered, "should have recovered session");
+      // Verify that both timestamps come from the file (they should be the old baseTime values)
+      assert.equal(recovered.state.createdAt, firstTimestamp, "createdAt should match first timestamp");
+      assert.equal(recovered.state.lastActivityAt, lastTimestamp, "lastActivityAt should match last timestamp");
+    });
+
+    it("skips archived files matching {id}.{timestamp}.jsonl pattern", async () => {
+      const session1 = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+      const session2 = await sessionManager.getOrCreate("discord", "chat-456", "user-789");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session1.id, inboundEntry);
+      await sessionManager.close(session1.id); // Archives the file
+
+      const inboundEntry2: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-2",
+          adapterId: "discord",
+          channelId: "chat-456",
+          senderId: "user-789",
+          text: "Hi",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session2.id, inboundEntry2);
+
+      // Create a fresh manager to test recovery
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      const count = await recoveredManager.recover();
+
+      // Should only recover session2, not the archived session1
+      assert.equal(count, 1, "should only recover non-archived sessions");
+      assert.ok(recoveredManager.get(session2.id), "should recover session2");
+      assert.ok(!recoveredManager.get(session1.id), "should not recover archived session1");
+    });
+
+    it("skips files with no inbound entries", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const { appendFile } = await import("node:fs/promises");
+      // Manually append only an outbound entry (no inbound)
+      const outboundEntry = JSON.stringify({
+        type: "outbound",
+        message: {
+          channelId: "chat-123",
+          text: "Response without prior inbound",
+        },
+      });
+      await appendFile(session.logPath, outboundEntry + "\n", "utf-8");
+
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      const count = await recoveredManager.recover();
+
+      assert.equal(count, 0, "should not recover session without inbound entry");
+    });
+
+    it("logs session:recover with success:false for files without inbound entries", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const { appendFile } = await import("node:fs/promises");
+      const outboundEntry = JSON.stringify({
+        type: "outbound",
+        message: {
+          channelId: "chat-123",
+          text: "Response",
+        },
+      });
+      await appendFile(session.logPath, outboundEntry + "\n", "utf-8");
+
+      const mockLoggerForRecovery = new MockLogger();
+      const recoveredManagerWithMockLogger2 = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: mockLoggerForRecovery as unknown as StructuredLogger,
+      });
+
+      await recoveredManagerWithMockLogger2.recover();
+
+      const failLog = mockLoggerForRecovery.logs.find(
+        (l) => l.eventType === "session:recover" && l.sessionId === session.id,
+      );
+
+      assert.ok(failLog, "should log session:recover event");
+      assert.equal(failLog.payload.success, false, "should have success:false");
+      assert.equal(failLog.payload.reason, "no_inbound_entry");
+    });
+
+    it("skips files that contain only malformed JSON lines", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(session.logPath, "not valid json\ninvalid{line}\n", "utf-8");
+
+      const malformedRecoveryManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      const count = await malformedRecoveryManager.recover();
+
+      assert.equal(count, 0, "should not recover session with only malformed lines");
+    });
+
+    it("skips empty files", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(session.logPath, "", "utf-8");
+
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      const count = await recoveredManager.recover();
+
+      assert.equal(count, 0, "should not recover empty file");
+    });
+
+    it("returns 0 when sessions directory is empty", async () => {
+      const emptyManager = new SessionManager({
+        sessionsDirectory: join(tempDir, "empty-sessions"),
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      const count = await emptyManager.recover();
+
+      assert.equal(count, 0, "should return 0 for empty directory");
+    });
+
+    it("returns 0 when sessions directory does not exist", async () => {
+      const nonexistentManager = new SessionManager({
+        sessionsDirectory: join(tempDir, "nonexistent"),
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      const count = await nonexistentManager.recover();
+
+      assert.equal(count, 0, "should return 0 for nonexistent directory");
+    });
+
+    it("does not overwrite sessions already in memory", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+
+      // The session is already in sessionManager
+      const originalState = session.state;
+
+      await sessionManager.recover();
+
+      // Session should still be the same object with original state
+      assert.strictEqual(sessionManager.get(session.id), session, "session object should not be replaced");
+      assert.strictEqual(sessionManager.get(session.id)?.state, originalState, "state should not be replaced");
+    });
+
+    it("allows list() to include recovered sessions", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      await recoveredManager.recover();
+      const list = recoveredManager.list();
+
+      assert.equal(list.length, 1, "list should contain recovered session");
+      assert.equal(list[0]?.id, session.id);
+    });
+
+    it("allows getHistory() to work for recovered sessions", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello from user",
+          timestamp: Date.now(),
+        },
+      };
+
+      const outboundEntry: SessionLogEntry = {
+        type: "outbound",
+        message: {
+          channelId: "chat-123",
+          text: "Hello from assistant",
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+      await sessionManager.appendToLog(session.id, outboundEntry);
+
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      await recoveredManager.recover();
+      const history = await recoveredManager.getHistory(session.id);
+
+      assert.equal(history.length, 2, "should have 2 messages");
+      assert.equal(history[0]?.role, "user");
+      assert.equal(history[0]?.content, "Hello from user");
+      assert.equal(history[1]?.role, "assistant");
+      assert.equal(history[1]?.content, "Hello from assistant");
+    });
+
+    it("logs session:recover with success:true for each recovered session", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+
+      const mockLoggerForRecovery = new MockLogger();
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: mockLoggerForRecovery as unknown as StructuredLogger,
+      });
+
+      await recoveredManager.recover();
+
+      const successLog = mockLoggerForRecovery.logs.find(
+        (l) => l.eventType === "session:recover" && l.payload.success === true,
+      );
+
+      assert.ok(successLog, "should log session:recover with success:true");
+      assert.equal(successLog.sessionId, session.id);
+      assert.equal(successLog.payload.adapterId, "telegram");
+      assert.equal(successLog.payload.channelId, "chat-123");
+      assert.equal(successLog.payload.senderId, "user-456");
+    });
+
+    it("recovers multiple sessions from directory", async () => {
+      const session1 = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+      const session2 = await sessionManager.getOrCreate("discord", "chat-456", "user-789");
+
+      const inboundEntry1: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Message 1",
+          timestamp: Date.now(),
+        },
+      };
+
+      const inboundEntry2: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-2",
+          adapterId: "discord",
+          channelId: "chat-456",
+          senderId: "user-789",
+          text: "Message 2",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session1.id, inboundEntry1);
+      await sessionManager.appendToLog(session2.id, inboundEntry2);
+
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      const count = await recoveredManager.recover();
+
+      assert.equal(count, 2, "should recover 2 sessions");
+      assert.ok(recoveredManager.get(session1.id), "should recover session1");
+      assert.ok(recoveredManager.get(session2.id), "should recover session2");
     });
   });
 
