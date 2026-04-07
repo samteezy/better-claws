@@ -227,3 +227,37 @@ pre {
 .btn-primary:hover { background: #2ea043; }
 .config-error { color: #f85149; font-size: 13px; }
 .config-success { color: #3fb950; font-size: 13px; }
+
+/* Auth overlay */
+#auth-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.auth-dialog {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 24px;
+  width: 360px;
+  max-width: 90vw;
+}
+.auth-dialog h2 { margin-bottom: 8px; }
+.auth-dialog p { font-size: 13px; color: #8b949e; margin-bottom: 12px; }
+#auth-token-input {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  margin-bottom: 12px;
+}
+#auth-token-input:focus { outline: none; border-color: #58a6ff; }
+.auth-dialog .btn-primary { width: 100%; }

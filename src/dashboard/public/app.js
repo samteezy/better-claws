@@ -30,10 +30,53 @@
     }
   }
 
+  // ── Auth ─────────────────────────────────────────────────────────────────
+
+  var authToken = sessionStorage.getItem("bc_dashboard_token") || "";
+
+  function authHeaders(extra) {
+    var h = extra || {};
+    if (authToken) h["Authorization"] = "Bearer " + authToken;
+    return h;
+  }
+
+  function showAuthPrompt() {
+    document.getElementById("auth-overlay").style.display = "flex";
+    var input = document.getElementById("auth-token-input");
+    input.value = "";
+    input.focus();
+  }
+
+  document.getElementById("auth-submit").addEventListener("click", submitToken);
+  document.getElementById("auth-token-input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") submitToken();
+  });
+
+  function submitToken() {
+    var input = document.getElementById("auth-token-input");
+    var token = input.value.trim();
+    if (!token) return;
+
+    authToken = token;
+    sessionStorage.setItem("bc_dashboard_token", token);
+    document.getElementById("auth-error").textContent = "";
+    document.getElementById("auth-overlay").style.display = "none";
+
+    // Reload the active view
+    var active = document.querySelector(".nav-btn.active");
+    if (active) loadView(active.dataset.view);
+  }
+
   // ── Fetch helper ────────────────────────────────────────────────────────
 
   function api(path) {
-    return fetch(path).then(function (r) { return r.json(); });
+    return fetch(path, { headers: authHeaders() }).then(function (r) {
+      if (r.status === 401) {
+        showAuthPrompt();
+        return Promise.reject(new Error("Unauthorized"));
+      }
+      return r.json();
+    });
   }
 
   function esc(str) {
@@ -207,7 +250,7 @@
           var newPolicy = sel.value;
           fetch("/api/tools/policy", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ tool: toolName, policy: newPolicy }),
           }).then(function (r) { return r.json(); }).then(function (result) {
             if (result.error) {
@@ -250,7 +293,7 @@
 
     fetch("/api/config", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(parsed),
     }).then(function (r) { return r.json(); }).then(function (result) {
       if (result.error) {

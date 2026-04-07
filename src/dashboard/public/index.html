@@ -110,6 +110,17 @@
     </section>
   </main>
 
+  <!-- Auth overlay (shown on 401) -->
+  <div id="auth-overlay" style="display:none">
+    <div class="auth-dialog">
+      <h2>Dashboard Token</h2>
+      <p>This dashboard requires an authentication token.</p>
+      <input id="auth-token-input" type="password" placeholder="Enter token" autocomplete="off">
+      <button id="auth-submit" class="btn btn-primary">Authenticate</button>
+      <p id="auth-error" class="config-error" style="margin-top:8px"></p>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>
