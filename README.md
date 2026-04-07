@@ -106,6 +106,30 @@ The gateway binds to **localhost only** by default. Exposing to the network requ
 | `web-fetch` | `net:outbound` | HTTP requests with configurable response size limits |
 | `memory-update` | `memory:write` | Update session working memory |
 
+## MCP and Skills
+
+betterClaws can connect to remote [MCP](https://modelcontextprotocol.io/) servers over SSE/HTTP, making their tools available alongside built-in ones. Configure remote servers in `config/betterclaws.json`:
+
+```json
+"mcp": {
+  "servers": [
+    { "name": "my-server", "url": "https://my-mcp-server.example/sse" }
+  ]
+}
+```
+
+It also supports loading tools from [agentskills.io](https://agentskills.io/) via `SKILL.md` definitions. All remote tools pass through the same capability gate as local ones.
+
+## Session commands
+
+During a conversation, you can use these commands:
+
+| Command | Description |
+|---|---|
+| `/new` | Start a fresh session |
+| `/reset` | Clear the current session's working memory |
+| `/compact` | Compact the conversation history to reclaim context |
+
 ## Adding your own tools
 
 Drop a directory in `tools/` with two files:
@@ -162,7 +186,7 @@ betterClaws assumes the LLM is adversarial. The key invariants:
 
 ## Dashboard
 
-betterClaws includes a web dashboard for inspecting active sessions and viewing structured logs. Configure the port in `config/betterclaws.json` under the `gateway` key.
+betterClaws includes a web dashboard for inspecting active sessions, viewing structured logs, editing configuration, and managing tool policies. Configure the port in `config/betterclaws.json` under the `gateway` key.
 
 ## Memory
 

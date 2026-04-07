@@ -56,8 +56,8 @@ Dashboard: HTTP server at configurable port for session inspection and log viewi
 
 ## Key Directories
 
-- `src/` — source (adapters/, dashboard/, llm/, logger/, memory/, prompt/, router/, scheduler/, sessions/, tools/)
-- `tests/` — `unit/` and `integration/` (362 tests)
+- `src/` — source (adapters/, dashboard/, llm/, logger/, mcp/, memory/, prompt/, router/, scheduler/, secrets/, sessions/, skills/, tools/, utils/)
+- `tests/` — `unit/` and `integration/`
 - `tools/` — user-defined tool modules: shell, file-read, file-write, web-fetch, memory-update
 - `config/betterclaws.json` — runtime config; secrets use `env:VAR_NAME` syntax resolved at runtime
 - `data/` — gitignored runtime data (sessions/, memory/, logs/, scratch/)
