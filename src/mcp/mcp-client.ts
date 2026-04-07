@@ -7,9 +7,12 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { BetterClawsError, type McpServerConfig, type JsonSchema } from "../types.js";
+import { BetterClawsError, type McpServerConfig, type McpServerStdioConfig, type McpServerHttpConfig, type JsonSchema } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
+import type { McpTransport } from "./transport.js";
 import { JsonRpcTransport } from "./json-rpc.js";
+import { SseTransport } from "./sse-transport.js";
+import { HttpTransport } from "./http-transport.js";
 
 export class McpClientError extends BetterClawsError {
   constructor(message: string, code: string = "MCP_CLIENT_ERROR") {
@@ -54,7 +57,7 @@ export class McpClient {
   private readonly serverName: string;
 
   private process: ChildProcess | null = null;
-  private transport: JsonRpcTransport | null = null;
+  private transport: McpTransport | null = null;
   private connected = false;
 
   constructor(serverName: string, config: McpServerConfig, logger: StructuredLogger) {
@@ -68,11 +71,61 @@ export class McpClient {
   }
 
   async connect(): Promise<void> {
-    const child = spawn(this.config.command, [...(this.config.args ?? [])], {
+    const transportType = this.config.transport ?? "stdio";
+
+    if (transportType === "stdio") {
+      await this.connectStdio(this.config as McpServerStdioConfig);
+    } else if (transportType === "sse") {
+      const httpConfig = this.config as McpServerHttpConfig;
+      const sseTransport = new SseTransport(httpConfig.url, httpConfig.headers);
+      await sseTransport.connect();
+      this.transport = sseTransport;
+    } else {
+      const httpConfig = this.config as McpServerHttpConfig;
+      this.transport = new HttpTransport(httpConfig.url, httpConfig.headers);
+    }
+
+    // MCP initialize handshake (identical for all transports)
+    const initResponse = await this.transport!.sendRequest("initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "betterClaws", version: "0.1.0" },
+    });
+
+    if (initResponse.error) {
+      throw new McpClientError(
+        `MCP initialize failed for "${this.serverName}": ${initResponse.error.message}`,
+        "INIT_ERROR",
+      );
+    }
+
+    const initResult = initResponse.result as McpInitializeResult;
+
+    // Send initialized notification
+    this.transport!.sendNotification("notifications/initialized");
+
+    this.connected = true;
+
+    this.logger.log({
+      sessionId: null,
+      eventType: "config:change",
+      component: "mcp-client",
+      payload: {
+        server: this.serverName,
+        action: "connected",
+        serverInfo: initResult.serverInfo,
+        protocolVersion: initResult.protocolVersion,
+        transport: transportType,
+      },
+    });
+  }
+
+  private async connectStdio(config: McpServerStdioConfig): Promise<void> {
+    const child = spawn(config.command, [...(config.args ?? [])], {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
-        ...(this.config.env ?? {}),
+        ...(config.env ?? {}),
       },
     });
 
@@ -83,7 +136,6 @@ export class McpClient {
     child.stderr?.setEncoding("utf-8");
     child.stderr?.on("data", (chunk: string) => {
       stderrBuffer += chunk;
-      // Flush complete lines to logger
       let newlineIdx: number;
       while ((newlineIdx = stderrBuffer.indexOf("\n")) !== -1) {
         const line = stderrBuffer.slice(0, newlineIdx).trim();
@@ -127,39 +179,6 @@ export class McpClient {
     }
 
     this.transport = new JsonRpcTransport(child.stdout, child.stdin);
-
-    // MCP initialize handshake
-    const initResponse = await this.transport.sendRequest("initialize", {
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: { name: "betterClaws", version: "0.1.0" },
-    });
-
-    if (initResponse.error) {
-      throw new McpClientError(
-        `MCP initialize failed for "${this.serverName}": ${initResponse.error.message}`,
-        "INIT_ERROR",
-      );
-    }
-
-    const initResult = initResponse.result as McpInitializeResult;
-
-    // Send initialized notification
-    this.transport.sendNotification("notifications/initialized");
-
-    this.connected = true;
-
-    this.logger.log({
-      sessionId: null,
-      eventType: "config:change",
-      component: "mcp-client",
-      payload: {
-        server: this.serverName,
-        action: "connected",
-        serverInfo: initResult.serverInfo,
-        protocolVersion: initResult.protocolVersion,
-      },
-    });
   }
 
   async listTools(): Promise<readonly McpToolDefinition[]> {
@@ -207,32 +226,34 @@ export class McpClient {
   }
 
   async disconnect(): Promise<void> {
-    if (!this.connected || !this.process) {
+    if (!this.connected) {
       return;
     }
 
     this.connected = false;
 
-    // Try graceful shutdown
+    // Close the transport
     this.transport?.close();
 
-    const child = this.process;
-    this.process = null;
+    // If stdio transport, kill the child process
+    if (this.process) {
+      const child = this.process;
+      this.process = null;
 
-    // Give the process a moment to exit, then force kill
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
-        resolve();
-      }, 3000);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          child.kill("SIGKILL");
+          resolve();
+        }, 3000);
 
-      child.on("exit", () => {
-        clearTimeout(timer);
-        resolve();
+        child.on("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+
+        child.kill("SIGTERM");
       });
-
-      child.kill("SIGTERM");
-    });
+    }
 
     this.logger.log({
       sessionId: null,

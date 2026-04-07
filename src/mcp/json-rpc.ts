@@ -4,6 +4,7 @@
  */
 
 import type { Readable, Writable } from "node:stream";
+import type { McpTransport } from "./transport.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ type PendingRequest = {
 
 // ── Transport ────────────────────────────────────────────────────────────────
 
-export class JsonRpcTransport {
+export class JsonRpcTransport implements McpTransport {
   private readonly writable: Writable;
   private nextId = 1;
   private readonly pending = new Map<number, PendingRequest>();

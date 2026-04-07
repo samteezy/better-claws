@@ -17,9 +17,11 @@ import {
   type SkillConfig,
   type ToolDescriptor,
   type ToolHandler,
+  type ToolResult,
 } from "../types.js";
 import type { RegisteredTool } from "../tools/registry.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
+import { parseSkillMd } from "./frontmatter-parser.js";
 
 export class SkillLoaderError extends BetterClawsError {
   constructor(message: string, code: string = "SKILL_LOADER_ERROR") {
@@ -51,10 +53,15 @@ export class SkillLoader {
       );
     }
 
-    // Check if this directory itself is a skill (has descriptor.json)
+    // Check if this directory itself is a skill
     const hasDescriptor = await this.fileExists(join(skillPath, "descriptor.json"));
+    const hasSkillMd = await this.fileExists(join(skillPath, "SKILL.md"));
+
     if (hasDescriptor) {
       const tool = await this.loadSingleSkill(name, skillPath);
+      tools.push(tool);
+    } else if (hasSkillMd) {
+      const tool = await this.loadAgentSkill(name, skillPath);
       tools.push(tool);
     } else {
       // Treat as parent directory containing multiple skill subdirectories
@@ -63,14 +70,89 @@ export class SkillLoader {
         const entryPath = join(skillPath, entry);
         const entryStats = await stat(entryPath);
         if (!entryStats.isDirectory()) continue;
-        if (!(await this.fileExists(join(entryPath, "descriptor.json")))) continue;
 
-        const tool = await this.loadSingleSkill(`${name}__${entry}`, entryPath);
-        tools.push(tool);
+        if (await this.fileExists(join(entryPath, "descriptor.json"))) {
+          const tool = await this.loadSingleSkill(`${name}__${entry}`, entryPath);
+          tools.push(tool);
+        } else if (await this.fileExists(join(entryPath, "SKILL.md"))) {
+          const tool = await this.loadAgentSkill(`${name}__${entry}`, entryPath);
+          tools.push(tool);
+        }
       }
     }
 
     return tools;
+  }
+
+  private async loadAgentSkill(qualifiedName: string, skillDir: string): Promise<RegisteredTool> {
+    const skillMdPath = join(skillDir, "SKILL.md");
+    let content: string;
+    try {
+      content = await readFile(skillMdPath, "utf-8");
+    } catch (err) {
+      throw new SkillLoaderError(
+        `Failed to read SKILL.md for "${qualifiedName}": ${err instanceof Error ? err.message : String(err)}`,
+        "SKILLMD_READ_ERROR",
+      );
+    }
+
+    const parsed = parseSkillMd(content);
+
+    // Collect reference documents if present
+    let instructions = parsed.body;
+    const refsDir = join(skillDir, "references");
+    if (await this.fileExists(refsDir)) {
+      try {
+        const refEntries = await readdir(refsDir);
+        for (const refFile of refEntries) {
+          if (!refFile.endsWith(".md")) continue;
+          const refContent = await readFile(join(refsDir, refFile), "utf-8");
+          instructions += `\n\n---\n## Reference: ${refFile}\n\n${refContent}`;
+        }
+      } catch {
+        // Non-fatal: skip references if unreadable
+      }
+    }
+
+    const descriptor: ToolDescriptor = {
+      name: `skill__${qualifiedName}`,
+      description: `[Skill] ${parsed.frontmatter.description}`,
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Optional query to focus the skill instructions on a specific aspect",
+          },
+        },
+      },
+      capabilities: [],
+    };
+
+    const handler: ToolHandler = {
+      async execute(): Promise<ToolResult> {
+        return {
+          success: true,
+          output: instructions,
+          durationMs: 0,
+        };
+      },
+    };
+
+    this.logger.log({
+      sessionId: null,
+      eventType: "tool:invoke",
+      component: "skill-loader",
+      payload: {
+        action: "loaded",
+        skill: qualifiedName,
+        tool: descriptor.name,
+        format: "agentskills",
+        skillName: parsed.frontmatter.name,
+      },
+    });
+
+    return { descriptor, handler };
   }
 
   private async loadSingleSkill(qualifiedName: string, skillDir: string): Promise<RegisteredTool> {

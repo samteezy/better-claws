@@ -251,13 +251,24 @@ export interface DashboardConfig {
 /** Per-tool access policy: auto-execute, require user confirmation, or fully disabled. */
 export type ToolPolicy = "auto" | "confirm" | "disabled";
 
-export interface McpServerConfig {
+export interface McpServerStdioConfig {
+  readonly transport?: "stdio";
   readonly command: string;
   readonly args?: readonly string[];
   readonly env?: Readonly<Record<string, string>>;
   readonly capabilities?: readonly Capability[];
   readonly defaultPolicy?: ToolPolicy;
 }
+
+export interface McpServerHttpConfig {
+  readonly transport: "sse" | "streamable-http";
+  readonly url: string;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly capabilities?: readonly Capability[];
+  readonly defaultPolicy?: ToolPolicy;
+}
+
+export type McpServerConfig = McpServerStdioConfig | McpServerHttpConfig;
 
 export interface SkillConfig {
   readonly path: string;
