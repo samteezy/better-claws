@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readdir, readFile, rename } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import {
@@ -256,6 +256,26 @@ export class SessionManager {
       eventType: "session:close",
       component: "session",
       payload: { closedAt: now, archivePath },
+    });
+
+    this.sessions.delete(sessionId);
+  }
+
+  async destroy(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    try {
+      await unlink(session.logPath);
+    } catch {
+      // File may not exist yet (no messages exchanged) — that's fine
+    }
+
+    this.logger.log({
+      sessionId,
+      eventType: "session:destroy",
+      component: "session",
+      payload: { destroyedAt: Date.now() },
     });
 
     this.sessions.delete(sessionId);

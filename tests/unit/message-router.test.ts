@@ -473,27 +473,64 @@ describe("MessageRouter", () => {
   });
 
   describe("command handling", () => {
-    it("/new closes session and returns success message", async () => {
+    it("/new archives session and returns archive message", async () => {
       const sessionManager = createMockSessionManager();
+      let closeCalled = false;
+      (sessionManager as unknown as Record<string, unknown>)["close"] = async () => {
+        closeCalled = true;
+      };
+
       const llmClient = createMockLlmClient();
 
       const { router } = createRouter({ sessionManager, llmClient });
       const response = await router.handleMessage(makeInbound("/new"));
 
-      assert.equal(response.text, "Session cleared. Starting fresh.");
+      assert.equal(response.text, "Session archived. Starting fresh.");
+      assert.equal(closeCalled, true, "should call sessionManager.close()");
       assert.ok(!sessionManager.appendedEntries.some(
         (e) => (e as Record<string, unknown>).type === "inbound"
       ), "should not append inbound message for /new command");
     });
 
-    it("/reset closes session and returns success message", async () => {
+    it("/reset destroys session and returns destroy message", async () => {
       const sessionManager = createMockSessionManager();
+      let destroyCalled = false;
+      (sessionManager as unknown as Record<string, unknown>)["destroy"] = async () => {
+        destroyCalled = true;
+      };
+
       const llmClient = createMockLlmClient();
 
       const { router } = createRouter({ sessionManager, llmClient });
       const response = await router.handleMessage(makeInbound("/reset"));
 
-      assert.equal(response.text, "Session cleared. Starting fresh.");
+      assert.equal(response.text, "Session wiped. Starting fresh.");
+      assert.equal(destroyCalled, true, "should call sessionManager.destroy()");
+      assert.ok(!sessionManager.appendedEntries.some(
+        (e) => (e as Record<string, unknown>).type === "inbound"
+      ), "should not append inbound message for /reset command");
+    });
+
+    it("/new and /reset do not append their message to session log", async () => {
+      const sessionManager = createMockSessionManager();
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+
+      // Test /new
+      await router.handleMessage(makeInbound("/new"));
+      assert.ok(!sessionManager.appendedEntries.some(
+        (e) => (e as Record<string, unknown>).type === "inbound"
+      ), "/new should not append to log");
+
+      // Clear for next test
+      sessionManager.appendedEntries.length = 0;
+
+      // Test /reset
+      await router.handleMessage(makeInbound("/reset"));
+      assert.ok(!sessionManager.appendedEntries.some(
+        (e) => (e as Record<string, unknown>).type === "inbound"
+      ), "/reset should not append to log");
     });
 
     it("/compact returns error when compactor not provided", async () => {

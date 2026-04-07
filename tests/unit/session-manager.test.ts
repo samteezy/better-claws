@@ -574,6 +574,122 @@ describe("SessionManager", () => {
     });
   });
 
+  describe("destroy()", () => {
+    it("removes session from active map", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      await sessionManager.destroy(session.id);
+
+      const retrieved = sessionManager.get(session.id);
+      assert.equal(retrieved, undefined, "session should be removed");
+    });
+
+    it("logs session:destroy event", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      await sessionManager.destroy(session.id);
+
+      const destroyLog = logger.logs.find((l) => l.eventType === "session:destroy");
+      assert.ok(destroyLog, "should log session:destroy event");
+      assert.equal(destroyLog.sessionId, session.id);
+      assert.ok(typeof destroyLog.payload.destroyedAt === "number", "payload should contain destroyedAt timestamp");
+    });
+
+    it("is idempotent (destroying again does not error)", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      await sessionManager.destroy(session.id);
+      await sessionManager.destroy(session.id); // Should not error
+
+      assert.ok(true, "should not throw error on double destroy");
+    });
+
+    it("deletes the session log file (no archive)", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+      const logPath = session.logPath;
+
+      const { existsSync } = await import("node:fs");
+      const { readdir } = await import("node:fs/promises");
+
+      // Before destroy, log file should exist
+      assert.ok(existsSync(logPath), "log file should exist before destroy");
+
+      await sessionManager.destroy(session.id);
+
+      // After destroy, log file should be deleted (not archived)
+      assert.ok(!existsSync(logPath), "log file should be deleted after destroy");
+
+      // No archived files should exist (unlike close())
+      const files = await readdir(sessionManager["sessionsDirectory"]);
+      const archivePattern = new RegExp(`^${session.id}\\.\\d+\\.jsonl$`);
+      const archiveFiles = files.filter((f) => archivePattern.test(f));
+
+      assert.equal(archiveFiles.length, 0, "should not create any archived files");
+    });
+
+    it("does not throw when destroying session with no log file", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      // Don't write any entries, so no log file exists
+      await sessionManager.destroy(session.id);
+
+      assert.ok(true, "should not throw error when log file does not exist");
+    });
+
+    it("destroys on unknown session ID is a no-op", async () => {
+      // Calling destroy on a non-existent session should not throw
+      await sessionManager.destroy("nonexistent-session-id");
+
+      assert.ok(true, "should not throw when destroying nonexistent session");
+    });
+
+    it("does not archive file like close() does", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+
+      const { readdir } = await import("node:fs/promises");
+
+      await sessionManager.destroy(session.id);
+
+      // Verify file was deleted, not renamed
+      const files = await readdir(sessionManager["sessionsDirectory"]);
+
+      // Should have no files at all (destroy deletes, close archives)
+      assert.equal(
+        files.length,
+        0,
+        `directory should be empty after destroy, but contains: ${files.join(", ")}`,
+      );
+    });
+  });
+
   describe("recover()", () => {
     it("recovers session from valid .jsonl file with inbound entry", async () => {
       const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");

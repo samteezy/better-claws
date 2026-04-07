@@ -114,11 +114,19 @@ export class MessageRouter {
       // Check for reset commands before logging to the session
       const cmd = message.text.trim();
 
-      if (cmd === "/new" || cmd === "/reset") {
+      if (cmd === "/new") {
         await this.sessionManager.close(session.id);
         return {
           channelId: message.channelId,
-          text: "Session cleared. Starting fresh.",
+          text: "Session archived. Starting fresh.",
+        };
+      }
+
+      if (cmd === "/reset") {
+        await this.sessionManager.destroy(session.id);
+        return {
+          channelId: message.channelId,
+          text: "Session wiped. Starting fresh.",
         };
       }
 

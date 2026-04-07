@@ -162,6 +162,7 @@ export const EVENT_TYPES = [
   "session:create",
   "session:idle",
   "session:close",
+  "session:destroy",
   "session:recover",
   "session:compaction",
   "config:change",
