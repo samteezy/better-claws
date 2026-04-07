@@ -1,0 +1,53 @@
+{
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18700
+  },
+  "llm": {
+    "baseUrl": "http://host.docker.internal:11434/v1",
+    "apiKey": "",
+    "model": "qwen3:8b",
+    "maxTokens": 4096,
+    "temperature": 0.7,
+    "weak": {
+      "model": "qwen3:1.5b"
+    }
+  },
+  "adapters": {
+    "telegram": { "enabled": false, "token": "env:BC_TELEGRAM_TOKEN" },
+    "discord": { "enabled": false },
+    "webhook": { "enabled": false, "secret": "env:BC_WEBHOOK_SECRET" }
+  },
+  "security": {
+    "defaultCapabilityPolicy": "deny",
+    "sandboxTimeout": 30000,
+    "stripEnvironment": true,
+    "allowPersistentGrants": false,
+    "maxMemoryMb": 128,
+    "autoGrantCapabilities": []
+  },
+  "memory": {
+    "maxLongTermEntries": 2000,
+    "confidenceDecayRate": 0.01,
+    "staleThreshold": 0.2,
+    "curationIntervalMinutes": 60,
+    "curationEnabled": true
+  },
+  "logging": {
+    "directory": "data/logs",
+    "redactSensitive": true,
+    "retentionDays": 90
+  },
+  "dashboard": {
+    "enabled": false,
+    "host": "0.0.0.0",
+    "port": 18701,
+    "authToken": "env:BC_DASHBOARD_TOKEN"
+  },
+  "compaction": {
+    "enabled": false,
+    "tokenBudget": 3584,
+    "reserveTokens": 512,
+    "keepRecentTokens": 1000
+  }
+}

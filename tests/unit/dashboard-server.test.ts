@@ -5,6 +5,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import {
   DashboardServer,
+  DashboardError,
   type DashboardContext,
 } from "../../src/dashboard/dashboard-server.js";
 import { SessionManager } from "../../src/sessions/session-manager.js";
@@ -439,6 +440,197 @@ describe("DashboardServer", () => {
         (l) => (l["payload"] as Record<string, unknown>)["action"] === "start",
       );
       assert.equal((startLog!["payload"] as Record<string, unknown>)["host"], "127.0.0.1");
+    });
+  });
+
+  describe("startup guard (network exposure security)", () => {
+    it("throws DashboardError when host is 0.0.0.0 and authToken is undefined", async () => {
+      const tmpDir = makeTmpDir();
+      const logger = createMockLogger();
+      const port = nextPort();
+      const staticDir = path.join(tmpDir, "static");
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: path.join(tmpDir, "logs"),
+      };
+
+      const server = new DashboardServer({
+        host: "0.0.0.0",
+        port,
+        context,
+        logger,
+        staticDir,
+        authToken: undefined,
+      });
+      servers.push(server);
+
+      await assert.rejects(
+        () => server.start(),
+        (err) => {
+          assert.ok(err instanceof DashboardError);
+          assert.equal((err as DashboardError).code, "UNSAFE_CONFIG");
+          assert.ok((err as Error).message.includes("non-loopback address"));
+          return true;
+        },
+      );
+    });
+
+    it("throws DashboardError when host is 0.0.0.0 and authToken is empty string", async () => {
+      const tmpDir = makeTmpDir();
+      const logger = createMockLogger();
+      const port = nextPort();
+      const staticDir = path.join(tmpDir, "static");
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: path.join(tmpDir, "logs"),
+      };
+
+      const server = new DashboardServer({
+        host: "0.0.0.0",
+        port,
+        context,
+        logger,
+        staticDir,
+        authToken: "",
+      });
+      servers.push(server);
+
+      await assert.rejects(
+        () => server.start(),
+        (err) => {
+          assert.ok(err instanceof DashboardError);
+          assert.equal((err as DashboardError).code, "UNSAFE_CONFIG");
+          return true;
+        },
+      );
+    });
+
+    it("does NOT throw when host is 127.0.0.1 and authToken is undefined", async () => {
+      const tmpDir = makeTmpDir();
+      const logger = createMockLogger();
+      const port = nextPort();
+      const logsDir = path.join(tmpDir, "logs");
+      const staticDir = path.join(tmpDir, "static");
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: logsDir,
+      };
+
+      const server = new DashboardServer({
+        host: "127.0.0.1",
+        port,
+        context,
+        logger,
+        staticDir,
+        authToken: undefined,
+      });
+      servers.push(server);
+
+      await server.start();
+      assert.ok(true, "should start without error");
+    });
+
+    it("does NOT throw when host is localhost and authToken is undefined", async () => {
+      const tmpDir = makeTmpDir();
+      const logger = createMockLogger();
+      const port = nextPort();
+      const logsDir = path.join(tmpDir, "logs");
+      const staticDir = path.join(tmpDir, "static");
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: logsDir,
+      };
+
+      const server = new DashboardServer({
+        host: "localhost",
+        port,
+        context,
+        logger,
+        staticDir,
+        authToken: undefined,
+      });
+      servers.push(server);
+
+      await server.start();
+      assert.ok(true, "should start without error");
+    });
+
+    it("does NOT throw when host is 0.0.0.0 and authToken is a real token", async () => {
+      const tmpDir = makeTmpDir();
+      const logger = createMockLogger();
+      const port = nextPort();
+      const logsDir = path.join(tmpDir, "logs");
+      const staticDir = path.join(tmpDir, "static");
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: logsDir,
+      };
+
+      const server = new DashboardServer({
+        host: "0.0.0.0",
+        port,
+        context,
+        logger,
+        staticDir,
+        authToken: "super-secret-token-xyz",
+      });
+      servers.push(server);
+
+      await server.start();
+      assert.ok(true, "should start without error when authToken is configured");
     });
   });
 

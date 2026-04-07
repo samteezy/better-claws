@@ -36,6 +36,22 @@ npm start
 
 The CLI adapter reads from stdin and writes to stdout. Type a message, get a response.
 
+## Docker
+
+```bash
+docker compose up
+```
+
+This builds the image and starts betterClaws with persistent storage. Pass secrets as environment variables:
+
+```bash
+BC_TELEGRAM_TOKEN=your-token BC_DASHBOARD_TOKEN=your-token docker compose up
+```
+
+The container uses `config/betterclaws.docker.json` with container-friendly defaults (`0.0.0.0` bindings, `host.docker.internal` for Ollama). To use your own config, uncomment the volume mount in `docker-compose.yml` — just ensure hosts are set to `0.0.0.0` instead of `127.0.0.1`.
+
+The `data/` directory (logs, sessions, memory) is persisted in a named Docker volume.
+
 ## Connecting a chat platform
 
 Enable adapters in `config/betterclaws.json` under the `adapters` key. Secrets use `env:VAR_NAME` syntax — resolved at runtime from environment variables, never stored in config.

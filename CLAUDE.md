@@ -13,6 +13,15 @@ npm start            # node dist/src/index.js (CLI adapter)
 
 Tests must build before running — `npm test` handles both steps.
 
+### Docker
+
+```bash
+docker build -t betterclaws .     # build image
+docker compose up                  # run with docker-compose
+```
+
+The Dockerfile is a multi-stage build: compile TS in `node:22-alpine`, then copy compiled JS to a slim runtime image (no `npm install` needed at runtime — zero deps). `config/betterclaws.docker.json` has container-friendly defaults (`0.0.0.0` bindings, `host.docker.internal` for Ollama).
+
 ## Workflow
 
 - Work is tracked as GitHub issues. Check `gh issue list` before starting.

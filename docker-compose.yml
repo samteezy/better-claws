@@ -1,0 +1,19 @@
+services:
+  betterclaws:
+    build: .
+    ports:
+      - "18701:18701"
+    volumes:
+      - claws-data:/app/data
+      # Uncomment to override config:
+      # - ./config/betterclaws.json:/app/config/betterclaws.json:ro
+    environment:
+      - BC_TELEGRAM_TOKEN
+      - BC_WEBHOOK_SECRET
+      - BC_DASHBOARD_TOKEN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  claws-data:

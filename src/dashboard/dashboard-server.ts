@@ -79,6 +79,14 @@ export class DashboardServer {
   }
 
   async start(): Promise<void> {
+    const isNetworkExposed = this.host !== "127.0.0.1" && this.host !== "localhost";
+    if (isNetworkExposed && !this.authToken) {
+      throw new DashboardError(
+        "Dashboard cannot bind to a non-loopback address without an authToken configured",
+        "UNSAFE_CONFIG",
+      );
+    }
+
     return new Promise((resolve, reject) => {
       const server = createServer((req, res) => {
         void this.handleRequest(req, res);
