@@ -197,12 +197,21 @@ export interface GatewayConfig {
   readonly port: number;
 }
 
+export interface WeakLlmConfig {
+  readonly model: string;
+  readonly baseUrl?: string;
+  readonly apiKey?: string;
+  readonly maxTokens?: number;
+  readonly temperature?: number;
+}
+
 export interface LlmConfig {
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly model: string;
   readonly maxTokens: number;
   readonly temperature: number;
+  readonly weak?: WeakLlmConfig;
 }
 
 export interface AdapterConfig {
@@ -291,8 +300,6 @@ export interface CompactionConfig {
   readonly reserveTokens: number;
   /** Tokens of recent history to preserve during compaction. Default: 1000. */
   readonly keepRecentTokens: number;
-  /** Optional model override used only for summarisation calls. */
-  readonly weakModel?: string;
 }
 
 export interface BetterClawsConfig {

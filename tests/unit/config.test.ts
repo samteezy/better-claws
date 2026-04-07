@@ -9,6 +9,7 @@ import {
   loadConfig,
   ConfigError,
   DEFAULT_CONFIG,
+  resolveWeakLlmConfig,
 } from "../../src/config.js";
 
 
@@ -373,6 +374,189 @@ describe("config", () => {
           await removeDirRecursive(tempDirForArrayTest);
         }
       }
+    });
+  });
+
+  describe("resolveWeakLlmConfig()", () => {
+    it("returns null when no weak config is provided", () => {
+      const llm = {
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: "sk-123",
+        model: "gpt-4",
+        maxTokens: 4096,
+        temperature: 0.7,
+      };
+
+      const result = resolveWeakLlmConfig(llm);
+
+      assert.strictEqual(result, null);
+    });
+
+    it("returns resolved config with all fields from weak when all are provided", () => {
+      const llm = {
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: "sk-main",
+        model: "gpt-4",
+        maxTokens: 4096,
+        temperature: 0.7,
+        weak: {
+          baseUrl: "http://weak-server:11434/v1",
+          apiKey: "sk-weak",
+          model: "mistral-small",
+          maxTokens: 2048,
+          temperature: 0.5,
+        },
+      };
+
+      const result = resolveWeakLlmConfig(llm);
+
+      assert.deepStrictEqual(result, {
+        baseUrl: "http://weak-server:11434/v1",
+        apiKey: "sk-weak",
+        model: "mistral-small",
+        maxTokens: 2048,
+        temperature: 0.5,
+      });
+    });
+
+    it("falls back to parent baseUrl when weak.baseUrl is omitted", () => {
+      const llm = {
+        baseUrl: "http://parent:11434/v1",
+        apiKey: "sk-main",
+        model: "gpt-4",
+        maxTokens: 4096,
+        temperature: 0.7,
+        weak: {
+          model: "mistral-small",
+        },
+      };
+
+      const result = resolveWeakLlmConfig(llm);
+
+      assert.strictEqual(result?.baseUrl, "http://parent:11434/v1");
+    });
+
+    it("falls back to parent apiKey when weak.apiKey is omitted", () => {
+      const llm = {
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: "sk-parent",
+        model: "gpt-4",
+        maxTokens: 4096,
+        temperature: 0.7,
+        weak: {
+          model: "mistral-small",
+        },
+      };
+
+      const result = resolveWeakLlmConfig(llm);
+
+      assert.strictEqual(result?.apiKey, "sk-parent");
+    });
+
+    it("falls back to parent maxTokens when weak.maxTokens is omitted", () => {
+      const llm = {
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: "sk-123",
+        model: "gpt-4",
+        maxTokens: 8192,
+        temperature: 0.7,
+        weak: {
+          model: "mistral-small",
+        },
+      };
+
+      const result = resolveWeakLlmConfig(llm);
+
+      assert.strictEqual(result?.maxTokens, 8192);
+    });
+
+    it("falls back to parent temperature when weak.temperature is omitted", () => {
+      const llm = {
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: "sk-123",
+        model: "gpt-4",
+        maxTokens: 4096,
+        temperature: 0.9,
+        weak: {
+          model: "mistral-small",
+        },
+      };
+
+      const result = resolveWeakLlmConfig(llm);
+
+      assert.strictEqual(result?.temperature, 0.9);
+    });
+
+    it("requires only model in weak — everything else falls back", () => {
+      const llm = {
+        baseUrl: "http://parent:11434/v1",
+        apiKey: "sk-parent",
+        model: "gpt-4",
+        maxTokens: 4096,
+        temperature: 0.7,
+        weak: {
+          model: "phi-2",
+        },
+      };
+
+      const result = resolveWeakLlmConfig(llm);
+
+      assert.deepStrictEqual(result, {
+        baseUrl: "http://parent:11434/v1",
+        apiKey: "sk-parent",
+        model: "phi-2",
+        maxTokens: 4096,
+        temperature: 0.7,
+      });
+    });
+
+    it("preserves readonly constraint on return type", () => {
+      const llm = {
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: "sk-123",
+        model: "gpt-4",
+        maxTokens: 4096,
+        temperature: 0.7,
+        weak: {
+          model: "mistral-small",
+        },
+      };
+
+      const result = resolveWeakLlmConfig(llm);
+
+      // Test that the result is a valid ResolvedWeakLlmConfig
+      // All fields should be readable
+      assert.ok(result?.baseUrl !== undefined);
+      assert.ok(result?.apiKey !== undefined);
+      assert.ok(result?.model !== undefined);
+      assert.ok(result?.maxTokens !== undefined);
+      assert.ok(result?.temperature !== undefined);
+    });
+
+    it("handles mixed fallback scenario", () => {
+      const llm = {
+        baseUrl: "http://parent:11434/v1",
+        apiKey: "sk-parent",
+        model: "gpt-4",
+        maxTokens: 4096,
+        temperature: 0.7,
+        weak: {
+          baseUrl: "http://weak:11434/v1",
+          model: "phi-2",
+          temperature: 0.3,
+          // falls back: apiKey, maxTokens
+        },
+      };
+
+      const result = resolveWeakLlmConfig(llm);
+
+      assert.deepStrictEqual(result, {
+        baseUrl: "http://weak:11434/v1",
+        apiKey: "sk-parent",
+        model: "phi-2",
+        maxTokens: 4096,
+        temperature: 0.3,
+      });
     });
   });
 });

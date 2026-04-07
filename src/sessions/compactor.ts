@@ -17,6 +17,7 @@ export class CompactionError extends BetterClawsError {
 export interface SessionCompactorOptions {
   readonly sessionManager: SessionManager;
   readonly llmClient: LlmClient;
+  readonly weakLlmClient?: LlmClient;
   readonly compactionConfig: CompactionConfig;
   readonly logger: StructuredLogger;
 }
@@ -41,12 +42,14 @@ const CHARS_PER_TOKEN = 4;
 export class SessionCompactor {
   private readonly sessionManager: SessionManager;
   private readonly llmClient: LlmClient;
+  private readonly weakLlmClient: LlmClient;
   private readonly config: CompactionConfig;
   private readonly logger: StructuredLogger;
 
   constructor(options: SessionCompactorOptions) {
     this.sessionManager = options.sessionManager;
     this.llmClient = options.llmClient;
+    this.weakLlmClient = options.weakLlmClient ?? options.llmClient;
     this.config = options.compactionConfig;
     this.logger = options.logger;
   }
@@ -89,11 +92,7 @@ export class SessionCompactor {
 
     let summary: string;
     try {
-      const response = await this.llmClient.chat(
-        summarisationMessages,
-        undefined,
-        { model: this.config.weakModel },
-      );
+      const response = await this.weakLlmClient.chat(summarisationMessages);
       summary = response.message.content.trim();
     } catch (err) {
       throw new CompactionError(
@@ -124,7 +123,7 @@ export class SessionCompactor {
         success: true,
         compressedTurnCount: toSummarise.length,
         summaryLength: summary.length,
-        weakModel: this.config.weakModel ?? null,
+        weakModel: this.weakLlmClient !== this.llmClient,
       },
     });
 

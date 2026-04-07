@@ -137,32 +137,30 @@ describe("SessionCompactor", () => {
       assert.equal(sessionManager.appendedEntries.length, 0, "should not append to log");
     });
 
-    it("calls LLM with correct model when weakModel is configured", async () => {
+    it("uses weakLlmClient for summarisation when provided", async () => {
       const logger = createMockLogger();
       const llmClient = createMockLlmClient();
-      llmClient.pushResponse({ message: { content: "Test summary" } });
+      const weakLlmClient = createMockLlmClient();
+      weakLlmClient.pushResponse({ message: { content: "Test summary" } });
 
       const sessionManager = createMockSessionManager();
-      // Messages that will definitely need summarisation
-      // Keep budget is 20 chars. Message 5 is 5 chars, so we keep just that.
-      // Everything before gets summarised (messages 1-4).
       sessionManager.history = [
-        { role: "user", content: "First message" },  // 13 chars
-        { role: "assistant", content: "Reply one" },  // 9 chars
-        { role: "user", content: "Second" },  // 6 chars
-        { role: "assistant", content: "OK" },  // 2 chars
-        { role: "user", content: "Third message now" },  // 17 chars
+        { role: "user", content: "First message" },
+        { role: "assistant", content: "Reply one" },
+        { role: "user", content: "Second" },
+        { role: "assistant", content: "OK" },
+        { role: "user", content: "Third message now" },
       ];
 
       const compactor = new SessionCompactor({
         sessionManager,
         llmClient: llmClient as unknown as LlmClient,
+        weakLlmClient: weakLlmClient as unknown as LlmClient,
         compactionConfig: {
           enabled: true,
           tokenBudget: 1024,
           reserveTokens: 512,
-          keepRecentTokens: 5, // keep 20 chars, so last message (17 chars) is kept, first 4 are summarised
-          weakModel: "custom-model",
+          keepRecentTokens: 5,
         },
         logger: logger as unknown as StructuredLogger,
       });
@@ -170,11 +168,11 @@ describe("SessionCompactor", () => {
       const result = await compactor.compact("test-session");
 
       assert.ok(result.compressedTurnCount > 0, `Expected to compress some messages, got ${result.compressedTurnCount}`);
-      assert.equal(llmClient.callCount, 1, `Expected LLM to be called once, got ${llmClient.callCount}`);
-      assert.equal(llmClient.capturedOptions[0]?.model, "custom-model");
+      assert.equal(weakLlmClient.callCount, 1, "weak client should be called");
+      assert.equal(llmClient.callCount, 0, "strong client should not be called");
     });
 
-    it("passes undefined model when weakModel is not configured", async () => {
+    it("falls back to strong llmClient when no weakLlmClient is provided", async () => {
       const logger = createMockLogger();
       const llmClient = createMockLlmClient();
       llmClient.pushResponse({ message: { content: "Test summary" } });
@@ -201,8 +199,7 @@ describe("SessionCompactor", () => {
 
       await compactor.compact("test-session");
 
-      assert.equal(llmClient.callCount, 1);
-      assert.equal(llmClient.capturedOptions[0]?.model, undefined);
+      assert.equal(llmClient.callCount, 1, "strong client should be used as fallback");
     });
 
     it("appends compaction log entry with correct type and summary", async () => {

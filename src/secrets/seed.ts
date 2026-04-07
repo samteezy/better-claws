@@ -10,6 +10,14 @@ export function seedFromConfig(
     manager.register("llm:apiKey", config.llm.apiKey, "env");
   }
 
+  // Register weak LLM API key (falls back to main key)
+  if (config.llm.weak) {
+    const weakApiKey = config.llm.weak.apiKey ?? config.llm.apiKey;
+    if (weakApiKey) {
+      manager.register("llm:weak:apiKey", weakApiKey, "env");
+    }
+  }
+
   // Register adapter tokens and secrets
   for (const [name, adapter] of Object.entries(config.adapters)) {
     if (adapter?.token) {

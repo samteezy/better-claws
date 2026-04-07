@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { loadConfig } from "./config.js";
+import { loadConfig, resolveWeakLlmConfig } from "./config.js";
 import { StructuredLogger } from "./logger/structured-logger.js";
 import { LlmClient } from "./llm/llm-client.js";
 import { ToolRegistry } from "./tools/registry.js";
@@ -107,6 +107,19 @@ export async function createApp(config: BetterClawsConfig, options?: {
     logger,
   });
 
+  const resolvedWeak = resolveWeakLlmConfig(config.llm);
+  const weakLlmClient = resolvedWeak
+    ? new LlmClient({
+        baseUrl: resolvedWeak.baseUrl,
+        secretManager,
+        secretKey: "llm:weak:apiKey",
+        model: resolvedWeak.model,
+        maxTokens: resolvedWeak.maxTokens,
+        temperature: resolvedWeak.temperature,
+        logger,
+      })
+    : null;
+
   const toolRegistry = new ToolRegistry({
     builtInTools,
     pluginDirectory: "tools",
@@ -204,7 +217,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
 
   const compactionCfg = config.compaction;
   const compactor = compactionCfg?.enabled
-    ? new SessionCompactor({ sessionManager, llmClient, compactionConfig: compactionCfg, logger })
+    ? new SessionCompactor({ sessionManager, llmClient, weakLlmClient: weakLlmClient ?? undefined, compactionConfig: compactionCfg, logger })
     : undefined;
   const promptBuilder = compactionCfg?.enabled
     ? new PromptBuilder({ systemPrompt: SYSTEM_PROMPT, tokenBudget: compactionCfg.tokenBudget })
@@ -296,6 +309,10 @@ async function main(): Promise<void> {
   console.log(`betterClaws v0.1.0`);
   console.log(`Config: ${configPath ?? "config/betterclaws.json"}`);
   console.log(`LLM: ${config.llm.model} @ ${config.llm.baseUrl}`);
+  if (config.llm.weak) {
+    const weak = resolveWeakLlmConfig(config.llm)!;
+    console.log(`LLM (weak): ${weak.model} @ ${weak.baseUrl}`);
+  }
 
   const { router, dashboard, adapterNames, stop } = await createApp(config, {
     dashboard: dashboardFlag || undefined,

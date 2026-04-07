@@ -3,7 +3,27 @@ import { resolve } from "node:path";
 import {
   BetterClawsError,
   type BetterClawsConfig,
+  type LlmConfig,
 } from "./types.js";
+
+export interface ResolvedWeakLlmConfig {
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly model: string;
+  readonly maxTokens: number;
+  readonly temperature: number;
+}
+
+export function resolveWeakLlmConfig(llm: LlmConfig): ResolvedWeakLlmConfig | null {
+  if (!llm.weak) return null;
+  return {
+    baseUrl: llm.weak.baseUrl ?? llm.baseUrl,
+    apiKey: llm.weak.apiKey ?? llm.apiKey,
+    model: llm.weak.model,
+    maxTokens: llm.weak.maxTokens ?? llm.maxTokens,
+    temperature: llm.weak.temperature ?? llm.temperature,
+  };
+}
 
 export class ConfigError extends BetterClawsError {
   constructor(message: string, code: string = "CONFIG_ERROR") {

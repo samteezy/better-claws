@@ -8,7 +8,10 @@
     "apiKey": "",
     "model": "qwen3:8b",
     "maxTokens": 4096,
-    "temperature": 0.7
+    "temperature": 0.7,
+    "weak": {
+      "model": "qwen3:1.5b"
+    }
   },
   "adapters": {
     "telegram": { "enabled": false, "token": "env:BC_TELEGRAM_TOKEN" },
@@ -45,7 +48,6 @@
     "enabled": false,
     "tokenBudget": 3584,
     "reserveTokens": 512,
-    "keepRecentTokens": 1000,
-    "weakModel": "qwen3:1.5b"
+    "keepRecentTokens": 1000
   }
 }

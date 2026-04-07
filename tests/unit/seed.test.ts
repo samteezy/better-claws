@@ -94,6 +94,133 @@ describe("seedFromConfig()", () => {
     });
   });
 
+  describe("Weak LLM API key", () => {
+    it("registers llm:weak:apiKey with the weak-specific key when provided", () => {
+      const config = createMinimalConfig({
+        llm: {
+          baseUrl: "http://localhost",
+          apiKey: "sk-main",
+          model: "gpt-4",
+          maxTokens: 4096,
+          temperature: 0.7,
+          weak: {
+            model: "mistral-small",
+            apiKey: "sk-weak",
+          },
+        },
+      });
+
+      seedFromConfig(manager, config);
+
+      const weakKeyReg = manager.registered.find((r) => r.key === "llm:weak:apiKey");
+      assert(weakKeyReg);
+      assert.strictEqual(weakKeyReg.value, "sk-weak");
+      assert.strictEqual(weakKeyReg.source, "env");
+    });
+
+    it("falls back to parent apiKey for llm:weak:apiKey when weak.apiKey is omitted", () => {
+      const config = createMinimalConfig({
+        llm: {
+          baseUrl: "http://localhost",
+          apiKey: "sk-main",
+          model: "gpt-4",
+          maxTokens: 4096,
+          temperature: 0.7,
+          weak: {
+            model: "mistral-small",
+          },
+        },
+      });
+
+      seedFromConfig(manager, config);
+
+      const weakKeyReg = manager.registered.find((r) => r.key === "llm:weak:apiKey");
+      assert(weakKeyReg);
+      assert.strictEqual(weakKeyReg.value, "sk-main");
+      assert.strictEqual(weakKeyReg.source, "env");
+    });
+
+    it("does not register llm:weak:apiKey when no weak config exists", () => {
+      const config = createMinimalConfig({
+        llm: {
+          baseUrl: "http://localhost",
+          apiKey: "sk-main",
+          model: "gpt-4",
+          maxTokens: 4096,
+          temperature: 0.7,
+        },
+      });
+
+      seedFromConfig(manager, config);
+
+      const weakKeyReg = manager.registered.find((r) => r.key === "llm:weak:apiKey");
+      assert.strictEqual(weakKeyReg, undefined);
+    });
+
+    it("does not register llm:weak:apiKey when both weak.apiKey and parent apiKey are empty", () => {
+      const config = createMinimalConfig({
+        llm: {
+          baseUrl: "http://localhost",
+          apiKey: "",
+          model: "gpt-4",
+          maxTokens: 4096,
+          temperature: 0.7,
+          weak: {
+            model: "mistral-small",
+          },
+        },
+      });
+
+      seedFromConfig(manager, config);
+
+      const weakKeyReg = manager.registered.find((r) => r.key === "llm:weak:apiKey");
+      assert.strictEqual(weakKeyReg, undefined);
+    });
+
+    it("does not register llm:weak:apiKey when weak config exists with empty apiKey and empty parent apiKey", () => {
+      const config = createMinimalConfig({
+        llm: {
+          baseUrl: "http://localhost",
+          apiKey: "",
+          model: "gpt-4",
+          maxTokens: 4096,
+          temperature: 0.7,
+          weak: {
+            model: "mistral-small",
+            apiKey: "",
+          },
+        },
+      });
+
+      seedFromConfig(manager, config);
+
+      const weakKeyReg = manager.registered.find((r) => r.key === "llm:weak:apiKey");
+      assert.strictEqual(weakKeyReg, undefined);
+    });
+
+    it("registers llm:weak:apiKey with source as 'env'", () => {
+      const config = createMinimalConfig({
+        llm: {
+          baseUrl: "http://localhost",
+          apiKey: "sk-main",
+          model: "gpt-4",
+          maxTokens: 4096,
+          temperature: 0.7,
+          weak: {
+            model: "mistral-small",
+            apiKey: "sk-weak",
+          },
+        },
+      });
+
+      seedFromConfig(manager, config);
+
+      const weakKeyReg = manager.registered.find((r) => r.key === "llm:weak:apiKey");
+      assert(weakKeyReg);
+      assert.strictEqual(weakKeyReg.source, "env");
+    });
+  });
+
   describe("Adapter tokens", () => {
     it("seeds adapter tokens from config.adapters", () => {
       const config = createMinimalConfig({
@@ -350,7 +477,7 @@ describe("seedFromConfig()", () => {
   });
 
   describe("integration: multiple sources", () => {
-    it("seeds from all sources together", () => {
+    it("seeds from all sources together including weak llm key", () => {
       const config = createMinimalConfig({
         llm: {
           baseUrl: "http://localhost",
@@ -358,6 +485,10 @@ describe("seedFromConfig()", () => {
           model: "gpt-4",
           maxTokens: 4096,
           temperature: 0.7,
+          weak: {
+            model: "mistral-small",
+            apiKey: "llm-weak-key",
+          },
         },
         adapters: {
           telegram: {
@@ -378,17 +509,13 @@ describe("seedFromConfig()", () => {
 
       seedFromConfig(manager, config);
 
-      assert.strictEqual(manager.registered.length, 6);
+      assert.strictEqual(manager.registered.length, 7);
       const envEntries = manager.registered.filter((r) => r.source === "env");
       const configEntries = manager.registered.filter((r) => r.source === "config");
-      assert.strictEqual(
-        envEntries.length,
-        4,
-      ); // llm + 2 adapter + 1 discord token
-      assert.strictEqual(
-        configEntries.length,
-        2,
-      ); // custom secrets
+      // llm:apiKey + llm:weak:apiKey + telegram token + telegram secret + discord token = 5
+      assert.strictEqual(envEntries.length, 5);
+      // custom secrets
+      assert.strictEqual(configEntries.length, 2);
     });
 
     it("preserves insertion order across sources", () => {
@@ -399,6 +526,9 @@ describe("seedFromConfig()", () => {
           model: "gpt-4",
           maxTokens: 4096,
           temperature: 0.7,
+          weak: {
+            model: "mistral-small",
+          },
         },
         adapters: {
           telegram: {
@@ -416,10 +546,38 @@ describe("seedFromConfig()", () => {
       // LLM key should be registered first
       assert(manager.registered[0]);
       assert.strictEqual(manager.registered[0].key, "llm:apiKey");
+      // Then weak LLM key
+      assert(manager.registered[1]);
+      assert.strictEqual(manager.registered[1].key, "llm:weak:apiKey");
       // Then adapter secrets/tokens
       assert(manager.registered.some((r) => r.key === "adapter:telegram:token"));
       // Then custom secrets
       assert(manager.registered.some((r) => r.key === "custom"));
+    });
+
+    it("seeds weak llm key separately from main llm key", () => {
+      const config = createMinimalConfig({
+        llm: {
+          baseUrl: "http://localhost",
+          apiKey: "llm-key",
+          model: "gpt-4",
+          maxTokens: 4096,
+          temperature: 0.7,
+          weak: {
+            model: "phi-2",
+          },
+        },
+      });
+
+      seedFromConfig(manager, config);
+
+      // Should have both main and weak key entries
+      const mainKey = manager.registered.find((r) => r.key === "llm:apiKey");
+      const weakKey = manager.registered.find((r) => r.key === "llm:weak:apiKey");
+      assert(mainKey);
+      assert(weakKey);
+      assert.strictEqual(mainKey.value, "llm-key");
+      assert.strictEqual(weakKey.value, "llm-key"); // Falls back to main
     });
   });
 
