@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import {
@@ -239,14 +239,175 @@ export class SessionManager {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
+    const now = Date.now();
+    const archivePath = join(
+      this.sessionsDirectory,
+      `${sessionId}.${now}.jsonl`,
+    );
+
+    try {
+      await rename(session.logPath, archivePath);
+    } catch {
+      // File may not exist yet (no messages exchanged) — that's fine
+    }
+
     this.logger.log({
       sessionId,
-      eventType: "session:idle",
+      eventType: "session:close",
       component: "session",
-      payload: { closedAt: Date.now() },
+      payload: { closedAt: now, archivePath },
     });
 
     this.sessions.delete(sessionId);
+  }
+
+  async recover(): Promise<number> {
+    await this.ensureDirectory();
+
+    let entries: string[];
+    try {
+      entries = await readdir(this.sessionsDirectory);
+    } catch {
+      return 0;
+    }
+
+    // Active session files: exactly "{16 hex chars}.jsonl"
+    // Archived files: "{16 hex chars}.{timestamp}.jsonl" — skip these
+    const activeFilePattern = /^([0-9a-f]{16})\.jsonl$/;
+    let recoveredCount = 0;
+
+    for (const filename of entries) {
+      const match = activeFilePattern.exec(filename);
+      if (!match) continue;
+
+      const id = match[1]!;
+      if (this.sessions.has(id)) continue;
+
+      const logPath = join(this.sessionsDirectory, filename);
+
+      let content: string;
+      try {
+        content = await readFile(logPath, "utf-8");
+      } catch {
+        this.logger.log({
+          sessionId: id,
+          eventType: "session:recover",
+          component: "session",
+          payload: { success: false, reason: "unreadable_file" },
+        });
+        continue;
+      }
+
+      const firstInbound = this.extractFirstInbound(content);
+      if (!firstInbound) {
+        this.logger.log({
+          sessionId: id,
+          eventType: "session:recover",
+          component: "session",
+          payload: { success: false, reason: "no_inbound_entry" },
+        });
+        continue;
+      }
+
+      const timestamps = this.extractTimestampBounds(content);
+
+      const session: Session = {
+        id,
+        state: {
+          id,
+          adapterId: firstInbound.adapterId,
+          channelId: firstInbound.channelId,
+          senderId: firstInbound.senderId,
+          createdAt: timestamps.first,
+          lastActivityAt: timestamps.last,
+          capabilityGrants: new Map(),
+        },
+        logPath,
+      };
+
+      this.sessions.set(id, session);
+      recoveredCount++;
+
+      this.logger.log({
+        sessionId: id,
+        eventType: "session:recover",
+        component: "session",
+        payload: {
+          success: true,
+          adapterId: firstInbound.adapterId,
+          channelId: firstInbound.channelId,
+          senderId: firstInbound.senderId,
+        },
+      });
+    }
+
+    return recoveredCount;
+  }
+
+  private extractFirstInbound(
+    content: string,
+  ): { adapterId: string; channelId: string; senderId: string } | null {
+    const lines = content.split("\n");
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        if (
+          entry["type"] === "inbound" &&
+          typeof entry["message"] === "object" &&
+          entry["message"] !== null
+        ) {
+          const msg = entry["message"] as Record<string, unknown>;
+          if (
+            typeof msg["adapterId"] === "string" &&
+            typeof msg["channelId"] === "string" &&
+            typeof msg["senderId"] === "string"
+          ) {
+            return {
+              adapterId: msg["adapterId"],
+              channelId: msg["channelId"],
+              senderId: msg["senderId"],
+            };
+          }
+        }
+      } catch {
+        // Malformed line — continue
+      }
+    }
+    return null;
+  }
+
+  private extractTimestampBounds(
+    content: string,
+  ): { first: number; last: number } {
+    const now = Date.now();
+    let first = now;
+    let last = 0;
+    const lines = content.split("\n");
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        if (entry["type"] === "inbound" || entry["type"] === "outbound") {
+          const msg = entry["message"] as Record<string, unknown> | undefined;
+          const ts = msg?.["timestamp"];
+          if (typeof ts === "number") {
+            if (ts < first) first = ts;
+            if (ts > last) last = ts;
+          }
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    if (last === 0) {
+      first = now;
+      last = now;
+    }
+
+    return { first, last };
   }
 
   private deriveSessionId(

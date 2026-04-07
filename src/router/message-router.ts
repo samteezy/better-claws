@@ -111,12 +111,7 @@ export class MessageRouter {
         message.senderId,
       );
 
-      await this.sessionManager.appendToLog(session.id, {
-        type: "inbound",
-        message,
-      });
-
-      // Command parsing
+      // Check for reset commands before logging to the session
       const cmd = message.text.trim();
 
       if (cmd === "/new" || cmd === "/reset") {
@@ -126,6 +121,11 @@ export class MessageRouter {
           text: "Session cleared. Starting fresh.",
         };
       }
+
+      await this.sessionManager.appendToLog(session.id, {
+        type: "inbound",
+        message,
+      });
 
       if (cmd === "/compact") {
         if (!this.compactor) {
