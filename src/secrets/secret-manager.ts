@@ -25,21 +25,22 @@ export class SecretManager {
 
   register(key: string, value: string, source: SecretSource): void {
     const now = Date.now();
-    const existing = this.store.get(key);
+    const normalizedKey = key.toLowerCase();
+    const existing = this.store.get(normalizedKey);
 
     if (existing) {
       existing.updatedAt = now;
       // Replace entry to update value/source while preserving createdAt
-      this.store.set(key, {
-        key,
+      this.store.set(normalizedKey, {
+        key: normalizedKey,
         value,
         source,
         createdAt: existing.createdAt,
         updatedAt: now,
       });
     } else {
-      this.store.set(key, {
-        key,
+      this.store.set(normalizedKey, {
+        key: normalizedKey,
         value,
         source,
         createdAt: now,
@@ -51,12 +52,12 @@ export class SecretManager {
       sessionId: null,
       eventType: "secret:register",
       component: "secrets",
-      payload: { key, source },
+      payload: { key: normalizedKey, source },
     });
   }
 
   get(key: string): string {
-    const entry = this.store.get(key);
+    const entry = this.store.get(key.toLowerCase());
     if (!entry) {
       throw new SecretError(
         `Secret not found: "${key}"`,
@@ -67,7 +68,7 @@ export class SecretManager {
   }
 
   has(key: string): boolean {
-    return this.store.has(key);
+    return this.store.has(key.toLowerCase());
   }
 
   keys(): readonly string[] {
@@ -75,7 +76,7 @@ export class SecretManager {
   }
 
   revoke(key: string): boolean {
-    const existed = this.store.delete(key);
+    const existed = this.store.delete(key.toLowerCase());
     if (existed) {
       this.logger.log({
         sessionId: null,
@@ -95,7 +96,7 @@ export class SecretManager {
     const projected = new Map<string, string>();
 
     for (const key of allowedKeys) {
-      const entry = this.store.get(key);
+      const entry = this.store.get(key.toLowerCase());
       if (entry) {
         projected.set(key, entry.value);
         this.logger.log({

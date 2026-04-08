@@ -422,4 +422,116 @@ describe("SecretManager", () => {
       }
     });
   });
+
+  describe("case-insensitive key normalization", () => {
+    it("retrieves key registered in uppercase using lowercase", () => {
+      manager.register("MY_KEY", "secret-value", "env");
+
+      assert.strictEqual(manager.get("my_key"), "secret-value");
+    });
+
+    it("retrieves key registered in lowercase using uppercase", () => {
+      manager.register("api_key", "key123", "env");
+
+      assert.strictEqual(manager.get("API_KEY"), "key123");
+    });
+
+    it("retrieves key registered in mixed case using different case", () => {
+      manager.register("My_Mixed_Key", "value", "env");
+
+      assert.strictEqual(manager.get("MY_MIXED_KEY"), "value");
+      assert.strictEqual(manager.get("my_mixed_key"), "value");
+    });
+
+    it("has() is case-insensitive", () => {
+      manager.register("SecretKey", "value", "env");
+
+      assert.strictEqual(manager.has("secretkey"), true);
+      assert.strictEqual(manager.has("SECRETKEY"), true);
+      assert.strictEqual(manager.has("SecretKey"), true);
+    });
+
+    it("revoke() is case-insensitive", () => {
+      manager.register("RevokableKey", "value", "env");
+
+      const revoked = manager.revoke("revokablekey");
+      assert.strictEqual(revoked, true);
+      assert.strictEqual(manager.has("REVOKABLEKEY"), false);
+    });
+
+    it("projectForTool() finds keys case-insensitively", () => {
+      manager.register("my_api_key", "key123", "env");
+      manager.register("webhook_secret", "secret456", "config");
+
+      const projected = manager.projectForTool(
+        ["MY_API_KEY", "WEBHOOK_SECRET"],
+        "session1",
+        "fetch",
+      );
+
+      assert.strictEqual(projected.get("MY_API_KEY"), "key123");
+      assert.strictEqual(projected.get("WEBHOOK_SECRET"), "secret456");
+    });
+
+    it("normalizes keys to lowercase in internal store", () => {
+      manager.register("UPPER_KEY", "value1", "env");
+      manager.register("lower_key", "value2", "env");
+      manager.register("Mixed_Key", "value3", "env");
+
+      const keys = Array.from(manager.keys()).sort();
+      assert.deepStrictEqual(keys, [
+        "lower_key",
+        "mixed_key",
+        "upper_key",
+      ]);
+    });
+
+    it("overwrites when same key registered with different casing", () => {
+      manager.register("API_Key", "first-value", "env");
+      manager.register("api_key", "second-value", "config");
+      manager.register("API_KEY", "third-value", "runtime");
+
+      assert.strictEqual(manager.get("api_key"), "third-value");
+      assert.strictEqual(manager.keys().length, 1);
+    });
+
+    it("logs normalized lowercase key in secret:register event", () => {
+      mockLogger.calls.length = 0;
+      manager.register("MY_SECRET_KEY", "value", "env");
+
+      assert(mockLogger.calls[0]);
+      assert.strictEqual(mockLogger.calls[0].payload.key, "my_secret_key");
+    });
+
+    it("logs normalized lowercase key in secret:revoke event", () => {
+      manager.register("REVOKE_ME", "value", "env");
+      mockLogger.calls.length = 0;
+
+      manager.revoke("revoke_me");
+
+      assert(mockLogger.calls[0]);
+      assert.strictEqual(mockLogger.calls[0].payload.key, "revoke_me");
+    });
+
+    it("handles empty string key (still normalized)", () => {
+      // Edge case: empty string should normalize to empty string
+      manager.register("", "value", "env");
+      assert.strictEqual(manager.get(""), "value");
+    });
+
+    it("allows mixed case in projectForTool allowed keys list", () => {
+      manager.register("token1", "value1", "env");
+      manager.register("token2", "value2", "env");
+
+      const projected = manager.projectForTool(
+        ["TOKEN1", "Token2"],
+        "session1",
+        "fetch",
+      );
+
+      // Both should be found despite case differences
+      assert.strictEqual(projected.get("TOKEN1"), "value1");
+      assert.strictEqual(projected.get("Token2"), "value2");
+    });
+  });
 });

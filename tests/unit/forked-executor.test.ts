@@ -74,11 +74,13 @@ describe("ForkedExecutor", () => {
   function makeExecutor(overrides?: Partial<{
     stripEnvironment: boolean;
     defaultTimeout: number;
+    enablePermissionFlag: boolean;
   }>) {
     return new ForkedExecutor({
       scratchBaseDir,
       defaultTimeout: overrides?.defaultTimeout ?? 5000,
       stripEnvironment: overrides?.stripEnvironment ?? true,
+      enablePermissionFlag: overrides?.enablePermissionFlag ?? false,
       logger: mockLogger,
       workerScript: WORKER_SCRIPT_PATH,
       allowedHandlerRoots: [handlersDir],
@@ -189,6 +191,7 @@ describe("ForkedExecutor", () => {
         scratchBaseDir,
         defaultTimeout: 5000,
         stripEnvironment: false,
+        enablePermissionFlag: false,
         logger: mockLogger,
         workerScript: WORKER_SCRIPT_PATH,
         allowedHandlerRoots: [handlersDir],
@@ -539,6 +542,82 @@ describe("ForkedExecutor", () => {
       // Both should not be blocked by path validation
       assert.ok(!result1.error?.includes("outside allowed directories"));
       assert.ok(!result2.error?.includes("outside allowed directories"));
+    });
+  });
+
+  describe("permission flag defaults", () => {
+    it("can construct executor without enablePermissionFlag specified", async () => {
+      // When enablePermissionFlag is omitted (undefined), constructor should not crash
+      // The executor can be instantiated without specifying the flag
+      const executor = new ForkedExecutor({
+        scratchBaseDir,
+        defaultTimeout: 5000,
+        stripEnvironment: true,
+        logger: mockLogger,
+        workerScript: WORKER_SCRIPT_PATH,
+        allowedHandlerRoots: [handlersDir],
+        // Note: enablePermissionFlag is NOT specified
+      });
+
+      // Just verify the executor was created successfully
+      assert.ok(executor);
+
+      const handlerPath = await createTestHandler(handlersDir, `
+        export default {
+          async execute() {
+            return { success: true, output: { executed: true }, durationMs: 1 };
+          },
+        };
+      `);
+
+      const result = await executor.execute(handlerPath, {}, makeContext());
+
+      // Should work - either succeed or fail on execution, not on flag construction
+      // What matters is we didn't crash on undefined enablePermissionFlag
+      assert.ok(typeof result.success === "boolean");
+    });
+
+    it("executor with enablePermissionFlag: false works normally", async () => {
+      const executor = makeExecutor({ enablePermissionFlag: false });
+
+      const handlerPath = await createTestHandler(handlersDir, `
+        export default {
+          async execute() {
+            return { success: true, output: { flag: false }, durationMs: 1 };
+          },
+        };
+      `);
+
+      const result = await executor.execute(handlerPath, {}, makeContext());
+
+      assert.equal(result.success, true);
+      assert.ok(result.output);
+    });
+
+    it("executor with enablePermissionFlag: true works (if supported)", async () => {
+      // This test just verifies it doesn't crash when explicitly enabled
+      const executor = new ForkedExecutor({
+        scratchBaseDir,
+        defaultTimeout: 5000,
+        stripEnvironment: true,
+        enablePermissionFlag: true,
+        logger: mockLogger,
+        workerScript: WORKER_SCRIPT_PATH,
+        allowedHandlerRoots: [handlersDir],
+      });
+
+      const handlerPath = await createTestHandler(handlersDir, `
+        export default {
+          async execute() {
+            return { success: true, output: { flag: true }, durationMs: 1 };
+          },
+        };
+      `);
+
+      const result = await executor.execute(handlerPath, {}, makeContext());
+
+      // May succeed or fail depending on Node version, but shouldn't crash
+      assert.ok(typeof result.success === "boolean");
     });
   });
 });

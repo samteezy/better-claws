@@ -8,7 +8,7 @@ import {
   type ToolCall,
 } from "../types.js";
 import { validateSchema } from "../utils/schema-validator.js";
-import { redactSecrets } from "../utils/redact.js";
+import { sanitizeOutput } from "../utils/output-sanitizer.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 import type { SessionCompactor } from "../sessions/compactor.js";
@@ -230,7 +230,7 @@ export class MessageRouter {
 
           messages.push({
             role: "tool",
-            content: redactSecrets(
+            content: sanitizeOutput(
               JSON.stringify(toolResult.output ?? toolResult.error),
             ),
             tool_call_id: toolCall.id,

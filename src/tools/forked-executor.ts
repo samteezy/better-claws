@@ -10,7 +10,7 @@ import {
   type ToolResult,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
-import { redactSecrets } from "../utils/redact.js";
+import { sanitizeOutput } from "../utils/output-sanitizer.js";
 
 export class ForkedExecutorError extends BetterClawsError {
   constructor(message: string, code: string = "FORKED_EXECUTOR_ERROR") {
@@ -84,7 +84,7 @@ export class ForkedExecutor {
   private readonly scratchBaseDir: string;
   private readonly defaultTimeout: number;
   private readonly stripEnvironment: boolean;
-  private readonly enablePermissionFlag: boolean;
+  private enablePermissionFlag: boolean;
   private readonly maxMemoryMb: number;
   private readonly logger: StructuredLogger;
   private readonly workerScript: string;
@@ -95,7 +95,7 @@ export class ForkedExecutor {
     this.scratchBaseDir = options.scratchBaseDir;
     this.defaultTimeout = options.defaultTimeout;
     this.stripEnvironment = options.stripEnvironment;
-    this.enablePermissionFlag = options.enablePermissionFlag ?? false;
+    this.enablePermissionFlag = options.enablePermissionFlag ?? this.isPermissionFlagSupported();
     this.maxMemoryMb = options.maxMemoryMb ?? 128;
     this.logger = options.logger;
     this.workerScript = options.workerScript ?? this.resolveDefaultWorkerScript();
@@ -146,12 +146,10 @@ export class ForkedExecutor {
 
     const startTime = Date.now();
 
+    const forkContext = { ...context, scratchDir, timeout };
+
     try {
-      const result = await this.runInFork(handlerPath, params, {
-        ...context,
-        scratchDir,
-        timeout,
-      });
+      const result = await this.runInFork(handlerPath, params, forkContext);
 
       this.logger.log({
         sessionId: context.sessionId,
@@ -166,8 +164,32 @@ export class ForkedExecutor {
 
       return result;
     } catch (err) {
-      const durationMs = Date.now() - startTime;
+      // If the permission flag likely caused the failure, retry without it
       const isTimeout = err instanceof ForkedExecutorError && err.code === "TIMEOUT";
+      if (!isTimeout && this.enablePermissionFlag && this.isPermissionFlagSupported()) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isPermissionIssue =
+          errMsg.includes("ERR_ACCESS_DENIED") ||
+          errMsg.includes("permission");
+
+        if (isPermissionIssue) {
+          this.logger.log({
+            sessionId: context.sessionId,
+            eventType: "executor:result",
+            component: "forked-executor",
+            payload: {
+              action: "permission_flag_fallback",
+              message: "Retrying without --experimental-permission after failure",
+              error: errMsg,
+            },
+          });
+          this.enablePermissionFlag = false;
+          const retryResult = await this.runInFork(handlerPath, params, forkContext);
+          return retryResult;
+        }
+      }
+
+      const durationMs = Date.now() - startTime;
 
       this.logger.log({
         sessionId: context.sessionId,
@@ -272,8 +294,8 @@ export class ForkedExecutor {
           clearTimeout(timer);
 
           // Log captured output with redaction
-          const combinedStdout = redactSecrets((stdout + (msg.stdout || "")).slice(0, 10000));
-          const combinedStderr = redactSecrets((stderr + (msg.stderr || "")).slice(0, 10000));
+          const combinedStdout = sanitizeOutput((stdout + (msg.stdout || "")).slice(0, 10000));
+          const combinedStderr = sanitizeOutput((stderr + (msg.stderr || "")).slice(0, 10000));
           if (combinedStdout || combinedStderr) {
             this.logger.log({
               sessionId: context.sessionId,
@@ -288,7 +310,7 @@ export class ForkedExecutor {
           }
 
           const redactedOutput = typeof msg.output === "string"
-            ? redactSecrets(msg.output)
+            ? sanitizeOutput(msg.output)
             : msg.output;
 
           resolve({

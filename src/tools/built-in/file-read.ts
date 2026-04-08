@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
-import { resolve, isAbsolute } from "node:path";
 import type {
   ToolDescriptor,
   ToolHandler,
   ExecutionContext,
   ToolResult,
 } from "../../types.js";
+import { checkPath } from "../../utils/path-policy.js";
 
 export const descriptor: ToolDescriptor = {
   name: "file-read",
@@ -49,15 +49,9 @@ export const handler: ToolHandler = {
       };
     }
 
-    const resolved = resolve(
-      isAbsolute(filePath) ? filePath : resolve(context.scratchDir, filePath),
-    );
-
     const allowedRoots = [context.scratchDir, ...(context.allowedFsRoots ?? [])];
-    const pathAllowed = allowedRoots.some(
-      (root) => resolved === root || resolved.startsWith(root + "/"),
-    );
-    if (!pathAllowed) {
+    const pathCheck = await checkPath(filePath, context.scratchDir, allowedRoots);
+    if (!pathCheck.allowed) {
       return {
         success: false,
         output: null,
@@ -65,6 +59,7 @@ export const handler: ToolHandler = {
         durationMs: Date.now() - start,
       };
     }
+    const resolved = pathCheck.resolvedPath;
 
     try {
       const content = await readFile(resolved, "utf-8");

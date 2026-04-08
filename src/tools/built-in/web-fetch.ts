@@ -7,6 +7,9 @@ import type {
 
 const DEFAULT_MAX_BYTES = 102400; // 100KB
 
+/** Headers that must never be forwarded from LLM-generated requests. */
+const BLOCKED_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
+
 export const descriptor: ToolDescriptor = {
   name: "web-fetch",
   description:
@@ -89,10 +92,16 @@ export const handler: ToolHandler = {
       typeof params["method"] === "string"
         ? params["method"].toUpperCase()
         : "GET";
-    const headers =
+    const rawHeaders =
       params["headers"] !== null && typeof params["headers"] === "object"
         ? (params["headers"] as Record<string, string>)
         : {};
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rawHeaders)) {
+      if (!BLOCKED_HEADERS.has(k.toLowerCase())) {
+        headers[k] = v;
+      }
+    }
     const body =
       typeof params["body"] === "string" ? params["body"] : undefined;
     const maxBytes =

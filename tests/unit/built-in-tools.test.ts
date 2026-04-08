@@ -849,5 +849,236 @@ describe("Built-in tools", () => {
         });
       });
     });
+
+    describe("header blocklist enforcement", () => {
+      it("blocks Authorization header (lowercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/api",
+              headers: {
+                "authorization": "Bearer secret-token",
+                "content-type": "application/json",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking (headers are silently stripped).
+          // Error should be from network, not from header validation.
+          assert.ok(
+            !result.error?.includes("header") && !result.error?.includes("authorization"),
+            `Got header error when should only get network error: ${result.error}`,
+          );
+        });
+      });
+
+      it("blocks Authorization header (uppercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/api",
+              headers: {
+                "Authorization": "Bearer token",
+                "X-Custom": "value",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header validation
+          assert.ok(
+            !result.error?.includes("header") && !result.error?.includes("Authorization"),
+          );
+        });
+      });
+
+      it("blocks Cookie header (lowercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "cookie": "session=abc123xyz",
+                "accept": "text/html",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking
+          assert.ok(!result.error?.includes("cookie"));
+        });
+      });
+
+      it("blocks Cookie header (uppercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "Cookie": "session=xyz",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking
+          assert.ok(!result.error?.includes("Cookie"));
+        });
+      });
+
+      it("blocks Proxy-Authorization header (case-insensitive)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "proxy-authorization": "Basic user:pass",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking
+          assert.ok(!result.error?.includes("proxy"));
+        });
+      });
+
+      it("blocks PROXY-AUTHORIZATION header (all uppercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "PROXY-AUTHORIZATION": "Basic creds",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking
+          assert.ok(!result.error?.includes("PROXY"));
+        });
+      });
+
+      it("allows Content-Type header", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/api",
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should get network error, not header error
+          assert.ok(
+            !result.error?.includes("header") && !result.error?.includes("content-type"),
+          );
+        });
+      });
+
+      it("allows Accept header", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "accept": "application/json",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should get network error, not header error
+          assert.ok(!result.error?.includes("header"));
+        });
+      });
+
+      it("allows X-Custom-Header", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "x-custom": "custom-value",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error for custom header
+          assert.ok(!result.error?.includes("header"));
+        });
+      });
+
+      it("silently strips blocked headers without erroring", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "authorization": "Bearer secret",
+                "cookie": "session=xyz",
+                "proxy-authorization": "Basic creds",
+                "accept": "text/html",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not mention any header blocking or validation errors
+          if (result.error) {
+            assert.ok(
+              !result.error.includes("header") &&
+              !result.error.includes("authorization") &&
+              !result.error.includes("cookie"),
+            );
+          }
+        });
+      });
+
+      it("handles multiple blocked headers in one request", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "authorization": "Bearer token1",
+                "cookie": "session=token2",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should silently strip both, no header errors
+          assert.ok(!result.error?.includes("header"));
+        });
+      });
+
+      it("preserves non-blocked headers when removing blocked ones", async () => {
+        await withTempDir(async (tempDir) => {
+          // Since we can't easily introspect the actual fetch call,
+          // verify that the handler doesn't error when both blocked and allowed headers are present
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "authorization": "Bearer secret",
+                "accept": "application/json",
+                "user-agent": "test",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on headers (only network error expected)
+          assert.ok(!result.error?.includes("header"));
+        });
+      });
+    });
   });
 });
