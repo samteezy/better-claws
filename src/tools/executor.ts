@@ -73,6 +73,15 @@ export class ToolExecutor {
         },
       });
 
+      if (output.warnings?.length) {
+        this.logger.log({
+          sessionId: context.sessionId,
+          eventType: "tool:warning",
+          component: "executor",
+          payload: { warnings: output.warnings },
+        });
+      }
+
       return output;
     } catch (err) {
       const durationMs = Date.now() - startTime;

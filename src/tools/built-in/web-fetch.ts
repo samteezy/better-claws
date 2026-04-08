@@ -7,6 +7,30 @@ import type {
 
 const DEFAULT_MAX_BYTES = 102400; // 100KB
 
+/** Headers that must never be forwarded from LLM-generated requests. */
+const BLOCKED_HEADERS: ReadonlySet<string> = new Set(["authorization", "cookie", "proxy-authorization"]);
+
+export interface FilteredHeaders {
+  readonly headers: Record<string, string>;
+  readonly blocked: readonly string[];
+}
+
+export function filterHeaders(
+  rawHeaders: Record<string, string>,
+  blocklist: ReadonlySet<string> = BLOCKED_HEADERS,
+): FilteredHeaders {
+  const headers: Record<string, string> = {};
+  const blocked: string[] = [];
+  for (const [k, v] of Object.entries(rawHeaders)) {
+    if (blocklist.has(k.toLowerCase())) {
+      blocked.push(k);
+    } else {
+      headers[k] = v;
+    }
+  }
+  return { headers, blocked };
+}
+
 export const descriptor: ToolDescriptor = {
   name: "web-fetch",
   description:
@@ -89,10 +113,11 @@ export const handler: ToolHandler = {
       typeof params["method"] === "string"
         ? params["method"].toUpperCase()
         : "GET";
-    const headers =
+    const rawHeaders =
       params["headers"] !== null && typeof params["headers"] === "object"
         ? (params["headers"] as Record<string, string>)
         : {};
+    const { headers, blocked } = filterHeaders(rawHeaders);
     const body =
       typeof params["body"] === "string" ? params["body"] : undefined;
     const maxBytes =
@@ -127,6 +152,7 @@ export const handler: ToolHandler = {
         }
       }
 
+      const warnings = blocked.map(h => `Blocked header: ${h}`);
       return {
         success: response.ok,
         output: {
@@ -138,13 +164,16 @@ export const handler: ToolHandler = {
           byteLength: method === "HEAD" ? 0 : responseBody.length,
         },
         durationMs: Date.now() - start,
+        ...(warnings.length > 0 ? { warnings } : {}),
       };
     } catch (err) {
+      const warnings = blocked.map(h => `Blocked header: ${h}`);
       return {
         success: false,
         output: null,
         error: err instanceof Error ? err.message : String(err),
         durationMs: Date.now() - start,
+        ...(warnings.length > 0 ? { warnings } : {}),
       };
     }
   },

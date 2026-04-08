@@ -80,6 +80,18 @@ function validate(
           validate(obj[key], propSchema, path ? `${path}.${key}` : key, errors);
         }
       }
+
+      // reject unexpected properties unless explicitly allowed
+      if (schema.additionalProperties !== true) {
+        const declaredKeys = new Set(Object.keys(schema.properties));
+        for (const key of Object.keys(obj)) {
+          if (!declaredKeys.has(key)) {
+            errors.push(
+              `${path ? `${path}.` : ""}${key}: unexpected property`,
+            );
+          }
+        }
+      }
     }
   }
 
@@ -110,7 +122,7 @@ function matchesType(value: unknown, type: string): boolean {
     case "array":
       return Array.isArray(value);
     default:
-      return true; // unknown type — permissive
+      return false; // unknown type — reject
   }
 }
 

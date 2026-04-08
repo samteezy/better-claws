@@ -8,6 +8,7 @@ import {
   type ToolCall,
 } from "../types.js";
 import { validateSchema } from "../utils/schema-validator.js";
+import { sanitizeOutput } from "../utils/output-sanitizer.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 import type { SessionCompactor } from "../sessions/compactor.js";
@@ -26,6 +27,14 @@ export class RouterError extends BetterClawsError {
 }
 
 const MAX_TOOL_ITERATIONS = 10;
+
+/** Capabilities that must never be auto-granted — require explicit user grant. */
+const NEVER_AUTO_GRANT = new Set([
+  "fs:write",
+  "exec:shell",
+  "exec:subprocess",
+  "net:outbound",
+]);
 
 export const SYSTEM_PROMPT = `You are betterClaws, a personal AI assistant. You can use tools when they are available. Be helpful, concise, and accurate. If you are unsure about something, say so.`;
 
@@ -221,7 +230,9 @@ export class MessageRouter {
 
           messages.push({
             role: "tool",
-            content: JSON.stringify(toolResult.output ?? toolResult.error),
+            content: sanitizeOutput(
+              JSON.stringify(toolResult.output ?? toolResult.error),
+            ),
             tool_call_id: toolCall.id,
           });
         }
@@ -331,7 +342,7 @@ export class MessageRouter {
       const autoGrant = this.config.security.autoGrantCapabilities ?? [];
       const autoGrantSet = new Set(autoGrant);
       const canAutoGrant = decision.missingCapabilities.every(
-        (cap) => autoGrantSet.has(cap),
+        (cap) => autoGrantSet.has(cap) && !NEVER_AUTO_GRANT.has(cap),
       );
 
       if (canAutoGrant) {
@@ -401,6 +412,7 @@ export class MessageRouter {
       scratchDir: "",
       timeout: this.config.security.sandboxTimeout ?? 30000,
       secrets,
+      allowedFsRoots: this.config.security.allowedFsRoots ?? [],
     });
 
     await this.sessionManager.appendToLog(sessionId, {

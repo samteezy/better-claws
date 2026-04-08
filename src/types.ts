@@ -106,6 +106,7 @@ export interface ToolResult {
   readonly output: unknown;
   readonly error?: string;
   readonly durationMs: number;
+  readonly warnings?: readonly string[];
 }
 
 export interface ExecutionContext {
@@ -114,6 +115,7 @@ export interface ExecutionContext {
   readonly scratchDir: string;
   readonly timeout: number;
   readonly secrets: ReadonlyMap<string, string>;
+  readonly allowedFsRoots?: readonly string[];
 }
 
 export interface BuiltInToolModule {
@@ -152,6 +154,7 @@ export const EVENT_TYPES = [
   "llm:request",
   "llm:response",
   "tool:invoke",
+  "tool:warning",
   "gate:decision",
   "executor:start",
   "executor:result",
@@ -239,6 +242,7 @@ export interface SecurityConfig {
   readonly allowPersistentGrants: boolean;
   readonly maxMemoryMb?: number;
   readonly autoGrantCapabilities?: readonly string[];
+  readonly allowedFsRoots?: readonly string[];
 }
 
 export interface MemoryConfig {

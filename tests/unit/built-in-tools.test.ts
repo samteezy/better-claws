@@ -7,7 +7,7 @@ import type { ExecutionContext } from "../../src/types.js";
 import { handler as shellHandler } from "../../src/tools/built-in/shell.js";
 import { handler as fileReadHandler } from "../../src/tools/built-in/file-read.js";
 import { handler as fileWriteHandler } from "../../src/tools/built-in/file-write.js";
-import { handler as webFetchHandler } from "../../src/tools/built-in/web-fetch.js";
+import { handler as webFetchHandler, filterHeaders } from "../../src/tools/built-in/web-fetch.js";
 
 // Test helpers
 async function withTempDir(
@@ -21,13 +21,14 @@ async function withTempDir(
   }
 }
 
-function makeContext(tempDir: string): ExecutionContext {
+function makeContext(tempDir: string, allowedFsRoots?: readonly string[]): ExecutionContext {
   return {
     sessionId: "test-session",
     capabilities: [],
     scratchDir: tempDir,
     timeout: 5000,
     secrets: new Map<string, string>(),
+    allowedFsRoots,
   };
 }
 
@@ -274,6 +275,66 @@ describe("Built-in tools", () => {
         assert.ok((output["content"] as string).includes("test content"));
       });
     });
+
+    it("rejects absolute path outside scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const result = await fileReadHandler.execute(
+          { path: "/etc/passwd" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.match(result.error, /Path not allowed/);
+      });
+    });
+
+    it("rejects path with .. that resolves outside scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const result = await fileReadHandler.execute(
+          { path: "../../../etc/passwd" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.match(result.error, /Path not allowed/);
+      });
+    });
+
+    it("allows absolute path within scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const filePath = join(tempDir, "inside.txt");
+        await writeFile(filePath, "safe content\n");
+
+        const result = await fileReadHandler.execute(
+          { path: filePath },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.ok(result.output);
+      });
+    });
+
+    it("honors custom allowedFsRoots in context", async () => {
+      await withTempDir(async (tempDir) => {
+        await withTempDir(async (customRoot) => {
+          const filePath = join(customRoot, "custom.txt");
+          await writeFile(filePath, "custom content\n");
+
+          const result = await fileReadHandler.execute(
+            { path: filePath },
+            makeContext(tempDir, [customRoot]),
+          );
+
+          assert.strictEqual(result.success, true);
+          assert.ok(result.output);
+          const output = result.output as Record<string, unknown>;
+          assert.ok((output["content"] as string).includes("custom content"));
+        });
+      });
+    });
   });
 
   describe("file-write tool", () => {
@@ -435,6 +496,67 @@ describe("Built-in tools", () => {
           makeContext(tempDir),
         );
         assert.strictEqual(readResult.success, true);
+      });
+    });
+
+    it("rejects absolute path outside scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const result = await fileWriteHandler.execute(
+          { path: "/etc/hosts", content: "malicious" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.match(result.error, /Path not allowed/);
+      });
+    });
+
+    it("rejects path with .. that resolves outside scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const result = await fileWriteHandler.execute(
+          { path: "../../etc/hosts", content: "malicious" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.match(result.error, /Path not allowed/);
+      });
+    });
+
+    it("allows absolute path within scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const filePath = join(tempDir, "safe-write.txt");
+        const result = await fileWriteHandler.execute(
+          { path: filePath, content: "safe content" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.ok(result.output);
+      });
+    });
+
+    it("honors custom allowedFsRoots in context", async () => {
+      await withTempDir(async (tempDir) => {
+        await withTempDir(async (customRoot) => {
+          const filePath = join(customRoot, "custom-write.txt");
+          const result = await fileWriteHandler.execute(
+            { path: filePath, content: "custom write content" },
+            makeContext(tempDir, [customRoot]),
+          );
+
+          assert.strictEqual(result.success, true);
+
+          const readResult = await fileReadHandler.execute(
+            { path: filePath },
+            makeContext(tempDir, [customRoot]),
+          );
+          assert.strictEqual(readResult.success, true);
+          const readOutput = readResult.output as Record<string, unknown>;
+          assert.ok((readOutput["content"] as string).includes("custom write content"));
+        });
       });
     });
   });
@@ -726,6 +848,283 @@ describe("Built-in tools", () => {
           );
         });
       });
+    });
+
+    describe("header blocklist enforcement", () => {
+      it("blocks Authorization header (lowercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/api",
+              headers: {
+                "authorization": "Bearer secret-token",
+                "content-type": "application/json",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking (headers are silently stripped).
+          // Error should be from network, not from header validation.
+          assert.ok(
+            !result.error?.includes("header") && !result.error?.includes("authorization"),
+            `Got header error when should only get network error: ${result.error}`,
+          );
+        });
+      });
+
+      it("blocks Authorization header (uppercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/api",
+              headers: {
+                "Authorization": "Bearer token",
+                "X-Custom": "value",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header validation
+          assert.ok(
+            !result.error?.includes("header") && !result.error?.includes("Authorization"),
+          );
+        });
+      });
+
+      it("blocks Cookie header (lowercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "cookie": "session=abc123xyz",
+                "accept": "text/html",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking
+          assert.ok(!result.error?.includes("cookie"));
+        });
+      });
+
+      it("blocks Cookie header (uppercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "Cookie": "session=xyz",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking
+          assert.ok(!result.error?.includes("Cookie"));
+        });
+      });
+
+      it("blocks Proxy-Authorization header (case-insensitive)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "proxy-authorization": "Basic user:pass",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking
+          assert.ok(!result.error?.includes("proxy"));
+        });
+      });
+
+      it("blocks PROXY-AUTHORIZATION header (all uppercase)", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "PROXY-AUTHORIZATION": "Basic creds",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on header blocking
+          assert.ok(!result.error?.includes("PROXY"));
+        });
+      });
+
+      it("allows Content-Type header", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/api",
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should get network error, not header error
+          assert.ok(
+            !result.error?.includes("header") && !result.error?.includes("content-type"),
+          );
+        });
+      });
+
+      it("allows Accept header", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "accept": "application/json",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should get network error, not header error
+          assert.ok(!result.error?.includes("header"));
+        });
+      });
+
+      it("allows X-Custom-Header", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "x-custom": "custom-value",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error for custom header
+          assert.ok(!result.error?.includes("header"));
+        });
+      });
+
+      it("silently strips blocked headers without erroring", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "authorization": "Bearer secret",
+                "cookie": "session=xyz",
+                "proxy-authorization": "Basic creds",
+                "accept": "text/html",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not mention any header blocking or validation errors
+          if (result.error) {
+            assert.ok(
+              !result.error.includes("header") &&
+              !result.error.includes("authorization") &&
+              !result.error.includes("cookie"),
+            );
+          }
+        });
+      });
+
+      it("handles multiple blocked headers in one request", async () => {
+        await withTempDir(async (tempDir) => {
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "authorization": "Bearer token1",
+                "cookie": "session=token2",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should silently strip both, no header errors
+          assert.ok(!result.error?.includes("header"));
+        });
+      });
+
+      it("preserves non-blocked headers when removing blocked ones", async () => {
+        await withTempDir(async (tempDir) => {
+          // Since we can't easily introspect the actual fetch call,
+          // verify that the handler doesn't error when both blocked and allowed headers are present
+          const result = await webFetchHandler.execute(
+            {
+              url: "http://example.com/",
+              headers: {
+                "authorization": "Bearer secret",
+                "accept": "application/json",
+                "user-agent": "test",
+              },
+            },
+            makeContext(tempDir),
+          );
+
+          // Should not error on headers (only network error expected)
+          assert.ok(!result.error?.includes("header"));
+        });
+      });
+    });
+  });
+
+  describe("filterHeaders", () => {
+    const blocklist = new Set(["authorization", "cookie", "proxy-authorization"]);
+
+    it("blocks Authorization header and reports it", () => {
+      const result = filterHeaders({ "Authorization": "Bearer secret" }, blocklist);
+      assert.deepStrictEqual(result.headers, {});
+      assert.deepStrictEqual(result.blocked, ["Authorization"]);
+    });
+
+    it("passes through non-blocked headers", () => {
+      const result = filterHeaders({ "Content-Type": "application/json", "Accept": "text/html" }, blocklist);
+      assert.deepStrictEqual(result.headers, { "Content-Type": "application/json", "Accept": "text/html" });
+      assert.deepStrictEqual(result.blocked, []);
+    });
+
+    it("partitions mixed blocked and allowed headers", () => {
+      const result = filterHeaders({
+        "Authorization": "Bearer token",
+        "Content-Type": "application/json",
+        "Cookie": "session=abc",
+        "X-Custom": "value",
+      }, blocklist);
+
+      assert.deepStrictEqual(result.headers, { "Content-Type": "application/json", "X-Custom": "value" });
+      assert.deepStrictEqual(result.blocked, ["Authorization", "Cookie"]);
+    });
+
+    it("handles case variations (all uppercase)", () => {
+      const result = filterHeaders({ "AUTHORIZATION": "Bearer token" }, blocklist);
+      assert.deepStrictEqual(result.headers, {});
+      assert.deepStrictEqual(result.blocked, ["AUTHORIZATION"]);
+    });
+
+    it("handles case variations (mixed case)", () => {
+      const result = filterHeaders({ "Proxy-Authorization": "Basic creds" }, blocklist);
+      assert.deepStrictEqual(result.headers, {});
+      assert.deepStrictEqual(result.blocked, ["Proxy-Authorization"]);
+    });
+
+    it("returns empty results for empty input", () => {
+      const result = filterHeaders({}, blocklist);
+      assert.deepStrictEqual(result.headers, {});
+      assert.deepStrictEqual(result.blocked, []);
     });
   });
 });

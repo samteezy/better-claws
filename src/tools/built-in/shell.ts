@@ -5,6 +5,7 @@ import type {
   ExecutionContext,
   ToolResult,
 } from "../../types.js";
+import { checkPath } from "../../utils/path-policy.js";
 
 export const descriptor: ToolDescriptor = {
   name: "shell",
@@ -57,8 +58,19 @@ export const handler: ToolHandler = {
     const args = Array.isArray(params["args"])
       ? (params["args"] as unknown[]).map(String)
       : [];
-    const cwd =
+    const rawCwd =
       typeof params["cwd"] === "string" ? params["cwd"] : context.scratchDir;
+    const allowedRoots = [context.scratchDir, ...(context.allowedFsRoots ?? [])];
+    const cwdCheck = await checkPath(rawCwd, context.scratchDir, allowedRoots);
+    if (!cwdCheck.allowed) {
+      return {
+        success: false,
+        output: null,
+        error: `Working directory not allowed: ${rawCwd}`,
+        durationMs: Date.now() - start,
+      };
+    }
+    const cwd = cwdCheck.resolvedPath;
     const timeout =
       typeof params["timeout"] === "number"
         ? params["timeout"]

@@ -10,7 +10,7 @@ import {
   type ToolResult,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
-import { redactSecrets } from "../utils/redact.js";
+import { sanitizeOutput } from "../utils/output-sanitizer.js";
 
 export class ForkedExecutorError extends BetterClawsError {
   constructor(message: string, code: string = "FORKED_EXECUTOR_ERROR") {
@@ -95,7 +95,7 @@ export class ForkedExecutor {
     this.scratchBaseDir = options.scratchBaseDir;
     this.defaultTimeout = options.defaultTimeout;
     this.stripEnvironment = options.stripEnvironment;
-    this.enablePermissionFlag = options.enablePermissionFlag ?? false;
+    this.enablePermissionFlag = options.enablePermissionFlag ?? this.isPermissionFlagSupported();
     this.maxMemoryMb = options.maxMemoryMb ?? 128;
     this.logger = options.logger;
     this.workerScript = options.workerScript ?? this.resolveDefaultWorkerScript();
@@ -146,12 +146,10 @@ export class ForkedExecutor {
 
     const startTime = Date.now();
 
+    const forkContext = { ...context, scratchDir, timeout };
+
     try {
-      const result = await this.runInFork(handlerPath, params, {
-        ...context,
-        scratchDir,
-        timeout,
-      });
+      const result = await this.runInFork(handlerPath, params, forkContext);
 
       this.logger.log({
         sessionId: context.sessionId,
@@ -163,6 +161,15 @@ export class ForkedExecutor {
           isolated: true,
         },
       });
+
+      if (result.warnings?.length) {
+        this.logger.log({
+          sessionId: context.sessionId,
+          eventType: "tool:warning",
+          component: "forked-executor",
+          payload: { warnings: result.warnings },
+        });
+      }
 
       return result;
     } catch (err) {
@@ -272,8 +279,8 @@ export class ForkedExecutor {
           clearTimeout(timer);
 
           // Log captured output with redaction
-          const combinedStdout = redactSecrets((stdout + (msg.stdout || "")).slice(0, 10000));
-          const combinedStderr = redactSecrets((stderr + (msg.stderr || "")).slice(0, 10000));
+          const combinedStdout = sanitizeOutput((stdout + (msg.stdout || "")).slice(0, 10000));
+          const combinedStderr = sanitizeOutput((stderr + (msg.stderr || "")).slice(0, 10000));
           if (combinedStdout || combinedStderr) {
             this.logger.log({
               sessionId: context.sessionId,
@@ -288,7 +295,7 @@ export class ForkedExecutor {
           }
 
           const redactedOutput = typeof msg.output === "string"
-            ? redactSecrets(msg.output)
+            ? sanitizeOutput(msg.output)
             : msg.output;
 
           resolve({
