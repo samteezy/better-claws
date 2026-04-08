@@ -192,8 +192,6 @@ export class MessageRouter {
       const buildResult = this.promptBuilder.build({
         history,
         tools,
-        persona: this.config.systemContext?.persona,
-        userContext: this.config.systemContext?.userContext,
         currentDateTime: this.getCurrentDateTime(),
         adapterPrompt: this.getAdapterPrompt(message.adapterId),
       });
@@ -267,7 +265,21 @@ export class MessageRouter {
   }
 
   private getCurrentDateTime(): string {
-    return `${new Date().toISOString()} (UTC)`;
+    const tz = this.config.systemContext?.timezone ?? "UTC";
+    const now = new Date();
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    const parts: Record<string, string> = {};
+    for (const p of fmt.formatToParts(now)) parts[p.type] = p.value;
+    return `${parts["year"]}-${parts["month"]}-${parts["day"]} ${parts["hour"]}:${parts["minute"]}:${parts["second"]} (${tz})`;
   }
 
   private getAdapterPrompt(adapterId: string): string | undefined {

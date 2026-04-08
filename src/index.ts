@@ -232,6 +232,8 @@ export async function createApp(config: BetterClawsConfig, options?: {
   const promptBuilder = new PromptBuilder({
     systemPrompt: SYSTEM_PROMPT,
     tokenBudget: compactionCfg?.tokenBudget ?? config.llm.maxTokens,
+    persona: config.systemContext?.persona,
+    userContext: config.systemContext?.userContext,
   });
 
   const router = new MessageRouter({

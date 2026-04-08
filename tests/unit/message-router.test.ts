@@ -170,8 +170,10 @@ function createMockCompactor() {
 
 function createMockPromptBuilder() {
   let estimatedTokens = 100;
+  let lastInput: Record<string, unknown> | null = null;
   return {
     build(input: Record<string, unknown>) {
+      lastInput = input;
       const history = (input["history"] ?? []) as Array<{ role: string; content: string }>;
       const systemMessage = { role: "system" as const, content: "mock-system-prompt" };
       return {
@@ -183,7 +185,10 @@ function createMockPromptBuilder() {
     setEstimatedTokens(tokens: number) {
       estimatedTokens = tokens;
     },
-  } as unknown as PromptBuilder & { setEstimatedTokens(tokens: number): void };
+    getLastInput() {
+      return lastInput;
+    },
+  } as unknown as PromptBuilder & { setEstimatedTokens(tokens: number): void; getLastInput(): Record<string, unknown> | null };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -838,6 +843,74 @@ describe("MessageRouter", () => {
                ((l as Record<string, unknown>).payload as Record<string, unknown>).success === false
       );
       assert.ok(errorLog, "should log compaction error");
+    });
+  });
+
+  describe("getCurrentDateTime — timezone config", () => {
+    it("includes configured timezone in currentDateTime", async () => {
+      const promptBuilder = createMockPromptBuilder();
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "OK" },
+        usage: { promptTokens: 10, completionTokens: 5 },
+        raw: {},
+      });
+
+      const configWithTz: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        systemContext: { timezone: "America/New_York" },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: createMockToolRegistry() as unknown as ToolRegistry,
+        capabilityGate: createMockCapabilityGate() as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithTz,
+        promptBuilder: promptBuilder as unknown as PromptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Test"));
+      const input = promptBuilder.getLastInput();
+      assert.ok(input);
+      const dt = input["currentDateTime"] as string;
+      assert.ok(dt.includes("(America/New_York)"), `expected timezone in: ${dt}`);
+    });
+
+    it("defaults to UTC when no timezone configured", async () => {
+      const promptBuilder = createMockPromptBuilder();
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "OK" },
+        usage: { promptTokens: 10, completionTokens: 5 },
+        raw: {},
+      });
+
+      const { router } = createRouter({ promptBuilder, llmClient });
+      await router.handleMessage(makeInbound("Test"));
+      const input = promptBuilder.getLastInput();
+      assert.ok(input);
+      const dt = input["currentDateTime"] as string;
+      assert.ok(dt.includes("(UTC)"), `expected UTC in: ${dt}`);
+    });
+
+    it("formats date as YYYY-MM-DD HH:MM:SS", async () => {
+      const promptBuilder = createMockPromptBuilder();
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "OK" },
+        usage: { promptTokens: 10, completionTokens: 5 },
+        raw: {},
+      });
+
+      const { router } = createRouter({ promptBuilder, llmClient });
+      await router.handleMessage(makeInbound("Test"));
+      const input = promptBuilder.getLastInput();
+      const dt = input!["currentDateTime"] as string;
+      assert.match(dt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(.+\)$/);
     });
   });
 });

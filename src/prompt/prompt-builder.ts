@@ -22,6 +22,10 @@ export interface PromptBuilderOptions {
   readonly tokenBudget: number;
   /** Approximate characters per token for estimation. Default: 4. */
   readonly charsPerToken?: number;
+  /** AI persona / personality text from config (sanitized once at construction). */
+  readonly persona?: string;
+  /** Static user context from config (sanitized once at construction). */
+  readonly userContext?: string;
 }
 
 export interface BuildInput {
@@ -29,13 +33,9 @@ export interface BuildInput {
   readonly history: readonly ChatMessage[];
   /** Available tool descriptors to declare in the system prompt. */
   readonly tools: readonly ToolDescriptor[];
-  /** AI persona / personality text from config. */
-  readonly persona?: string;
-  /** Static user context from config (name, preferences, etc.). */
-  readonly userContext?: string;
   /** Current date/time string to inject (caller provides, keeps builder pure). */
   readonly currentDateTime?: string;
-  /** Adapter-specific prompt augmentation text. */
+  /** Adapter-specific prompt augmentation text (cached after first sanitization). */
   readonly adapterPrompt?: string;
   /** Optional working memory text to inject (placeholder for issue #4). */
   readonly workingMemory?: string;
@@ -56,11 +56,20 @@ export class PromptBuilder {
   private readonly systemPrompt: string;
   private readonly tokenBudget: number;
   private readonly charsPerToken: number;
+  private readonly sanitizedPersona: string | undefined;
+  private readonly sanitizedUserContext: string | undefined;
+  private readonly adapterPromptCache = new Map<string, string>();
 
   constructor(options: PromptBuilderOptions) {
     this.systemPrompt = options.systemPrompt;
     this.tokenBudget = options.tokenBudget;
     this.charsPerToken = options.charsPerToken ?? 4;
+    this.sanitizedPersona = options.persona
+      ? sanitizeMemoryContent(options.persona, 2000)
+      : undefined;
+    this.sanitizedUserContext = options.userContext
+      ? sanitizeMemoryContent(options.userContext, 2000)
+      : undefined;
   }
 
   build(input: BuildInput): BuildResult {
@@ -96,30 +105,32 @@ export class PromptBuilder {
     return Math.ceil(text.length / this.charsPerToken);
   }
 
+  private getCachedAdapterPrompt(raw: string): string {
+    let cached = this.adapterPromptCache.get(raw);
+    if (cached === undefined) {
+      cached = sanitizeMemoryContent(raw, 1000);
+      this.adapterPromptCache.set(raw, cached);
+    }
+    return cached;
+  }
+
   private assembleSystemContent(input: BuildInput): string {
     const parts: string[] = [this.systemPrompt];
 
-    // Inject persona (AI personality) if present
-    if (input.persona) {
-      const sanitized = sanitizeMemoryContent(input.persona, 2000);
-      parts.push(`\n## Persona\n${sanitized}`);
+    if (this.sanitizedPersona) {
+      parts.push(`\n## Persona\n${this.sanitizedPersona}`);
     }
 
-    // Inject user context if present
-    if (input.userContext) {
-      const sanitized = sanitizeMemoryContent(input.userContext, 2000);
-      parts.push(`\n## User Context\n${sanitized}`);
+    if (this.sanitizedUserContext) {
+      parts.push(`\n## User Context\n${this.sanitizedUserContext}`);
     }
 
-    // Inject current date/time
     if (input.currentDateTime) {
       parts.push(`\n## Current Date and Time\n${input.currentDateTime}`);
     }
 
-    // Inject adapter-specific instructions
     if (input.adapterPrompt) {
-      const sanitized = sanitizeMemoryContent(input.adapterPrompt, 1000);
-      parts.push(`\n## Channel Instructions\n${sanitized}`);
+      parts.push(`\n## Channel Instructions\n${this.getCachedAdapterPrompt(input.adapterPrompt)}`);
     }
 
     // Inject working memory if present, sanitized against prompt injection
