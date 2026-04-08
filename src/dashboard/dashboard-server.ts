@@ -300,6 +300,7 @@ export class DashboardServer {
     }
 
     const total = entries.length;
+    entries.reverse(); // newest first
     entries = entries.slice(offset, offset + limit);
 
     this.sendJson(res, 200, { logs: entries, total, limit, offset });

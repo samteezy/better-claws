@@ -15,7 +15,9 @@
       views.forEach(function (v) { v.classList.remove("active"); });
       btn.classList.add("active");
       document.getElementById("view-" + viewName).classList.add("active");
+      stopLogAutoRefresh();
       loadView(viewName);
+      if (viewName === "logs") startLogAutoRefresh();
     });
   });
 
@@ -214,6 +216,20 @@
       document.getElementById("log-page-info").textContent =
         (logOffset + 1) + "-" + Math.min(logOffset + logLimit, data.total) + " of " + data.total;
     });
+  }
+
+  var logAutoRefreshTimer = null;
+
+  function startLogAutoRefresh() {
+    stopLogAutoRefresh();
+    logAutoRefreshTimer = setInterval(loadLogs, 3000);
+  }
+
+  function stopLogAutoRefresh() {
+    if (logAutoRefreshTimer !== null) {
+      clearInterval(logAutoRefreshTimer);
+      logAutoRefreshTimer = null;
+    }
   }
 
   document.getElementById("log-refresh").addEventListener("click", function () {
