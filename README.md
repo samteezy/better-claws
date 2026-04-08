@@ -112,6 +112,41 @@ Single JSON file at `config/betterclaws.json`.
 
 The gateway binds to **localhost only** by default. Exposing to the network requires a reverse proxy.
 
+## System context
+
+Customize the AI's personality and provide static information about yourself in the `systemContext` config section. These are injected into every system prompt alongside the current UTC date and time.
+
+```json
+"systemContext": {
+  "persona": "You are a concise, no-nonsense assistant.",
+  "userContext": "My name is Sam. I live in New York. I prefer metric units.",
+  "timezone": "UTC"
+}
+```
+
+- **`persona`** — Shapes the AI's personality and tone.
+- **`userContext`** — Static facts about you that the AI should always know.
+- **`timezone`** — Currently defaults to UTC; the current date/time is always included in the prompt.
+
+### Adapter-specific prompts
+
+Each adapter can include a `systemPrompt` field to tailor behavior per channel. This is useful for platform-specific formatting or length constraints:
+
+```json
+"adapters": {
+  "telegram": {
+    "enabled": true,
+    "token": "env:BC_TELEGRAM_TOKEN",
+    "systemPrompt": "Keep responses under 4096 characters. Use markdown formatting."
+  },
+  "webhook": {
+    "enabled": true,
+    "secret": "env:BC_WEBHOOK_SECRET",
+    "systemPrompt": "Respond in plain text only. Keep responses under 160 characters."
+  }
+}
+```
+
 ## Built-in tools
 
 | Tool | Capabilities | Description |

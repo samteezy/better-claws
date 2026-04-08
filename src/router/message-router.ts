@@ -3,7 +3,6 @@ import {
   isCapability,
   type BetterClawsConfig,
   type ChannelAdapter,
-  type ChatMessage,
   type InboundMessage,
   type OutboundMessage,
   type ToolCall,
@@ -40,7 +39,7 @@ export interface MessageRouterOptions {
   readonly logger: StructuredLogger;
   readonly config: BetterClawsConfig;
   readonly compactor?: SessionCompactor;
-  readonly promptBuilder?: PromptBuilder;
+  readonly promptBuilder: PromptBuilder;
 }
 
 export class MessageRouter {
@@ -53,7 +52,7 @@ export class MessageRouter {
   private readonly logger: StructuredLogger;
   private readonly config: BetterClawsConfig;
   private readonly compactor: SessionCompactor | undefined;
-  private readonly promptBuilder: PromptBuilder | undefined;
+  private readonly promptBuilder: PromptBuilder;
   private readonly adapters = new Map<string, ChannelAdapter>();
 
   constructor(options: MessageRouterOptions) {
@@ -164,7 +163,6 @@ export class MessageRouter {
       // Auto-compaction: if token usage is approaching the budget, compact first
       if (
         this.compactor &&
-        this.promptBuilder &&
         this.config.compaction?.enabled
       ) {
         const compCfg = this.config.compaction;
@@ -190,12 +188,16 @@ export class MessageRouter {
         }
       }
 
-      const messages: ChatMessage[] = [
-        { role: "system", content: SYSTEM_PROMPT },
-        ...history,
-      ];
-
       const tools = this.toolRegistry.getDescriptors();
+      const buildResult = this.promptBuilder.build({
+        history,
+        tools,
+        persona: this.config.systemContext?.persona,
+        userContext: this.config.systemContext?.userContext,
+        currentDateTime: this.getCurrentDateTime(),
+        adapterPrompt: this.getAdapterPrompt(message.adapterId),
+      });
+      const messages = buildResult.messages;
       let response = await this.llmClient.chat(
         messages,
         tools.length > 0 ? tools : undefined,
@@ -262,6 +264,15 @@ export class MessageRouter {
         text: errorText,
       };
     }
+  }
+
+  private getCurrentDateTime(): string {
+    return `${new Date().toISOString()} (UTC)`;
+  }
+
+  private getAdapterPrompt(adapterId: string): string | undefined {
+    const adapterConfig = this.config.adapters[adapterId];
+    return adapterConfig?.systemPrompt;
   }
 
   private async processToolCall(

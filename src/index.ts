@@ -229,9 +229,10 @@ export async function createApp(config: BetterClawsConfig, options?: {
   const compactor = compactionCfg?.enabled
     ? new SessionCompactor({ sessionManager, llmClient, weakLlmClient: weakLlmClient ?? undefined, compactionConfig: compactionCfg, logger })
     : undefined;
-  const promptBuilder = compactionCfg?.enabled
-    ? new PromptBuilder({ systemPrompt: SYSTEM_PROMPT, tokenBudget: compactionCfg.tokenBudget })
-    : undefined;
+  const promptBuilder = new PromptBuilder({
+    systemPrompt: SYSTEM_PROMPT,
+    tokenBudget: compactionCfg?.tokenBudget ?? config.llm.maxTokens,
+  });
 
   const router = new MessageRouter({
     sessionManager,

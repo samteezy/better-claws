@@ -228,6 +228,8 @@ export interface AdapterConfig {
   readonly host?: string;
   readonly port?: number;
   readonly path?: string;
+  /** Adapter-specific system prompt augmentation (e.g., formatting or length constraints). */
+  readonly systemPrompt?: string;
 }
 
 export interface SecurityConfig {
@@ -305,6 +307,15 @@ export interface CompactionConfig {
   readonly keepRecentTokens: number;
 }
 
+export interface SystemContextConfig {
+  /** AI personality / soul text, always injected into the system prompt. */
+  readonly persona?: string;
+  /** Static information about the user (name, location, preferences, etc.). */
+  readonly userContext?: string;
+  /** IANA timezone string. Defaults to "UTC". */
+  readonly timezone?: string;
+}
+
 export interface BetterClawsConfig {
   readonly gateway: GatewayConfig;
   readonly llm: LlmConfig;
@@ -316,6 +327,7 @@ export interface BetterClawsConfig {
   readonly secrets?: Readonly<Record<string, string>>;
   readonly tools?: ToolsConfig;
   readonly compaction?: CompactionConfig;
+  readonly systemContext?: SystemContextConfig;
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────

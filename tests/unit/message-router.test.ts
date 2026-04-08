@@ -171,8 +171,14 @@ function createMockCompactor() {
 function createMockPromptBuilder() {
   let estimatedTokens = 100;
   return {
-    build(_input: Record<string, unknown>) {
-      return { estimatedTokens };
+    build(input: Record<string, unknown>) {
+      const history = (input["history"] ?? []) as Array<{ role: string; content: string }>;
+      const systemMessage = { role: "system" as const, content: "mock-system-prompt" };
+      return {
+        messages: [systemMessage, ...history],
+        estimatedTokens,
+        truncatedCount: 0,
+      };
     },
     setEstimatedTokens(tokens: number) {
       estimatedTokens = tokens;
@@ -210,7 +216,7 @@ describe("MessageRouter", () => {
     const capabilityGate = overrides?.capabilityGate ?? createMockCapabilityGate();
     const executor = overrides?.executor ?? createMockExecutor();
     const compactor = overrides?.compactor;
-    const promptBuilder = overrides?.promptBuilder;
+    const promptBuilder = overrides?.promptBuilder ?? createMockPromptBuilder();
 
     const router = new MessageRouter({
       sessionManager: sessionManager as unknown as SessionManager,
@@ -611,6 +617,7 @@ describe("MessageRouter", () => {
         secretManager: createMockSecretManager(),
         logger: createMockLogger() as unknown as StructuredLogger,
         config: configWithoutCompaction,
+        promptBuilder: createMockPromptBuilder() as unknown as PromptBuilder,
       });
 
       await router.handleMessage(makeInbound("Test"));
@@ -646,6 +653,7 @@ describe("MessageRouter", () => {
         secretManager: createMockSecretManager(),
         logger: createMockLogger() as unknown as StructuredLogger,
         config: configDisabled,
+        promptBuilder: createMockPromptBuilder() as unknown as PromptBuilder,
       });
 
       await router.handleMessage(makeInbound("Test"));

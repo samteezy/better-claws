@@ -50,5 +50,10 @@
     "tokenBudget": 3584,
     "reserveTokens": 512,
     "keepRecentTokens": 1000
+  },
+  "systemContext": {
+    "persona": "",
+    "userContext": "",
+    "timezone": "UTC"
   }
 }

@@ -10,6 +10,7 @@ import { ToolExecutor } from "../../src/tools/executor.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { SecretManager } from "../../src/secrets/secret-manager.js";
 import type { BetterClawsConfig } from "../../src/types.js";
+import { PromptBuilder } from "../../src/prompt/prompt-builder.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -202,6 +203,7 @@ describe("Telegram → Router integration", () => {
       secretManager: createMockSecretManager(),
       logger,
       config: TEST_CONFIG,
+      promptBuilder: new PromptBuilder({ systemPrompt: "test", tokenBudget: 1024 }),
     });
 
     const adapter = new TelegramAdapter({
@@ -364,6 +366,7 @@ describe("Telegram → Router integration", () => {
       secretManager: createMockSecretManager(),
       logger,
       config: TEST_CONFIG,
+      promptBuilder: new PromptBuilder({ systemPrompt: "test", tokenBudget: 1024 }),
     });
 
     const adapter = new TelegramAdapter({
@@ -511,6 +514,7 @@ describe("Telegram → Router integration", () => {
       secretManager: createMockSecretManager(),
       logger,
       config: TEST_CONFIG,
+      promptBuilder: new PromptBuilder({ systemPrompt: "test", tokenBudget: 1024 }),
     });
 
     const adapter = new TelegramAdapter({

@@ -29,6 +29,14 @@ export interface BuildInput {
   readonly history: readonly ChatMessage[];
   /** Available tool descriptors to declare in the system prompt. */
   readonly tools: readonly ToolDescriptor[];
+  /** AI persona / personality text from config. */
+  readonly persona?: string;
+  /** Static user context from config (name, preferences, etc.). */
+  readonly userContext?: string;
+  /** Current date/time string to inject (caller provides, keeps builder pure). */
+  readonly currentDateTime?: string;
+  /** Adapter-specific prompt augmentation text. */
+  readonly adapterPrompt?: string;
   /** Optional working memory text to inject (placeholder for issue #4). */
   readonly workingMemory?: string;
   /** Optional retrieved long-term memories (placeholder for issue #5). */
@@ -90,6 +98,29 @@ export class PromptBuilder {
 
   private assembleSystemContent(input: BuildInput): string {
     const parts: string[] = [this.systemPrompt];
+
+    // Inject persona (AI personality) if present
+    if (input.persona) {
+      const sanitized = sanitizeMemoryContent(input.persona, 2000);
+      parts.push(`\n## Persona\n${sanitized}`);
+    }
+
+    // Inject user context if present
+    if (input.userContext) {
+      const sanitized = sanitizeMemoryContent(input.userContext, 2000);
+      parts.push(`\n## User Context\n${sanitized}`);
+    }
+
+    // Inject current date/time
+    if (input.currentDateTime) {
+      parts.push(`\n## Current Date and Time\n${input.currentDateTime}`);
+    }
+
+    // Inject adapter-specific instructions
+    if (input.adapterPrompt) {
+      const sanitized = sanitizeMemoryContent(input.adapterPrompt, 1000);
+      parts.push(`\n## Channel Instructions\n${sanitized}`);
+    }
 
     // Inject working memory if present, sanitized against prompt injection
     if (input.workingMemory) {

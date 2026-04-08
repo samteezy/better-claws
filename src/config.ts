@@ -63,6 +63,9 @@ export const DEFAULT_CONFIG: BetterClawsConfig = {
     redactSensitive: true,
     retentionDays: 90,
   },
+  systemContext: {
+    timezone: "UTC",
+  },
 };
 
 export function resolveEnvSecrets(obj: unknown): unknown {
