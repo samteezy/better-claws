@@ -6,6 +6,7 @@ import { DiscordAdapter } from "./discord/discord-adapter.js";
 import { SlackAdapter } from "./slack/slack-adapter.js";
 import { WebhookAdapter } from "./webhook/webhook-adapter.js";
 import { SignalAdapter } from "./signal/signal-adapter.js";
+import { WebChatAdapter } from "./webchat/webchat-adapter.js";
 
 function requireFields(
   name: string,
@@ -60,6 +61,15 @@ export function createAdapter(
       return new SignalAdapter({
         apiUrl: config.apiUrl!,
         number: config.number!,
+        logger,
+      });
+
+    case "webchat":
+      requireFields(name, config, ["port"]);
+      return new WebChatAdapter({
+        port: config.port!,
+        host: config.host,
+        authToken: config.secret,
         logger,
       });
 

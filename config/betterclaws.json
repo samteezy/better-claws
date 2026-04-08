@@ -16,7 +16,8 @@
   "adapters": {
     "telegram": { "enabled": false, "token": "env:BC_TELEGRAM_TOKEN" },
     "discord": { "enabled": false },
-    "webhook": { "enabled": false, "secret": "env:BC_WEBHOOK_SECRET" }
+    "webhook": { "enabled": false, "secret": "env:BC_WEBHOOK_SECRET" },
+    "webchat": { "enabled": false, "port": 18702, "secret": "env:BC_WEBCHAT_TOKEN" }
   },
   "security": {
     "defaultCapabilityPolicy": "deny",

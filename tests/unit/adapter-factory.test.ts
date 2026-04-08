@@ -73,6 +73,14 @@ describe("createAdapter", () => {
       assert.equal(adapter.id, "signal");
       assert.equal(adapter.name, "Signal");
     });
+
+    it("creates WebChatAdapter with valid config", () => {
+      const config: AdapterConfig = { enabled: true, port: 18800 };
+      const adapter = createAdapter("webchat", config, logger);
+
+      assert.equal(adapter.id, "webchat");
+      assert.equal(adapter.name, "WebChat");
+    });
   });
 
   describe("missing required fields — telegram", () => {
@@ -285,6 +293,47 @@ describe("createAdapter", () => {
     });
   });
 
+  describe("missing required fields — webchat", () => {
+    it("throws ConfigError when port is missing", () => {
+      const config: AdapterConfig = { enabled: true };
+
+      assert.throws(
+        () => createAdapter("webchat", config, logger),
+        (err: unknown) => {
+          if (!(err instanceof ConfigError)) return false;
+          assert.equal(err.code, "MISSING_ADAPTER_CONFIG");
+          assert.match(err.message, /port/);
+          return true;
+        },
+      );
+    });
+
+    it("throws ConfigError when port is 0", () => {
+      const config: AdapterConfig = { enabled: true, port: 0 };
+
+      assert.throws(
+        () => createAdapter("webchat", config, logger),
+        (err: unknown) => {
+          if (!(err instanceof ConfigError)) return false;
+          assert.equal(err.code, "MISSING_ADAPTER_CONFIG");
+          return true;
+        },
+      );
+    });
+
+    it("succeeds with optional host", () => {
+      const config: AdapterConfig = {
+        enabled: true,
+        port: 18800,
+        host: "0.0.0.0",
+      };
+      const adapter = createAdapter("webchat", config, logger);
+
+      assert.equal(adapter.id, "webchat");
+      assert.equal(adapter.name, "WebChat");
+    });
+  });
+
   describe("missing required fields — signal", () => {
     it("throws ConfigError when apiUrl is missing", () => {
       const config: AdapterConfig = { enabled: true, number: "+1234567890" };
@@ -416,6 +465,7 @@ describe("createAdapter", () => {
         { name: "slack", config: { enabled: true, token: "t3", secret: "s1" } },
         { name: "webhook", config: { enabled: true, secret: "s2", port: 3000 } },
         { name: "signal", config: { enabled: true, apiUrl: "http://a", number: "n1" } },
+        { name: "webchat", config: { enabled: true, port: 18800 } },
       ];
 
       const ids = new Set<string>();
@@ -429,8 +479,8 @@ describe("createAdapter", () => {
         names.add(adapter.name);
       }
 
-      assert.equal(ids.size, 5, "should have 5 unique adapter ids");
-      assert.equal(names.size, 5, "should have 5 unique adapter names");
+      assert.equal(ids.size, 6, "should have 6 unique adapter ids");
+      assert.equal(names.size, 6, "should have 6 unique adapter names");
     });
   });
 
