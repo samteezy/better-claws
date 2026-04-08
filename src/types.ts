@@ -106,6 +106,7 @@ export interface ToolResult {
   readonly output: unknown;
   readonly error?: string;
   readonly durationMs: number;
+  readonly warnings?: readonly string[];
 }
 
 export interface ExecutionContext {
@@ -153,6 +154,7 @@ export const EVENT_TYPES = [
   "llm:request",
   "llm:response",
   "tool:invoke",
+  "tool:warning",
   "gate:decision",
   "executor:start",
   "executor:result",

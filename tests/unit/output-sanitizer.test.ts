@@ -324,6 +324,33 @@ describe("Output Sanitizer (sanitizeOutput)", () => {
       assert.ok(result.includes("…[truncated]")); // Truncated
     });
 
+    it("strips sensitive JSON keys even when values contain regex-matchable patterns", () => {
+      const input = JSON.stringify({
+        password: "AKIA1234567890ABCDEF",
+        data: "safe value",
+      });
+      const result = sanitizeOutput(input);
+      const parsed = JSON.parse(result);
+
+      // password key should be redacted by JSON key stripping (step 1)
+      assert.strictEqual(parsed.password, "[REDACTED]");
+      // non-sensitive key preserved
+      assert.strictEqual(parsed.data, "safe value");
+    });
+
+    it("applies both key-based and regex-based redaction together", () => {
+      const input = JSON.stringify({
+        token: "my-secret-token",
+        response: "Found key AKIA1234567890ABCDEF in output",
+      });
+      const result = sanitizeOutput(input);
+
+      // token redacted by JSON key stripping
+      assert.ok(!result.includes("my-secret-token"));
+      // AWS key in non-sensitive field redacted by regex
+      assert.ok(!result.includes("AKIA1234567890ABCDEF"));
+    });
+
     it("handles JSON with regex-based secrets and truncation", () => {
       const input = JSON.stringify({
         api_key: "AKIA3B2X4Y5Z1A2B3C4D5E6F",

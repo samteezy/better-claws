@@ -162,6 +162,15 @@ export class ForkedExecutor {
         },
       });
 
+      if (result.warnings?.length) {
+        this.logger.log({
+          sessionId: context.sessionId,
+          eventType: "tool:warning",
+          component: "forked-executor",
+          payload: { warnings: result.warnings },
+        });
+      }
+
       return result;
     } catch (err) {
       const durationMs = Date.now() - startTime;

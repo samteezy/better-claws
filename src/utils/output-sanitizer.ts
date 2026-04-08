@@ -26,8 +26,8 @@ export interface SanitizeOptions {
  * Sanitize tool output before it enters LLM context or logs.
  *
  * Pipeline:
- * 1. Redact known secret patterns (regex-based)
- * 2. Strip sensitive JSON keys from structured output
+ * 1. Strip sensitive JSON keys from structured output (while JSON is still valid)
+ * 2. Redact known secret patterns (regex-based)
  * 3. Truncate to `maxBytes`
  */
 export function sanitizeOutput(
@@ -36,11 +36,11 @@ export function sanitizeOutput(
 ): string {
   const maxBytes = options?.maxBytes ?? DEFAULT_MAX_BYTES;
 
-  // Step 1: regex-based secret redaction
-  let result = redactSecrets(raw);
+  // Step 1: strip sensitive keys from JSON (while structure is intact)
+  let result = stripSensitiveKeys(raw);
 
-  // Step 2: strip sensitive keys from JSON
-  result = stripSensitiveKeys(result);
+  // Step 2: regex-based secret redaction
+  result = redactSecrets(result);
 
   // Step 3: truncate
   if (Buffer.byteLength(result, "utf-8") > maxBytes) {

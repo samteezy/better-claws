@@ -7,7 +7,7 @@ import type { ExecutionContext } from "../../src/types.js";
 import { handler as shellHandler } from "../../src/tools/built-in/shell.js";
 import { handler as fileReadHandler } from "../../src/tools/built-in/file-read.js";
 import { handler as fileWriteHandler } from "../../src/tools/built-in/file-write.js";
-import { handler as webFetchHandler } from "../../src/tools/built-in/web-fetch.js";
+import { handler as webFetchHandler, filterHeaders } from "../../src/tools/built-in/web-fetch.js";
 
 // Test helpers
 async function withTempDir(
@@ -1079,6 +1079,52 @@ describe("Built-in tools", () => {
           assert.ok(!result.error?.includes("header"));
         });
       });
+    });
+  });
+
+  describe("filterHeaders", () => {
+    const blocklist = new Set(["authorization", "cookie", "proxy-authorization"]);
+
+    it("blocks Authorization header and reports it", () => {
+      const result = filterHeaders({ "Authorization": "Bearer secret" }, blocklist);
+      assert.deepStrictEqual(result.headers, {});
+      assert.deepStrictEqual(result.blocked, ["Authorization"]);
+    });
+
+    it("passes through non-blocked headers", () => {
+      const result = filterHeaders({ "Content-Type": "application/json", "Accept": "text/html" }, blocklist);
+      assert.deepStrictEqual(result.headers, { "Content-Type": "application/json", "Accept": "text/html" });
+      assert.deepStrictEqual(result.blocked, []);
+    });
+
+    it("partitions mixed blocked and allowed headers", () => {
+      const result = filterHeaders({
+        "Authorization": "Bearer token",
+        "Content-Type": "application/json",
+        "Cookie": "session=abc",
+        "X-Custom": "value",
+      }, blocklist);
+
+      assert.deepStrictEqual(result.headers, { "Content-Type": "application/json", "X-Custom": "value" });
+      assert.deepStrictEqual(result.blocked, ["Authorization", "Cookie"]);
+    });
+
+    it("handles case variations (all uppercase)", () => {
+      const result = filterHeaders({ "AUTHORIZATION": "Bearer token" }, blocklist);
+      assert.deepStrictEqual(result.headers, {});
+      assert.deepStrictEqual(result.blocked, ["AUTHORIZATION"]);
+    });
+
+    it("handles case variations (mixed case)", () => {
+      const result = filterHeaders({ "Proxy-Authorization": "Basic creds" }, blocklist);
+      assert.deepStrictEqual(result.headers, {});
+      assert.deepStrictEqual(result.blocked, ["Proxy-Authorization"]);
+    });
+
+    it("returns empty results for empty input", () => {
+      const result = filterHeaders({}, blocklist);
+      assert.deepStrictEqual(result.headers, {});
+      assert.deepStrictEqual(result.blocked, []);
     });
   });
 });
