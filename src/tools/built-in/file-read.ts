@@ -49,9 +49,22 @@ export const handler: ToolHandler = {
       };
     }
 
-    const resolved = isAbsolute(filePath)
-      ? filePath
-      : resolve(context.scratchDir, filePath);
+    const resolved = resolve(
+      isAbsolute(filePath) ? filePath : resolve(context.scratchDir, filePath),
+    );
+
+    const allowedRoots = [context.scratchDir, ...(context.allowedFsRoots ?? [])];
+    const pathAllowed = allowedRoots.some(
+      (root) => resolved === root || resolved.startsWith(root + "/"),
+    );
+    if (!pathAllowed) {
+      return {
+        success: false,
+        output: null,
+        error: `Path not allowed: ${filePath}`,
+        durationMs: Date.now() - start,
+      };
+    }
 
     try {
       const content = await readFile(resolved, "utf-8");

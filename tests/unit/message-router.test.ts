@@ -913,4 +913,441 @@ describe("MessageRouter", () => {
       assert.match(dt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(.+\)$/);
     });
   });
+
+  describe("Auto-grant blocklist (security hardening)", () => {
+    it("denies fs:write even when in autoGrantCapabilities", async () => {
+      const toolRegistry = createMockToolRegistry();
+      toolRegistry.registerTool(
+        { name: "write-tool", description: "writes", parameters: { type: "object" }, capabilities: ["fs:write"] },
+        { async execute() { return { success: true, output: {}, durationMs: 50 }; } },
+      );
+
+      const capabilityGate = createMockCapabilityGate();
+      capabilityGate.denyTool("write-tool", "fs:write missing");
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "", tool_calls: [makeToolCall("write-tool")] },
+        usage: { promptTokens: 20, completionTokens: 15 },
+        raw: {},
+      });
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Write denied" },
+        usage: { promptTokens: 30, completionTokens: 10 },
+        raw: {},
+      });
+
+      const configWithAutoGrant: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        security: {
+          ...TEST_CONFIG.security,
+          autoGrantCapabilities: ["fs:write"],
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: toolRegistry as unknown as ToolRegistry,
+        capabilityGate: capabilityGate as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithAutoGrant,
+        promptBuilder: createMockPromptBuilder() as unknown as PromptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Write"));
+
+      const secondCall = llmClient.capturedMessages[1];
+      assert.ok(secondCall);
+      const toolMsg = secondCall.find(m => m.role === "tool");
+      assert.ok(toolMsg);
+      assert.ok(toolMsg.content.includes("denied"));
+    });
+
+    it("denies exec:shell even when in autoGrantCapabilities", async () => {
+      const toolRegistry = createMockToolRegistry();
+      toolRegistry.registerTool(
+        { name: "shell-tool", description: "shell", parameters: { type: "object" }, capabilities: ["exec:shell"] },
+        { async execute() { return { success: true, output: {}, durationMs: 50 }; } },
+      );
+
+      const capabilityGate = createMockCapabilityGate();
+      capabilityGate.denyTool("shell-tool", "exec:shell missing");
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "", tool_calls: [makeToolCall("shell-tool")] },
+        usage: { promptTokens: 20, completionTokens: 15 },
+        raw: {},
+      });
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Shell denied" },
+        usage: { promptTokens: 30, completionTokens: 10 },
+        raw: {},
+      });
+
+      const configWithAutoGrant: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        security: {
+          ...TEST_CONFIG.security,
+          autoGrantCapabilities: ["exec:shell"],
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: toolRegistry as unknown as ToolRegistry,
+        capabilityGate: capabilityGate as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithAutoGrant,
+        promptBuilder: createMockPromptBuilder() as unknown as PromptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Shell"));
+
+      const secondCall = llmClient.capturedMessages[1];
+      assert.ok(secondCall);
+      const toolMsg = secondCall.find(m => m.role === "tool");
+      assert.ok(toolMsg);
+      assert.ok(toolMsg.content.includes("denied"));
+    });
+
+    it("denies exec:subprocess even when in autoGrantCapabilities", async () => {
+      const toolRegistry = createMockToolRegistry();
+      toolRegistry.registerTool(
+        { name: "subprocess-tool", description: "subprocess", parameters: { type: "object" }, capabilities: ["exec:subprocess"] },
+        { async execute() { return { success: true, output: {}, durationMs: 50 }; } },
+      );
+
+      const capabilityGate = createMockCapabilityGate();
+      capabilityGate.denyTool("subprocess-tool", "exec:subprocess missing");
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "", tool_calls: [makeToolCall("subprocess-tool")] },
+        usage: { promptTokens: 20, completionTokens: 15 },
+        raw: {},
+      });
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Subprocess denied" },
+        usage: { promptTokens: 30, completionTokens: 10 },
+        raw: {},
+      });
+
+      const configWithAutoGrant: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        security: {
+          ...TEST_CONFIG.security,
+          autoGrantCapabilities: ["exec:subprocess"],
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: toolRegistry as unknown as ToolRegistry,
+        capabilityGate: capabilityGate as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithAutoGrant,
+        promptBuilder: createMockPromptBuilder() as unknown as PromptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Subprocess"));
+
+      const secondCall = llmClient.capturedMessages[1];
+      assert.ok(secondCall);
+      const toolMsg = secondCall.find(m => m.role === "tool");
+      assert.ok(toolMsg);
+      assert.ok(toolMsg.content.includes("denied"));
+    });
+
+    it("denies net:outbound even when in autoGrantCapabilities", async () => {
+      const toolRegistry = createMockToolRegistry();
+      toolRegistry.registerTool(
+        { name: "net-tool", description: "network", parameters: { type: "object" }, capabilities: ["net:outbound"] },
+        { async execute() { return { success: true, output: {}, durationMs: 50 }; } },
+      );
+
+      const capabilityGate = createMockCapabilityGate();
+      capabilityGate.denyTool("net-tool", "net:outbound missing");
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "", tool_calls: [makeToolCall("net-tool")] },
+        usage: { promptTokens: 20, completionTokens: 15 },
+        raw: {},
+      });
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Network denied" },
+        usage: { promptTokens: 30, completionTokens: 10 },
+        raw: {},
+      });
+
+      const configWithAutoGrant: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        security: {
+          ...TEST_CONFIG.security,
+          autoGrantCapabilities: ["net:outbound"],
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: toolRegistry as unknown as ToolRegistry,
+        capabilityGate: capabilityGate as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithAutoGrant,
+        promptBuilder: createMockPromptBuilder() as unknown as PromptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Network"));
+
+      const secondCall = llmClient.capturedMessages[1];
+      assert.ok(secondCall);
+      const toolMsg = secondCall.find(m => m.role === "tool");
+      assert.ok(toolMsg);
+      assert.ok(toolMsg.content.includes("denied"));
+    });
+
+    it("allows safe capabilities (fs:read) to auto-grant when in autoGrantCapabilities", async () => {
+      const toolRegistry = createMockToolRegistry();
+      const executor = createMockExecutor();
+      (executor as unknown as Record<string, unknown>).execute = async () => ({
+        success: true,
+        output: { result: "safe_read_data" },
+        durationMs: 50,
+      });
+
+      toolRegistry.registerTool(
+        { name: "read-tool", description: "reads", parameters: { type: "object" }, capabilities: ["fs:read"] },
+        { async execute() { return { success: true, output: { result: "safe_read_data" }, durationMs: 50 }; } },
+      );
+
+      const capabilityGate = createMockCapabilityGate();
+      // Auto-allow the read tool (fs:read is not in NEVER_AUTO_GRANT)
+      capabilityGate.allowTool("read-tool");
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "", tool_calls: [makeToolCall("read-tool")] },
+        usage: { promptTokens: 20, completionTokens: 15 },
+        raw: {},
+      });
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Read result processed" },
+        usage: { promptTokens: 30, completionTokens: 10 },
+        raw: {},
+      });
+
+      const configWithAutoGrant: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        security: {
+          ...TEST_CONFIG.security,
+          autoGrantCapabilities: ["fs:read"],
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: toolRegistry as unknown as ToolRegistry,
+        capabilityGate: capabilityGate as unknown as CapabilityGate,
+        executor: executor as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithAutoGrant,
+        promptBuilder: createMockPromptBuilder() as unknown as PromptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Read"));
+
+      // Tool should have executed successfully (auto-granted)
+      const response = llmClient.capturedMessages[1];
+      assert.ok(response);
+      const toolMsg = response.find(m => m.role === "tool");
+      assert.ok(toolMsg);
+      // Should contain the tool result, not a denial message
+      assert.ok(!toolMsg.content.includes("denied"));
+      assert.ok(!toolMsg.content.includes("error"));
+    });
+
+    it("denies tool requiring fs:write AND fs:read when both in autoGrantCapabilities", async () => {
+      const toolRegistry = createMockToolRegistry();
+      toolRegistry.registerTool(
+        { name: "mixed-tool", description: "mixed", parameters: { type: "object" }, capabilities: ["fs:write", "fs:read"] },
+        { async execute() { return { success: true, output: {}, durationMs: 50 }; } },
+      );
+
+      const capabilityGate = createMockCapabilityGate();
+      capabilityGate.denyTool("mixed-tool", "fs:write missing");
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "", tool_calls: [makeToolCall("mixed-tool")] },
+        usage: { promptTokens: 20, completionTokens: 15 },
+        raw: {},
+      });
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Mixed denied" },
+        usage: { promptTokens: 30, completionTokens: 10 },
+        raw: {},
+      });
+
+      const configWithAutoGrant: BetterClawsConfig = {
+        ...TEST_CONFIG,
+        security: {
+          ...TEST_CONFIG.security,
+          autoGrantCapabilities: ["fs:write", "fs:read"],
+        },
+      };
+
+      const router = new MessageRouter({
+        sessionManager: createMockSessionManager() as unknown as SessionManager,
+        llmClient: llmClient as unknown as LlmClient,
+        toolRegistry: toolRegistry as unknown as ToolRegistry,
+        capabilityGate: capabilityGate as unknown as CapabilityGate,
+        executor: createMockExecutor() as unknown as ToolExecutor,
+        secretManager: createMockSecretManager(),
+        logger: createMockLogger() as unknown as StructuredLogger,
+        config: configWithAutoGrant,
+        promptBuilder: createMockPromptBuilder() as unknown as PromptBuilder,
+      });
+
+      await router.handleMessage(makeInbound("Mixed"));
+
+      const secondCall = llmClient.capturedMessages[1];
+      assert.ok(secondCall);
+      const toolMsg = secondCall.find(m => m.role === "tool");
+      assert.ok(toolMsg);
+      assert.ok(toolMsg.content.includes("denied"));
+    });
+  });
+
+  describe("Tool result redaction (security hardening)", () => {
+    it("redacts AWS API key pattern in tool output before sending to LLM", async () => {
+      const toolRegistry = createMockToolRegistry();
+      toolRegistry.registerTool(
+        { name: "aws-tool", description: "aws", parameters: { type: "object" }, capabilities: [] },
+        {
+          async execute() {
+            return {
+              success: true,
+              output: { key: "AKIAIOSFODNN7EXAMPLE" },
+              durationMs: 50,
+            };
+          },
+        },
+      );
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "", tool_calls: [makeToolCall("aws-tool")] },
+        usage: { promptTokens: 20, completionTokens: 15 },
+        raw: {},
+      });
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "AWS processed" },
+        usage: { promptTokens: 30, completionTokens: 10 },
+        raw: {},
+      });
+
+      const { router } = createRouter({ llmClient, toolRegistry });
+      await router.handleMessage(makeInbound("AWS"));
+
+      const secondCall = llmClient.capturedMessages[1];
+      assert.ok(secondCall);
+      const toolMsg = secondCall.find(m => m.role === "tool");
+      assert.ok(toolMsg);
+      // The actual key should not appear in the message sent to LLM
+      assert.ok(!toolMsg.content.includes("AKIAIOSFODNN7EXAMPLE"));
+    });
+
+    it("redacts Bearer token in tool output before sending to LLM", async () => {
+      const toolRegistry = createMockToolRegistry();
+      toolRegistry.registerTool(
+        { name: "token-tool", description: "token", parameters: { type: "object" }, capabilities: [] },
+        {
+          async execute() {
+            return {
+              success: true,
+              output: { auth: "Bearer sk_live_51234567890abcdefghijklmnop" },
+              durationMs: 50,
+            };
+          },
+        },
+      );
+
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "", tool_calls: [makeToolCall("token-tool")] },
+        usage: { promptTokens: 20, completionTokens: 15 },
+        raw: {},
+      });
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Token processed" },
+        usage: { promptTokens: 30, completionTokens: 10 },
+        raw: {},
+      });
+
+      const { router } = createRouter({ llmClient, toolRegistry });
+      await router.handleMessage(makeInbound("Token"));
+
+      const secondCall = llmClient.capturedMessages[1];
+      assert.ok(secondCall);
+      const toolMsg = secondCall.find(m => m.role === "tool");
+      assert.ok(toolMsg);
+      // The actual token should not appear in the message sent to LLM
+      assert.ok(!toolMsg.content.includes("sk_live_51234567890abcdefghijklmnop"));
+    });
+
+    it("still includes tool result in session log (not redacted there)", async () => {
+      const toolRegistry = createMockToolRegistry();
+      toolRegistry.registerTool(
+        { name: "secret-tool", description: "secret", parameters: { type: "object" }, capabilities: [] },
+        {
+          async execute() {
+            return {
+              success: true,
+              output: { secret: "AKIAIOSFODNN7EXAMPLE" },
+              durationMs: 50,
+            };
+          },
+        },
+      );
+
+      const sessionManager = createMockSessionManager();
+      const llmClient = createMockLlmClient();
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "", tool_calls: [makeToolCall("secret-tool")] },
+        usage: { promptTokens: 20, completionTokens: 15 },
+        raw: {},
+      });
+      llmClient.pushResponse({
+        message: { role: "assistant", content: "Done" },
+        usage: { promptTokens: 30, completionTokens: 10 },
+        raw: {},
+      });
+
+      const { router } = createRouter({ llmClient, toolRegistry, sessionManager });
+      await router.handleMessage(makeInbound("Secret"));
+
+      const toolResultEntry = sessionManager.appendedEntries.find(
+        e => (e as Record<string, unknown>)["type"] === "toolResult",
+      );
+      assert.ok(toolResultEntry);
+      const entry = toolResultEntry as Record<string, unknown>;
+      // The tool result itself is stored (with original output)
+      assert.ok((entry["result"] as Record<string, unknown>)["output"]);
+    });
+  });
 });

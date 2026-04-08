@@ -21,13 +21,14 @@ async function withTempDir(
   }
 }
 
-function makeContext(tempDir: string): ExecutionContext {
+function makeContext(tempDir: string, allowedFsRoots?: readonly string[]): ExecutionContext {
   return {
     sessionId: "test-session",
     capabilities: [],
     scratchDir: tempDir,
     timeout: 5000,
     secrets: new Map<string, string>(),
+    allowedFsRoots,
   };
 }
 
@@ -274,6 +275,66 @@ describe("Built-in tools", () => {
         assert.ok((output["content"] as string).includes("test content"));
       });
     });
+
+    it("rejects absolute path outside scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const result = await fileReadHandler.execute(
+          { path: "/etc/passwd" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.match(result.error, /Path not allowed/);
+      });
+    });
+
+    it("rejects path with .. that resolves outside scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const result = await fileReadHandler.execute(
+          { path: "../../../etc/passwd" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.match(result.error, /Path not allowed/);
+      });
+    });
+
+    it("allows absolute path within scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const filePath = join(tempDir, "inside.txt");
+        await writeFile(filePath, "safe content\n");
+
+        const result = await fileReadHandler.execute(
+          { path: filePath },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.ok(result.output);
+      });
+    });
+
+    it("honors custom allowedFsRoots in context", async () => {
+      await withTempDir(async (tempDir) => {
+        await withTempDir(async (customRoot) => {
+          const filePath = join(customRoot, "custom.txt");
+          await writeFile(filePath, "custom content\n");
+
+          const result = await fileReadHandler.execute(
+            { path: filePath },
+            makeContext(tempDir, [customRoot]),
+          );
+
+          assert.strictEqual(result.success, true);
+          assert.ok(result.output);
+          const output = result.output as Record<string, unknown>;
+          assert.ok((output["content"] as string).includes("custom content"));
+        });
+      });
+    });
   });
 
   describe("file-write tool", () => {
@@ -435,6 +496,67 @@ describe("Built-in tools", () => {
           makeContext(tempDir),
         );
         assert.strictEqual(readResult.success, true);
+      });
+    });
+
+    it("rejects absolute path outside scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const result = await fileWriteHandler.execute(
+          { path: "/etc/hosts", content: "malicious" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.match(result.error, /Path not allowed/);
+      });
+    });
+
+    it("rejects path with .. that resolves outside scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const result = await fileWriteHandler.execute(
+          { path: "../../etc/hosts", content: "malicious" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.match(result.error, /Path not allowed/);
+      });
+    });
+
+    it("allows absolute path within scratchDir", async () => {
+      await withTempDir(async (tempDir) => {
+        const filePath = join(tempDir, "safe-write.txt");
+        const result = await fileWriteHandler.execute(
+          { path: filePath, content: "safe content" },
+          makeContext(tempDir),
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.ok(result.output);
+      });
+    });
+
+    it("honors custom allowedFsRoots in context", async () => {
+      await withTempDir(async (tempDir) => {
+        await withTempDir(async (customRoot) => {
+          const filePath = join(customRoot, "custom-write.txt");
+          const result = await fileWriteHandler.execute(
+            { path: filePath, content: "custom write content" },
+            makeContext(tempDir, [customRoot]),
+          );
+
+          assert.strictEqual(result.success, true);
+
+          const readResult = await fileReadHandler.execute(
+            { path: filePath },
+            makeContext(tempDir, [customRoot]),
+          );
+          assert.strictEqual(readResult.success, true);
+          const readOutput = readResult.output as Record<string, unknown>;
+          assert.ok((readOutput["content"] as string).includes("custom write content"));
+        });
       });
     });
   });

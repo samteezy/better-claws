@@ -416,12 +416,13 @@ describe("validateSchema", () => {
       assert.match(result.errors[0]!, /age: expected number, got string/);
     });
 
-    it("only validates properties that are defined in schema", () => {
+    it("only validates properties that are defined in schema when additionalProperties: true", () => {
       const schema: JsonSchema = {
         type: "object",
         properties: {
           name: { type: "string" },
         },
+        additionalProperties: true,
       };
       const result = validateSchema({ name: "Alice", age: "thirty", extra: true }, schema);
       assert.equal(result.valid, true);
@@ -706,10 +707,10 @@ describe("validateSchema", () => {
     });
   });
 
-  // ── Extra properties (should be allowed) ───────────────────────────────────
+  // ── Extra properties (strict mode) ───────────────────────────────────────────
 
   describe("extra properties", () => {
-    it("allows properties not in schema", () => {
+    it("rejects properties not in schema by default", () => {
       const schema: JsonSchema = {
         type: "object",
         properties: {
@@ -717,10 +718,12 @@ describe("validateSchema", () => {
         },
       };
       const result = validateSchema({ name: "Alice", age: 30, email: "alice@example.com" }, schema);
-      assert.equal(result.valid, true);
+      assert.equal(result.valid, false);
+      assert.equal(result.errors.length, 2);
+      assert.match(result.errors[0]!, /unexpected property/);
     });
 
-    it("extra properties are not validated", () => {
+    it("rejects extra properties even with valid declared properties", () => {
       const schema: JsonSchema = {
         type: "object",
         properties: {
@@ -728,7 +731,73 @@ describe("validateSchema", () => {
         },
       };
       const result = validateSchema({ name: "Alice", age: "thirty" }, schema);
+      assert.equal(result.valid, false);
+      assert.match(result.errors[0]!, /unexpected property/);
+    });
+
+    it("allows properties not in schema when additionalProperties: true", () => {
+      const schema: JsonSchema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+        additionalProperties: true,
+      };
+      const result = validateSchema({ name: "Alice", age: 30, email: "alice@example.com" }, schema);
       assert.equal(result.valid, true);
+    });
+
+    it("only validates declared properties, extra properties allowed when additionalProperties: true", () => {
+      const schema: JsonSchema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+        additionalProperties: true,
+      };
+      const result = validateSchema({ name: "Alice", age: "thirty", extra: true }, schema);
+      assert.equal(result.valid, true);
+    });
+
+    it("rejects object with only extra properties (no declared properties present)", () => {
+      const schema: JsonSchema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+      };
+      const result = validateSchema({ age: 30, email: "alice@example.com" }, schema);
+      assert.equal(result.valid, false);
+      assert.equal(result.errors.length, 2);
+    });
+  });
+
+  // ── Unknown type strictness ───────────────────────────────────────────────────
+
+  describe("unknown type", () => {
+    it("rejects unknown type string (not a standard JSON Schema type)", () => {
+      const schema: JsonSchema = { type: "foobar" as never };
+      const result = validateSchema("any value", schema);
+      assert.equal(result.valid, false);
+      assert.match(result.errors[0]!, /expected foobar/);
+    });
+
+    it("rejects unknown type even for null", () => {
+      const schema: JsonSchema = { type: "unknowntype" as never };
+      const result = validateSchema(null, schema);
+      assert.equal(result.valid, false);
+    });
+
+    it("rejects unknown type for any value type", () => {
+      const schema: JsonSchema = { type: "custom" as never };
+      const result = validateSchema({ key: "value" }, schema);
+      assert.equal(result.valid, false);
+    });
+
+    it("rejects unknown type even with no other constraints", () => {
+      const schema: JsonSchema = { type: "invalidtype" as never };
+      const result = validateSchema(42, schema);
+      assert.equal(result.valid, false);
     });
   });
 

@@ -114,6 +114,7 @@ export interface ExecutionContext {
   readonly scratchDir: string;
   readonly timeout: number;
   readonly secrets: ReadonlyMap<string, string>;
+  readonly allowedFsRoots?: readonly string[];
 }
 
 export interface BuiltInToolModule {
@@ -239,6 +240,7 @@ export interface SecurityConfig {
   readonly allowPersistentGrants: boolean;
   readonly maxMemoryMb?: number;
   readonly autoGrantCapabilities?: readonly string[];
+  readonly allowedFsRoots?: readonly string[];
 }
 
 export interface MemoryConfig {
