@@ -84,7 +84,7 @@ export class ForkedExecutor {
   private readonly scratchBaseDir: string;
   private readonly defaultTimeout: number;
   private readonly stripEnvironment: boolean;
-  private enablePermissionFlag: boolean;
+  private readonly enablePermissionFlag: boolean;
   private readonly maxMemoryMb: number;
   private readonly logger: StructuredLogger;
   private readonly workerScript: string;
@@ -164,32 +164,8 @@ export class ForkedExecutor {
 
       return result;
     } catch (err) {
-      // If the permission flag likely caused the failure, retry without it
-      const isTimeout = err instanceof ForkedExecutorError && err.code === "TIMEOUT";
-      if (!isTimeout && this.enablePermissionFlag && this.isPermissionFlagSupported()) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const isPermissionIssue =
-          errMsg.includes("ERR_ACCESS_DENIED") ||
-          errMsg.includes("permission");
-
-        if (isPermissionIssue) {
-          this.logger.log({
-            sessionId: context.sessionId,
-            eventType: "executor:result",
-            component: "forked-executor",
-            payload: {
-              action: "permission_flag_fallback",
-              message: "Retrying without --experimental-permission after failure",
-              error: errMsg,
-            },
-          });
-          this.enablePermissionFlag = false;
-          const retryResult = await this.runInFork(handlerPath, params, forkContext);
-          return retryResult;
-        }
-      }
-
       const durationMs = Date.now() - startTime;
+      const isTimeout = err instanceof ForkedExecutorError && err.code === "TIMEOUT";
 
       this.logger.log({
         sessionId: context.sessionId,
