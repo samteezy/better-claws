@@ -125,11 +125,25 @@
       document.getElementById("sessions-list").innerHTML = html;
       document.getElementById("session-detail").style.display = "none";
 
-      document.querySelectorAll(".session-item").forEach(function (el) {
+      document.querySelectorAll("#sessions-list .session-item").forEach(function (el) {
         el.addEventListener("click", function () {
           loadSessionDetail(el.dataset.id);
         });
       });
+    });
+
+    api("/api/sessions/archived").then(function (data) {
+      var html = "";
+      if (data.sessions.length === 0) {
+        html = "<p>No archived sessions</p>";
+      } else {
+        data.sessions.forEach(function (s) {
+          var date = new Date(s.archivedAt).toLocaleString();
+          var label = esc(s.sessionId) + " — archived " + esc(date);
+          html += '<div class="session-item archived" data-file="' + esc(s.filename) + '">' + label + "</div>";
+        });
+      }
+      document.getElementById("sessions-archived").innerHTML = html;
     });
   }
 

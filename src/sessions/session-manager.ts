@@ -281,6 +281,36 @@ export class SessionManager {
     this.sessions.delete(sessionId);
   }
 
+  async listArchived(): Promise<
+    readonly { sessionId: string; archivedAt: number; filename: string }[]
+  > {
+    await this.ensureDirectory();
+
+    let entries: string[];
+    try {
+      entries = await readdir(this.sessionsDirectory);
+    } catch {
+      return [];
+    }
+
+    const archivePattern = /^([0-9a-f]{16})\.(\d+)\.jsonl$/;
+    const results: { sessionId: string; archivedAt: number; filename: string }[] = [];
+
+    for (const filename of entries) {
+      const match = archivePattern.exec(filename);
+      if (!match) continue;
+      results.push({
+        sessionId: match[1]!,
+        archivedAt: parseInt(match[2]!, 10),
+        filename,
+      });
+    }
+
+    // Most recent first
+    results.sort((a, b) => b.archivedAt - a.archivedAt);
+    return results;
+  }
+
   async recover(): Promise<number> {
     await this.ensureDirectory();
 

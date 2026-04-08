@@ -29,7 +29,10 @@
     <!-- Sessions View -->
     <section id="view-sessions" class="view">
       <h2>Sessions</h2>
+      <h3>Active</h3>
       <div id="sessions-list" class="content-area">Loading...</div>
+      <h3>Archived</h3>
+      <div id="sessions-archived" class="content-area">Loading...</div>
       <div id="session-detail" class="content-area" style="display:none">
         <h3>Session History</h3>
         <div id="session-history"></div>
@@ -56,6 +59,8 @@
           <option value="memory:write">memory:write</option>
           <option value="memory:curation">memory:curation</option>
           <option value="session:create">session:create</option>
+          <option value="session:close">session:close</option>
+          <option value="session:destroy">session:destroy</option>
           <option value="session:idle">session:idle</option>
           <option value="config:change">config:change</option>
         </select>

@@ -173,6 +173,8 @@ export class DashboardServer {
       // Sessions
       case path === "/api/sessions" && method === "GET":
         return this.handleGetSessions(res);
+      case path === "/api/sessions/archived" && method === "GET":
+        return await this.handleGetArchivedSessions(res);
       case path.startsWith("/api/sessions/") && path.endsWith("/history") && method === "GET":
         return await this.handleGetSessionHistory(res, path);
       case path.startsWith("/api/sessions/") && path.endsWith("/grants") && method === "GET":
@@ -219,6 +221,11 @@ export class DashboardServer {
       lastActivityAt: s.state.lastActivityAt,
     }));
     this.sendJson(res, 200, { sessions, count: sessions.length });
+  }
+
+  private async handleGetArchivedSessions(res: ServerResponse): Promise<void> {
+    const archived = await this.context.sessionManager.listArchived();
+    this.sendJson(res, 200, { sessions: archived, count: archived.length });
   }
 
   private async handleGetSessionHistory(res: ServerResponse, path: string): Promise<void> {
