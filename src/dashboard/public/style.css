@@ -644,6 +644,61 @@ pre {
 
 /* ── Selection ─────────────────────────────────────────────────────────── */
 
+/* ── Markdown Rendered Content ────────────────────────────────────── */
+
+.md-content { white-space: normal; }
+
+.md-content p { margin: 0 0 0.5em; }
+.md-content p:last-child { margin-bottom: 0; }
+
+.md-content h4, .md-content h5, .md-content h6 {
+  margin: 0.8em 0 0.3em;
+  font-family: var(--font-head);
+  color: var(--text);
+}
+.md-content h4 { font-size: 1.1em; }
+.md-content h5 { font-size: 1em; }
+.md-content h6 { font-size: 0.95em; color: var(--text-muted); }
+
+.md-content strong { font-weight: 600; }
+
+.md-content code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface-alt, #f0ece6);
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+}
+
+.md-content pre {
+  background: var(--surface-alt, #f0ece6);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.md-content pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  border-radius: 0;
+}
+
+.md-content ul, .md-content ol {
+  margin: 0.3em 0 0.5em;
+  padding-left: 1.4em;
+}
+
+.md-content li { margin: 0.15em 0; }
+
+.md-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.6em 0;
+}
+
 ::selection {
   background: var(--accent-soft);
   color: var(--accent-text);

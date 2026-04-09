@@ -157,7 +157,11 @@
       data.history.forEach(function (msg) {
         html += '<div class="chat-msg">';
         html += '<div class="chat-role ' + esc(msg.role) + '">' + esc(msg.role) + "</div>";
-        html += '<div class="chat-content">' + esc(msg.content) + "</div>";
+        if (msg.role === "assistant") {
+          html += '<div class="chat-content md-content">' + BcMarkdown.render(msg.content) + "</div>";
+        } else {
+          html += '<div class="chat-content">' + esc(msg.content) + "</div>";
+        }
         html += "</div>";
       });
       document.getElementById("session-history").innerHTML = html || "<p>No messages</p>";

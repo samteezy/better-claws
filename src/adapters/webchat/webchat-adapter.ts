@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import {
   BetterClawsError,
@@ -39,6 +41,7 @@ export class WebChatAdapter implements StreamableChannelAdapter {
   private callback: ((msg: InboundMessage) => void) | null = null;
   private server: Server | null = null;
   private messageCounter = 0;
+  private markdownJs = "";
   private readonly pendingResponses = new Map<string, {
     resolve: (response: OutboundMessage) => void;
     timer: ReturnType<typeof setTimeout>;
@@ -72,6 +75,18 @@ export class WebChatAdapter implements StreamableChannelAdapter {
         "WebChat cannot bind to a non-loopback address without an authToken configured",
         "UNSAFE_CONFIG",
       );
+    }
+
+    const mdPath = join(process.cwd(), "src", "dashboard", "public", "markdown.js");
+    try {
+      this.markdownJs = await readFile(mdPath, "utf-8");
+    } catch {
+      this.logger.log({
+        sessionId: null,
+        eventType: "config:change",
+        component: "webchat",
+        payload: { action: "markdown_load_failed", path: mdPath },
+      });
     }
 
     return new Promise((resolve, reject) => {
@@ -197,9 +212,10 @@ export class WebChatAdapter implements StreamableChannelAdapter {
     const path = url.pathname;
 
     if (method === "GET" && path === "/") {
-      const html = this.authToken
-        ? CHAT_HTML.replace("__AUTH_TOKEN__", this.authToken)
+      let html = this.authToken
+        ? CHAT_HTML.replace("__AUTH_TOKEN__", () => this.authToken!)
         : CHAT_HTML.replace("__AUTH_TOKEN__", "");
+      html = html.replace("__MARKDOWN_JS__", () => this.markdownJs);
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(html);
       return;
@@ -586,6 +602,49 @@ const CHAT_HTML = `<!DOCTYPE html>
     white-space: pre-wrap;
     line-height: 1.45;
   }
+  .md-content { white-space: normal; }
+  .md-content p { margin: 0 0 0.5em; }
+  .md-content p:last-child { margin-bottom: 0; }
+  .md-content h4, .md-content h5, .md-content h6 {
+    margin: 0.8em 0 0.3em;
+    font-family: "Outfit", sans-serif;
+    color: #3a3632;
+  }
+  .md-content h4 { font-size: 1.1em; }
+  .md-content h5 { font-size: 1em; }
+  .md-content h6 { font-size: 0.95em; color: #9e9891; }
+  .md-content strong { font-weight: 600; }
+  .md-content code {
+    font-family: "DM Mono", "SF Mono", monospace;
+    font-size: 0.88em;
+    background: #f0ece6;
+    padding: 0.15em 0.4em;
+    border-radius: 5px;
+  }
+  .md-content pre {
+    background: #f0ece6;
+    border: 1px solid #e6e2db;
+    border-radius: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    margin: 0.5em 0;
+  }
+  .md-content pre code {
+    background: none;
+    padding: 0;
+    font-size: 0.85em;
+    border-radius: 0;
+  }
+  .md-content ul, .md-content ol {
+    margin: 0.3em 0 0.5em;
+    padding-left: 1.4em;
+  }
+  .md-content li { margin: 0.15em 0; }
+  .md-content hr {
+    border: none;
+    border-top: 1px solid #e6e2db;
+    margin: 0.6em 0;
+  }
 </style>
 </head>
 <body>
@@ -600,6 +659,7 @@ const CHAT_HTML = `<!DOCTYPE html>
     <button id="send-btn" type="submit">Send</button>
   </form>
 </div>
+<script>__MARKDOWN_JS__</script>
 <script>
 (function() {
   var messages = [];
@@ -616,7 +676,12 @@ const CHAT_HTML = `<!DOCTYPE html>
       var m = messages[i];
       var div = document.createElement("div");
       div.className = "msg " + m.role;
-      div.textContent = m.text;
+      if (m.role === "assistant" && window.BcMarkdown) {
+        div.classList.add("md-content");
+        div.innerHTML = BcMarkdown.render(m.text);
+      } else {
+        div.textContent = m.text;
+      }
       messagesEl.appendChild(div);
     }
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -671,7 +736,8 @@ const CHAT_HTML = `<!DOCTYPE html>
       var msgEl = messagesEl.lastElementChild;
       // Add a text-content span so thinking block and text can coexist
       var textSpan = document.createElement("span");
-      if (msgEl) msgEl.appendChild(textSpan);
+      if (msgEl) { msgEl.appendChild(textSpan); msgEl.classList.add("md-content"); }
+      var mdStream = window.BcMarkdown ? new BcMarkdown.StreamRenderer(textSpan) : null;
       var reader = r.body.getReader();
       var decoder = new TextDecoder();
       var buf = "";
@@ -679,6 +745,7 @@ const CHAT_HTML = `<!DOCTYPE html>
       function pump() {
         return reader.read().then(function(result) {
           if (result.done) {
+            if (mdStream) mdStream.flush();
             // Collapse thinking block when stream ends
             if (msgEl) {
               var thinkEl = msgEl.querySelector(".thinking");
@@ -694,6 +761,7 @@ const CHAT_HTML = `<!DOCTYPE html>
             if (!line.startsWith("data: ")) continue;
             var data = line.slice(6);
             if (data === "[DONE]") {
+              if (mdStream) mdStream.flush();
               // Collapse thinking block on completion
               if (msgEl) {
                 var thinkEl = msgEl.querySelector(".thinking");
@@ -724,7 +792,11 @@ const CHAT_HTML = `<!DOCTYPE html>
                 }
               } else if (evt.type === "text-delta") {
                 messages[msgIdx].text += evt.delta;
-                textSpan.textContent = messages[msgIdx].text;
+                if (mdStream) {
+                  mdStream.push(evt.delta);
+                } else {
+                  textSpan.textContent = messages[msgIdx].text;
+                }
                 messagesEl.scrollTop = messagesEl.scrollHeight;
               } else if (evt.type === "error") {
                 messages[msgIdx].role = "error";
