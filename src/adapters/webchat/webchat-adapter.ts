@@ -564,6 +564,28 @@ const CHAT_HTML = `<!DOCTYPE html>
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #ddd8d0; border-radius: 3px; }
   ::selection { background: rgba(107,143,113,0.2); }
+  .thinking {
+    margin-bottom: 6px;
+    padding: 8px 12px;
+    background: #f3f1ed;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #7a756d;
+    border: 1px solid #e6e2db;
+  }
+  .thinking summary {
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #9e9891;
+  }
+  .thinking-content {
+    margin-top: 6px;
+    white-space: pre-wrap;
+    line-height: 1.45;
+  }
 </style>
 </head>
 <body>
@@ -647,13 +669,23 @@ const CHAT_HTML = `<!DOCTYPE html>
       render();
       var msgIdx = messages.length - 1;
       var msgEl = messagesEl.lastElementChild;
+      // Add a text-content span so thinking block and text can coexist
+      var textSpan = document.createElement("span");
+      if (msgEl) msgEl.appendChild(textSpan);
       var reader = r.body.getReader();
       var decoder = new TextDecoder();
       var buf = "";
 
       function pump() {
         return reader.read().then(function(result) {
-          if (result.done) return;
+          if (result.done) {
+            // Collapse thinking block when stream ends
+            if (msgEl) {
+              var thinkEl = msgEl.querySelector(".thinking");
+              if (thinkEl) thinkEl.open = false;
+            }
+            return;
+          }
           buf += decoder.decode(result.value, { stream: true });
           var parts = buf.split("\\n\\n");
           buf = parts.pop() || "";
@@ -661,12 +693,38 @@ const CHAT_HTML = `<!DOCTYPE html>
             var line = parts[i].trim();
             if (!line.startsWith("data: ")) continue;
             var data = line.slice(6);
-            if (data === "[DONE]") return;
+            if (data === "[DONE]") {
+              // Collapse thinking block on completion
+              if (msgEl) {
+                var thinkEl = msgEl.querySelector(".thinking");
+                if (thinkEl) thinkEl.open = false;
+              }
+              return;
+            }
             try {
               var evt = JSON.parse(data);
-              if (evt.type === "text-delta") {
+              if (evt.type === "reasoning-delta") {
+                if (msgEl) {
+                  var thinkEl = msgEl.querySelector(".thinking");
+                  if (!thinkEl) {
+                    thinkEl = document.createElement("details");
+                    thinkEl.className = "thinking";
+                    thinkEl.open = true;
+                    var summary = document.createElement("summary");
+                    summary.textContent = "Thinking\u2026";
+                    thinkEl.appendChild(summary);
+                    var thinkContent = document.createElement("div");
+                    thinkContent.className = "thinking-content";
+                    thinkEl.appendChild(thinkContent);
+                    msgEl.insertBefore(thinkEl, textSpan);
+                  }
+                  var tc = thinkEl.querySelector(".thinking-content");
+                  if (tc) tc.textContent += evt.delta;
+                  messagesEl.scrollTop = messagesEl.scrollHeight;
+                }
+              } else if (evt.type === "text-delta") {
                 messages[msgIdx].text += evt.delta;
-                if (msgEl) msgEl.textContent = messages[msgIdx].text;
+                textSpan.textContent = messages[msgIdx].text;
                 messagesEl.scrollTop = messagesEl.scrollHeight;
               } else if (evt.type === "error") {
                 messages[msgIdx].role = "error";

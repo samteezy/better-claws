@@ -238,17 +238,25 @@ export class MessageRouter {
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;
       let fullText = "";
+      let fullReasoning = "";
       let iterations = 0;
 
       // Streaming LLM + tool call loop
       while (iterations <= MAX_TOOL_ITERATIONS) {
         let iterationText = "";
+        let iterationReasoning = "";
         const toolAccumulators = new Map<number, { id: string; name: string; args: string }>();
 
         for await (const chunk of self.llmClient.chatStream(
           messages,
           tools.length > 0 ? tools : undefined,
         )) {
+          // Accumulate reasoning deltas
+          if (chunk.reasoningDelta) {
+            iterationReasoning += chunk.reasoningDelta;
+            yield { type: "reasoning-delta" as const, delta: chunk.reasoningDelta };
+          }
+
           // Accumulate text deltas
           if (chunk.delta) {
             iterationText += chunk.delta;
@@ -277,6 +285,7 @@ export class MessageRouter {
         }
 
         fullText += iterationText;
+        fullReasoning += iterationReasoning;
 
         // Build completed tool calls
         const completedToolCalls: ToolCall[] = [...toolAccumulators.values()]
@@ -301,6 +310,7 @@ export class MessageRouter {
           yield {
             type: "done",
             text: fullText,
+            ...(fullReasoning ? { reasoning: fullReasoning } : {}),
             usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
           };
           return;
@@ -338,8 +348,9 @@ export class MessageRouter {
           });
         }
 
-        // Reset text for the next iteration — tool result follow-up may produce new text
+        // Reset text and reasoning for the next iteration — tool result follow-up may produce new text
         fullText = "";
+        fullReasoning = "";
       }
     }
 

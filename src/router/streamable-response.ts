@@ -13,6 +13,7 @@ import type { StreamEvent, StreamableResponse as IStreamableResponse } from "../
 export class StreamableResponse implements IStreamableResponse {
   readonly stream: AsyncIterable<StreamEvent>;
   readonly text: Promise<string>;
+  readonly reasoning: Promise<string | undefined>;
   readonly usage: Promise<{ readonly promptTokens: number; readonly completionTokens: number }>;
 
   constructor(
@@ -28,6 +29,8 @@ export class StreamableResponse implements IStreamableResponse {
     const deferred = {
       resolveText: (_v: string): void => {},
       rejectText: (_e: unknown): void => {},
+      resolveReasoning: (_v: string | undefined): void => {},
+      rejectReasoning: (_e: unknown): void => {},
       resolveUsage: (_v: { readonly promptTokens: number; readonly completionTokens: number }): void => {},
       rejectUsage: (_e: unknown): void => {},
     };
@@ -36,15 +39,21 @@ export class StreamableResponse implements IStreamableResponse {
       deferred.resolveText = res;
       deferred.rejectText = rej;
     });
+    const reasoningPromise = new Promise<string | undefined>((res, rej) => {
+      deferred.resolveReasoning = res;
+      deferred.rejectReasoning = rej;
+    });
     const usagePromise = new Promise<{ readonly promptTokens: number; readonly completionTokens: number }>((res, rej) => {
       deferred.resolveUsage = res;
       deferred.rejectUsage = rej;
     });
 
     // Prevent unhandled rejection warnings when only .text is consumed
+    reasoningPromise.catch(() => {});
     usagePromise.catch(() => {});
 
     this.text = textPromise;
+    this.reasoning = reasoningPromise;
     this.usage = usagePromise;
 
     // Background reader: drains source into buffer, resolves promises on completion
@@ -59,12 +68,14 @@ export class StreamableResponse implements IStreamableResponse {
               await onComplete(event);
             }
             deferred.resolveText(event.text);
+            deferred.resolveReasoning(event.reasoning);
             deferred.resolveUsage(event.usage);
           }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Stream failed";
         deferred.rejectText(err);
+        deferred.rejectReasoning(err);
         deferred.rejectUsage(err);
         buffer.push({ type: "error", message: msg });
       } finally {

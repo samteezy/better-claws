@@ -729,4 +729,152 @@ describe("parseSSEStream", () => {
       assert.equal(chunks[0]?.done, true);
     });
   });
+
+  describe("reasoning delta extraction", () => {
+    it("populates reasoningDelta from delta.reasoning field", async () => {
+      const sseData = `data: ${JSON.stringify({
+        choices: [{
+          delta: { reasoning: "Let me think about this..." },
+        }],
+      })}\n\ndata: [DONE]\n\n`;
+
+      const chunks = await collectChunks(parseSSEStream(sseStream(sseData)));
+
+      assert.equal(chunks[0]?.reasoningDelta, "Let me think about this...");
+      assert.equal(chunks[0]?.delta, "");
+      assert.equal(chunks[0]?.done, false);
+    });
+
+    it("populates reasoningDelta from delta.reasoning_content field", async () => {
+      const sseData = `data: ${JSON.stringify({
+        choices: [{
+          delta: { reasoning_content: "Considering the options..." },
+        }],
+      })}\n\ndata: [DONE]\n\n`;
+
+      const chunks = await collectChunks(parseSSEStream(sseStream(sseData)));
+
+      assert.equal(chunks[0]?.reasoningDelta, "Considering the options...");
+      assert.equal(chunks[0]?.delta, "");
+      assert.equal(chunks[0]?.done, false);
+    });
+
+    it("prefers delta.reasoning over delta.reasoning_content", async () => {
+      const sseData = `data: ${JSON.stringify({
+        choices: [{
+          delta: {
+            reasoning: "Primary reasoning",
+            reasoning_content: "Fallback reasoning",
+          },
+        }],
+      })}\n\ndata: [DONE]\n\n`;
+
+      const chunks = await collectChunks(parseSSEStream(sseStream(sseData)));
+
+      assert.equal(chunks[0]?.reasoningDelta, "Primary reasoning");
+    });
+
+    it("accumulates reasoning across multiple chunks", async () => {
+      const sseData = `data: ${JSON.stringify({
+        choices: [{
+          delta: { reasoning: "First part " },
+        }],
+      })}\n\ndata: ${JSON.stringify({
+        choices: [{
+          delta: { reasoning: "second part " },
+        }],
+      })}\n\ndata: ${JSON.stringify({
+        choices: [{
+          delta: { reasoning: "third part" },
+        }],
+      })}\n\ndata: [DONE]\n\n`;
+
+      const chunks = await collectChunks(parseSSEStream(sseStream(sseData)));
+
+      assert.equal(chunks.length, 4);
+      assert.equal(chunks[0]?.reasoningDelta, "First part ");
+      assert.equal(chunks[1]?.reasoningDelta, "second part ");
+      assert.equal(chunks[2]?.reasoningDelta, "third part");
+    });
+
+    it("omits reasoningDelta when reasoning is not present", async () => {
+      const sseData = `data: ${JSON.stringify({
+        choices: [{
+          delta: { content: "Just text" },
+        }],
+      })}\n\ndata: [DONE]\n\n`;
+
+      const chunks = await collectChunks(parseSSEStream(sseStream(sseData)));
+
+      assert.equal(chunks[0]?.reasoningDelta, undefined);
+      assert.equal(chunks[0]?.delta, "Just text");
+    });
+
+    it("handles null reasoning as absent", async () => {
+      const sseData = `data: ${JSON.stringify({
+        choices: [{
+          delta: { content: "text", reasoning: null },
+        }],
+      })}\n\ndata: [DONE]\n\n`;
+
+      const chunks = await collectChunks(parseSSEStream(sseStream(sseData)));
+
+      assert.equal(chunks[0]?.reasoningDelta, undefined);
+      assert.equal(chunks[0]?.delta, "text");
+    });
+
+    it("emits reasoning and text delta in same chunk", async () => {
+      const sseData = `data: ${JSON.stringify({
+        choices: [{
+          delta: {
+            reasoning: "Thinking...",
+            content: "Response text",
+          },
+        }],
+      })}\n\ndata: [DONE]\n\n`;
+
+      const chunks = await collectChunks(parseSSEStream(sseStream(sseData)));
+
+      assert.equal(chunks[0]?.reasoningDelta, "Thinking...");
+      assert.equal(chunks[0]?.delta, "Response text");
+      assert.equal(chunks[0]?.done, false);
+    });
+
+    it("emits reasoning and tool call deltas together", async () => {
+      const sseData = `data: ${JSON.stringify({
+        choices: [{
+          delta: {
+            reasoning: "I need to call a tool",
+            tool_calls: [{
+              index: 0,
+              id: "call_1",
+              type: "function",
+              function: { name: "search", arguments: '{"q":"' },
+            }],
+          },
+        }],
+      })}\n\ndata: [DONE]\n\n`;
+
+      const chunks = await collectChunks(parseSSEStream(sseStream(sseData)));
+
+      assert.equal(chunks[0]?.reasoningDelta, "I need to call a tool");
+      assert.equal(chunks[0]?.toolCallDeltas?.length, 1);
+      assert.equal(chunks[0]?.toolCallDeltas?.[0]?.function?.name, "search");
+      assert.equal(chunks[0]?.delta, "");
+    });
+
+    it("handles empty reasoning string", async () => {
+      const sseData = `data: ${JSON.stringify({
+        choices: [{
+          delta: { reasoning: "" },
+        }],
+      })}\n\ndata: [DONE]\n\n`;
+
+      const chunks = await collectChunks(parseSSEStream(sseStream(sseData)));
+
+      // Empty string reasoning is treated as absent (falsy), so reasoningDelta is undefined
+      assert.equal(chunks[0]?.reasoningDelta, undefined);
+      assert.equal(chunks[0]?.done, false);
+    });
+  });
 });

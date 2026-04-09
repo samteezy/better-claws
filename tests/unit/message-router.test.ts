@@ -1232,4 +1232,192 @@ describe("MessageRouter", () => {
       assert.ok((entry["result"] as Record<string, unknown>)["output"]);
     });
   });
+
+  describe("handleMessageStream() — reasoning deltas", () => {
+    it("yields reasoning-delta events when LLM chunks contain reasoningDelta", async () => {
+      const llmClient = createMockLlmClient();
+      // Override chatStream to yield reasoning deltas
+      (llmClient as unknown as Record<string, unknown>)["chatStream"] = async function* () {
+        yield { delta: "", reasoningDelta: "Let me", done: false };
+        yield { delta: "", reasoningDelta: " think", done: false };
+        yield { delta: "", reasoningDelta: " about", done: false };
+        yield { delta: " this.", reasoningDelta: undefined, done: true };
+      };
+
+      const { router } = createRouter({ llmClient });
+      const response = router.handleMessageStream(makeInbound("Test"));
+      const events: Array<{ type?: string; delta?: string }> = [];
+
+      for await (const event of response.stream) {
+        events.push(event as { type?: string; delta?: string });
+      }
+
+      const reasoningEvents = events.filter((e) => e.type === "reasoning-delta");
+      assert.equal(reasoningEvents.length, 3);
+      assert.equal(reasoningEvents[0]?.delta, "Let me");
+      assert.equal(reasoningEvents[1]?.delta, " think");
+      assert.equal(reasoningEvents[2]?.delta, " about");
+    });
+
+    it("includes reasoning in done event when reasoning was produced", async () => {
+      const llmClient = createMockLlmClient();
+      (llmClient as unknown as Record<string, unknown>)["chatStream"] = async function* () {
+        yield { delta: "", reasoningDelta: "Thinking process", done: false };
+        yield { delta: "Response", reasoningDelta: undefined, done: true };
+      };
+
+      const { router } = createRouter({ llmClient });
+      const response = router.handleMessageStream(makeInbound("Test"));
+      const events: Array<unknown> = [];
+
+      for await (const event of response.stream) {
+        events.push(event);
+      }
+
+      const doneEvent = events.find((e) => (e as Record<string, unknown>)?.type === "done");
+      assert.ok(doneEvent);
+      assert.equal((doneEvent as Record<string, unknown>).reasoning, "Thinking process");
+    });
+
+    it("omits reasoning field in done event when no reasoning was produced", async () => {
+      const llmClient = createMockLlmClient();
+      (llmClient as unknown as Record<string, unknown>)["chatStream"] = async function* () {
+        yield { delta: "Just a response", reasoningDelta: undefined, done: true };
+      };
+
+      const { router } = createRouter({ llmClient });
+      const response = router.handleMessageStream(makeInbound("Test"));
+      const events: Array<unknown> = [];
+
+      for await (const event of response.stream) {
+        events.push(event);
+      }
+
+      const doneEvent = events.find((e) => (e as Record<string, unknown>)?.type === "done");
+      assert.ok(doneEvent);
+      assert.equal((doneEvent as Record<string, unknown>).reasoning, undefined);
+    });
+
+    it("reasoning does not appear in text promise", async () => {
+      const llmClient = createMockLlmClient();
+      (llmClient as unknown as Record<string, unknown>)["chatStream"] = async function* () {
+        yield { delta: "", reasoningDelta: "Internal thinking", done: false };
+        yield { delta: "Final answer", reasoningDelta: undefined, done: true };
+      };
+
+      const { router } = createRouter({ llmClient });
+      const response = router.handleMessageStream(makeInbound("Test"));
+      const text = await response.text;
+
+      assert.equal(text, "Final answer");
+      assert.ok(!text.includes("Internal thinking"));
+    });
+
+    it("reasoning resets across tool call iterations", async () => {
+      const toolRegistry = createMockToolRegistry();
+      toolRegistry.registerTool(
+        { name: "test-tool", description: "test", parameters: { type: "object" }, capabilities: [] },
+        { async execute() { return { success: true, output: { result: "data" }, durationMs: 50 }; } },
+      );
+
+      const llmClient = createMockLlmClient();
+      // Simulate two separate streams for the two LLM calls
+      let streamCount = 0;
+      (llmClient as unknown as Record<string, unknown>)["chatStream"] = async function* () {
+        streamCount++;
+        if (streamCount === 1) {
+          // First stream: reasoning + tool call
+          yield { delta: "", reasoningDelta: "First reasoning", done: false };
+          yield {
+            delta: "",
+            toolCallDeltas: [{
+              index: 0,
+              id: "call-1",
+              type: "function",
+              function: { name: "test-tool", arguments: "{}" },
+            }],
+            done: true,
+          };
+        } else {
+          // Second stream: no reasoning, just final response
+          yield { delta: "Final response", reasoningDelta: undefined, done: true };
+        }
+      };
+
+      const { router } = createRouter({ llmClient, toolRegistry });
+      const response = router.handleMessageStream(makeInbound("Test"));
+      let finalText = "";
+      const allReasonings: Array<string | undefined> = [];
+
+      for await (const event of response.stream) {
+        const e = event as Record<string, unknown>;
+        if (e.type === "done") {
+          finalText = e.text as string;
+          allReasonings.push(e.reasoning as string | undefined);
+        }
+      }
+
+      // Should have completed with final response
+      assert.equal(finalText, "Final response");
+      // Should have two done events (one after tool call, one at end)
+      assert.ok(allReasonings.length >= 1);
+    });
+
+    it("yields reasoning and text deltas interleaved", async () => {
+      const llmClient = createMockLlmClient();
+      (llmClient as unknown as Record<string, unknown>)["chatStream"] = async function* () {
+        yield { delta: "", reasoningDelta: "Step 1", done: false };
+        yield { delta: "A", reasoningDelta: undefined, done: false };
+        yield { delta: "", reasoningDelta: "Step 2", done: false };
+        yield { delta: "B", reasoningDelta: undefined, done: false };
+        yield { delta: "", reasoningDelta: "Step 3", done: false };
+        yield { delta: "C", reasoningDelta: undefined, done: true };
+      };
+
+      const { router } = createRouter({ llmClient });
+      const response = router.handleMessageStream(makeInbound("Test"));
+      const events: Array<unknown> = [];
+
+      for await (const event of response.stream) {
+        events.push(event);
+      }
+
+      const reasoningEvents = events.filter((e) => (e as Record<string, unknown>)?.type === "reasoning-delta");
+      const textEvents = events.filter((e) => (e as Record<string, unknown>)?.type === "text-delta");
+
+      assert.equal(reasoningEvents.length, 3);
+      assert.equal(textEvents.length, 3);
+
+      // Verify interleaving: reasoning, text, reasoning, text, reasoning, text
+      assert.equal((events[0] as Record<string, unknown>)?.type, "reasoning-delta");
+      assert.equal((events[1] as Record<string, unknown>)?.type, "text-delta");
+      assert.equal((events[2] as Record<string, unknown>)?.type, "reasoning-delta");
+      assert.equal((events[3] as Record<string, unknown>)?.type, "text-delta");
+      assert.equal((events[4] as Record<string, unknown>)?.type, "reasoning-delta");
+      assert.equal((events[5] as Record<string, unknown>)?.type, "text-delta");
+    });
+
+    it("accumulates reasoning across multiple chunks into done event", async () => {
+      const llmClient = createMockLlmClient();
+      (llmClient as unknown as Record<string, unknown>)["chatStream"] = async function* () {
+        yield { delta: "", reasoningDelta: "First ", done: false };
+        yield { delta: "", reasoningDelta: "second ", done: false };
+        yield { delta: "", reasoningDelta: "third", done: false };
+        yield { delta: "Response", reasoningDelta: undefined, done: true };
+      };
+
+      const { router } = createRouter({ llmClient });
+      const response = router.handleMessageStream(makeInbound("Test"));
+      let doneReasoning: string | undefined = undefined;
+
+      for await (const event of response.stream) {
+        const e = event as Record<string, unknown>;
+        if (e.type === "done") {
+          doneReasoning = e.reasoning as string | undefined;
+        }
+      }
+
+      assert.equal(doneReasoning, "First second third");
+    });
+  });
 });

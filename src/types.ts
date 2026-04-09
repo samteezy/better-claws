@@ -90,6 +90,7 @@ export interface ToolCallStreamDelta {
 
 export interface LlmStreamChunk {
   readonly delta: string;
+  readonly reasoningDelta?: string;
   readonly toolCallDeltas?: readonly ToolCallStreamDelta[];
   readonly done: boolean;
 }
@@ -98,10 +99,11 @@ export interface LlmStreamChunk {
 
 export type StreamEvent =
   | { readonly type: "text-delta"; readonly delta: string }
+  | { readonly type: "reasoning-delta"; readonly delta: string }
   | { readonly type: "tool-start"; readonly toolCall: ToolCall }
   | { readonly type: "tool-result"; readonly toolName: string; readonly output: unknown; readonly error?: string }
   | { readonly type: "error"; readonly message: string }
-  | { readonly type: "done"; readonly text: string; readonly usage: { readonly promptTokens: number; readonly completionTokens: number } };
+  | { readonly type: "done"; readonly text: string; readonly reasoning?: string; readonly usage: { readonly promptTokens: number; readonly completionTokens: number } };
 
 export interface StreamableChannelAdapter extends ChannelAdapter {
   sendStream(channelId: string, response: StreamableResponse): Promise<void>;
@@ -116,6 +118,7 @@ export function isStreamableAdapter(adapter: ChannelAdapter): adapter is Streama
 export interface StreamableResponse {
   readonly stream: AsyncIterable<StreamEvent>;
   readonly text: Promise<string>;
+  readonly reasoning: Promise<string | undefined>;
   readonly usage: Promise<{ readonly promptTokens: number; readonly completionTokens: number }>;
 }
 

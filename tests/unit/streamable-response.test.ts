@@ -614,4 +614,163 @@ describe("StreamableResponse", () => {
       assert.equal(events.length, 2);
     });
   });
+
+  describe(".reasoning promise", () => {
+    it("resolves to accumulated reasoning text when reasoning events present", async () => {
+      async function* eventSource(): AsyncGenerator<StreamEvent> {
+        yield { type: "reasoning-delta", delta: "Thinking" };
+        yield { type: "reasoning-delta", delta: " step" };
+        yield { type: "reasoning-delta", delta: " one" };
+        yield { type: "text-delta", delta: "Response" };
+        yield { type: "done", text: "Response", reasoning: "Thinking step one", usage: { promptTokens: 10, completionTokens: 5 } };
+      }
+
+      const response = new StreamableResponse(eventSource());
+      const reasoning = await response.reasoning;
+
+      assert.equal(reasoning, "Thinking step one");
+    });
+
+    it("resolves to undefined when no reasoning events", async () => {
+      async function* eventSource(): AsyncGenerator<StreamEvent> {
+        yield { type: "text-delta", delta: "Response" };
+        yield { type: "done", text: "Response", usage: { promptTokens: 10, completionTokens: 5 } };
+      }
+
+      const response = new StreamableResponse(eventSource());
+      const reasoning = await response.reasoning;
+
+      assert.equal(reasoning, undefined);
+    });
+
+    it("resolves to undefined when done event has no reasoning field", async () => {
+      async function* eventSource(): AsyncGenerator<StreamEvent> {
+        yield { type: "reasoning-delta", delta: "Thinking" };
+        yield { type: "text-delta", delta: "Response" };
+        yield { type: "done", text: "Response", usage: { promptTokens: 10, completionTokens: 5 } };
+      }
+
+      const response = new StreamableResponse(eventSource());
+      const reasoning = await response.reasoning;
+
+      assert.equal(reasoning, undefined);
+    });
+
+    it("stream delivers reasoning-delta events in correct order", async () => {
+      async function* eventSource(): AsyncGenerator<StreamEvent> {
+        yield { type: "reasoning-delta", delta: "First" };
+        yield { type: "text-delta", delta: "A" };
+        yield { type: "reasoning-delta", delta: "Second" };
+        yield { type: "text-delta", delta: "B" };
+        yield { type: "reasoning-delta", delta: "Third" };
+        yield { type: "done", text: "AB", reasoning: "FirstSecondThird", usage: { promptTokens: 10, completionTokens: 5 } };
+      }
+
+      const response = new StreamableResponse(eventSource());
+      const events: StreamEvent[] = [];
+
+      for await (const event of response.stream) {
+        events.push(event);
+      }
+
+      assert.equal(events.length, 6);
+      assert.equal(events[0]?.type, "reasoning-delta");
+      assert.equal((events[0] as { delta: string }).delta, "First");
+      assert.equal(events[1]?.type, "text-delta");
+      assert.equal((events[1] as { delta: string }).delta, "A");
+      assert.equal(events[2]?.type, "reasoning-delta");
+      assert.equal((events[2] as { delta: string }).delta, "Second");
+      assert.equal(events[3]?.type, "text-delta");
+      assert.equal((events[3] as { delta: string }).delta, "B");
+      assert.equal(events[4]?.type, "reasoning-delta");
+      assert.equal((events[4] as { delta: string }).delta, "Third");
+    });
+
+    it("reasoning promise independent from text promise", async () => {
+      async function* eventSource(): AsyncGenerator<StreamEvent> {
+        yield { type: "reasoning-delta", delta: "Reasoning" };
+        yield { type: "text-delta", delta: "Text" };
+        yield { type: "done", text: "Text", reasoning: "Reasoning", usage: { promptTokens: 10, completionTokens: 5 } };
+      }
+
+      const response = new StreamableResponse(eventSource());
+
+      const [text, reasoning] = await Promise.all([response.text, response.reasoning]);
+
+      assert.equal(text, "Text");
+      assert.equal(reasoning, "Reasoning");
+    });
+
+    it("rejects reasoning promise if source throws", async () => {
+      const testError = new Error("Stream error");
+      async function* eventSource(): AsyncGenerator<StreamEvent> {
+        yield { type: "reasoning-delta", delta: "partial" };
+        throw testError;
+      }
+
+      const response = new StreamableResponse(eventSource());
+      response.text.catch(() => {
+        // Expected to reject
+      });
+
+      await assert.rejects(
+        async () => {
+          await response.reasoning;
+        },
+        (err: unknown) => err === testError,
+      );
+    });
+
+    it("handles empty reasoning string", async () => {
+      async function* eventSource(): AsyncGenerator<StreamEvent> {
+        yield { type: "text-delta", delta: "Response" };
+        yield { type: "done", text: "Response", reasoning: "", usage: { promptTokens: 10, completionTokens: 5 } };
+      }
+
+      const response = new StreamableResponse(eventSource());
+      const reasoning = await response.reasoning;
+
+      assert.equal(reasoning, "");
+    });
+
+    it("handles reasoning with multiline and special characters", async () => {
+      const multilineReasoning = "Line 1\nLine 2\t\tWith tabs\nLine 3";
+      async function* eventSource(): AsyncGenerator<StreamEvent> {
+        yield { type: "reasoning-delta", delta: multilineReasoning };
+        yield { type: "done", text: "Response", reasoning: multilineReasoning, usage: { promptTokens: 10, completionTokens: 5 } };
+      }
+
+      const response = new StreamableResponse(eventSource());
+      const reasoning = await response.reasoning;
+
+      assert.equal(reasoning, multilineReasoning);
+    });
+
+    it("yields reasoning-delta events alongside text and tool events", async () => {
+      async function* eventSource(): AsyncGenerator<StreamEvent> {
+        yield { type: "reasoning-delta", delta: "Thinking about tools" };
+        yield { type: "text-delta", delta: "Calling " };
+        yield {
+          type: "tool-start",
+          toolCall: { id: "call-1", type: "function" as const, function: { name: "search", arguments: '{}' } },
+        };
+        yield { type: "reasoning-delta", delta: " analyzing results" };
+        yield { type: "tool-result", toolName: "search", output: { data: "results" } };
+        yield { type: "text-delta", delta: "Found it" };
+        yield { type: "done", text: "Calling Found it", reasoning: "Thinking about tools analyzing results", usage: { promptTokens: 20, completionTokens: 10 } };
+      }
+
+      const response = new StreamableResponse(eventSource());
+      const events: StreamEvent[] = [];
+
+      for await (const event of response.stream) {
+        events.push(event);
+      }
+
+      assert.ok(events.some((e) => e.type === "reasoning-delta"));
+      assert.ok(events.some((e) => e.type === "text-delta"));
+      assert.ok(events.some((e) => e.type === "tool-start"));
+      assert.ok(events.some((e) => e.type === "tool-result"));
+    });
+  });
 });

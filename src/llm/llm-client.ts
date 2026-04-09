@@ -53,6 +53,8 @@ interface OpenAIChoice {
   readonly delta?: {
     readonly role?: string;
     readonly content?: string | null;
+    readonly reasoning?: string | null;
+    readonly reasoning_content?: string | null;
     readonly tool_calls?: readonly {
       readonly index: number;
       readonly id?: string;
@@ -323,8 +325,11 @@ export async function* parseSSEStream(
           }));
         }
 
+        const reasoningDelta = choice.delta.reasoning ?? choice.delta.reasoning_content ?? undefined;
+
         yield {
           delta: choice.delta.content ?? "",
+          ...(reasoningDelta ? { reasoningDelta } : {}),
           ...(toolCallDeltas ? { toolCallDeltas } : {}),
           done: choice.finish_reason !== null && choice.finish_reason !== undefined,
         };
