@@ -414,117 +414,164 @@ const CHAT_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>betterClaws WebChat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Outfit:wght@500;600&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: #f5f5f5;
+    font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f6f4f0;
     display: flex;
     justify-content: center;
+    -webkit-font-smoothing: antialiased;
   }
   #app {
-    width: 100%; max-width: 720px;
-    height: 100vh;
+    width: 100%; max-width: 640px;
+    height: 100dvh;
     display: flex; flex-direction: column;
-    background: #fff;
-    box-shadow: 0 0 12px rgba(0,0,0,0.08);
+    background: #faf9f6;
+    box-shadow: 0 0 40px rgba(0,0,0,0.04);
   }
   header {
-    padding: 14px 20px;
-    background: #1a1a2e;
-    color: #e0e0e0;
-    font-size: 15px;
+    padding: 16px 20px;
+    background: #ffffff;
+    border-bottom: 1px solid #e6e2db;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  header span.title {
+    font-family: "Outfit", sans-serif;
+    font-size: 16px;
     font-weight: 600;
-    letter-spacing: 0.3px;
+    color: #3a3632;
+    letter-spacing: -0.2px;
+  }
+  header span.dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #6b8f71;
+    opacity: 0.8;
+    animation: pulse-dot 3s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.8; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
   }
   #messages {
     flex: 1;
     overflow-y: auto;
-    padding: 16px 20px;
+    padding: 20px 16px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+    -webkit-overflow-scrolling: touch;
   }
   .msg {
-    max-width: 78%;
-    padding: 10px 14px;
-    border-radius: 16px;
+    max-width: 82%;
+    padding: 11px 16px;
+    border-radius: 20px;
     font-size: 14px;
-    line-height: 1.45;
+    line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
+    animation: msgIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(8px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
   }
   .msg.user {
     align-self: flex-end;
-    background: #2563eb;
+    background: #6b8f71;
     color: #fff;
-    border-bottom-right-radius: 4px;
+    border-bottom-right-radius: 6px;
   }
   .msg.assistant {
     align-self: flex-start;
-    background: #e8e8e8;
-    color: #1a1a1a;
-    border-bottom-left-radius: 4px;
+    background: #ffffff;
+    color: #3a3632;
+    border: 1px solid #e6e2db;
+    border-bottom-left-radius: 6px;
   }
   .msg.error {
     align-self: flex-start;
-    background: #fee2e2;
-    color: #991b1b;
-    border-bottom-left-radius: 4px;
+    background: #fae8e8;
+    color: #943e3e;
+    border-bottom-left-radius: 6px;
   }
   .typing {
     align-self: flex-start;
-    padding: 10px 18px;
-    background: #e8e8e8;
-    border-radius: 16px;
-    border-bottom-left-radius: 4px;
-    font-size: 18px;
+    padding: 12px 20px;
+    background: #ffffff;
+    border: 1px solid #e6e2db;
+    border-radius: 20px;
+    border-bottom-left-radius: 6px;
+    font-size: 16px;
     letter-spacing: 3px;
-    color: #888;
+    color: #9e9891;
   }
-  @keyframes blink { 50% { opacity: 0.3; } }
-  .typing span { animation: blink 1.4s infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  .typing span { animation: blink 1.4s ease-in-out infinite; }
   .typing span:nth-child(2) { animation-delay: 0.2s; }
   .typing span:nth-child(3) { animation-delay: 0.4s; }
   #chat-form {
     display: flex;
     gap: 8px;
-    padding: 12px 20px;
-    border-top: 1px solid #e5e5e5;
-    background: #fafafa;
+    padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 12px);
+    border-top: 1px solid #e6e2db;
+    background: #ffffff;
   }
   #input {
     flex: 1;
-    padding: 10px 14px;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
+    padding: 11px 16px;
+    border: 1px solid #e6e2db;
+    border-radius: 14px;
     font-size: 14px;
+    font-family: inherit;
+    color: #3a3632;
+    background: #faf9f6;
     outline: none;
-    transition: border-color 0.15s;
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
-  #input:focus { border-color: #2563eb; }
-  #input:disabled { background: #f3f4f6; }
+  #input::placeholder { color: #b5b0a8; }
+  #input:focus {
+    border-color: #6b8f71;
+    box-shadow: 0 0 0 3px rgba(107,143,113,0.12);
+  }
+  #input:disabled { background: #efece6; color: #9e9891; }
   #send-btn {
-    padding: 10px 20px;
-    background: #2563eb;
+    padding: 11px 20px;
+    background: #6b8f71;
     color: #fff;
     border: none;
-    border-radius: 8px;
+    border-radius: 14px;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
+    font-family: inherit;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background 0.15s, transform 0.1s;
   }
-  #send-btn:hover:not(:disabled) { background: #1d4ed8; }
-  #send-btn:disabled { opacity: 0.5; cursor: default; }
+  #send-btn:hover:not(:disabled) { background: #5a7d60; }
+  #send-btn:active:not(:disabled) { transform: scale(0.96); }
+  #send-btn:disabled { opacity: 0.4; cursor: default; }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #ddd8d0; border-radius: 3px; }
+  ::selection { background: rgba(107,143,113,0.2); }
 </style>
 </head>
 <body>
 <div id="app">
-  <header>betterClaws WebChat</header>
+  <header>
+    <span class="title">betterClaws</span>
+    <span class="dot"></span>
+  </header>
   <div id="messages"></div>
   <form id="chat-form">
     <input id="input" type="text" placeholder="Type a message\u2026" autocomplete="off" />
