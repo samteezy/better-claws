@@ -27,8 +27,14 @@ import { DashboardServer } from "./dashboard/dashboard-server.js";
 import { createAdapter } from "./adapters/adapter-factory.js";
 import { McpClient, McpToolBridge } from "./mcp/index.js";
 import { SkillLoader } from "./skills/index.js";
+import { sage, clay, lavender, rose, stone, bold, dim } from "./utils/ansi.js";
+import { renderMarkdown, StreamingMarkdownWriter } from "./utils/terminal-markdown.js";
 
 // ── CLI Adapter ───────────────────────────────────────────────────────────────
+
+const PROMPT_PLAIN = "you \u203A ";
+const PROMPT_COLOR = clay(bold("you")) + clay(" \u203A ") ;
+const BOT_PREFIX = sage(bold("bot")) + sage(" \u203A ");
 
 class CliAdapter implements StreamableChannelAdapter {
   readonly id = "cli";
@@ -36,19 +42,26 @@ class CliAdapter implements StreamableChannelAdapter {
   private callback: ((msg: InboundMessage) => void) | null = null;
   private rl: ReturnType<typeof createInterface> | null = null;
 
+  /** Display the colored prompt. Readline gets the plain version for cursor math. */
+  private showPrompt(): void {
+    this.rl?.setPrompt(PROMPT_PLAIN);
+    this.rl?.prompt();
+    process.stdout.write("\r" + PROMPT_COLOR);
+  }
+
   async start(): Promise<void> {
     this.rl = createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: "you> ",
+      prompt: PROMPT_PLAIN,
     });
 
-    this.rl.prompt();
+    this.showPrompt();
 
     this.rl.on("line", (line) => {
       const text = line.trim();
       if (!text) {
-        this.rl?.prompt();
+        this.showPrompt();
         return;
       }
 
@@ -74,19 +87,64 @@ class CliAdapter implements StreamableChannelAdapter {
   }
 
   async send(_channelId: string, message: OutboundMessage): Promise<void> {
-    process.stdout.write(`\nbot> ${message.text}\n\n`);
-    this.rl?.prompt();
+    const rendered = renderMarkdown(message.text);
+    process.stdout.write("\n" + BOT_PREFIX + rendered + "\n\n");
+    this.showPrompt();
   }
 
   async sendStream(_channelId: string, response: StreamableResponse): Promise<void> {
-    process.stdout.write("\nbot> ");
+    let wrotePrefix = false;
+    const md = new StreamingMarkdownWriter((text) => {
+      if (!wrotePrefix) {
+        process.stdout.write("\n" + BOT_PREFIX);
+        wrotePrefix = true;
+      }
+      process.stdout.write(text);
+    });
+
     for await (const event of response.stream) {
-      if (event.type === "text-delta") {
-        process.stdout.write(event.delta);
+      switch (event.type) {
+        case "text-delta":
+          md.push(event.delta);
+          break;
+
+        case "tool-start":
+          md.flush();
+          process.stdout.write("\n" + lavender(dim("  \u27E1 " + event.toolCall.function.name + "...")) + "\n");
+          wrotePrefix = false;
+          break;
+
+        case "tool-result":
+          if (event.error) {
+            process.stdout.write(rose("  \u2717 " + event.toolName + " failed") + "\n");
+          } else {
+            process.stdout.write(lavender(dim("  \u2713 " + event.toolName)) + "\n");
+          }
+          wrotePrefix = false;
+          break;
+
+        case "error":
+          md.flush();
+          process.stdout.write("\n" + rose(bold("  error ")) + rose(event.message) + "\n");
+          break;
+
+        case "done": {
+          const total = event.usage.promptTokens + event.usage.completionTokens;
+          if (total > 0) {
+            process.stdout.write(stone(dim("  " + total + " tokens")) + "\n");
+          }
+          break;
+        }
+
+        case "reasoning-delta":
+          // Not displayed in CLI
+          break;
       }
     }
+
+    md.flush();
     process.stdout.write("\n\n");
-    this.rl?.prompt();
+    this.showPrompt();
   }
 }
 
@@ -331,13 +389,20 @@ async function main(): Promise<void> {
     // Config file may not exist — start with empty object
   }
 
-  console.log(`betterClaws v0.1.0`);
-  console.log(`Config: ${configPath ?? "config/betterclaws.json"}`);
-  console.log(`LLM: ${config.llm.model} @ ${config.llm.baseUrl}`);
+  // ── Welcome banner ─────────────────────────────────────────────────────
+  process.stdout.write("\n");
+  process.stdout.write("  " + sage(bold("betterClaws")) + " " + dim("v0.1.0") + "\n");
+  process.stdout.write("  " + stone("\u2500".repeat(22)) + "\n");
+
+  const label = (key: string, value: string) =>
+    "  " + stone(key.padEnd(12)) + value + "\n";
+
+  process.stdout.write(label("Model", config.llm.model));
   if (config.llm.weak) {
     const weak = resolveWeakLlmConfig(config.llm)!;
-    console.log(`LLM (weak): ${weak.model} @ ${weak.baseUrl}`);
+    process.stdout.write(label("Model " + dim("(weak)"), weak.model));
   }
+  process.stdout.write(label("Config", configPath ?? "config/betterclaws.json"));
 
   const { router, dashboard, adapterNames, stop } = await createApp(config, {
     dashboard: dashboardFlag || undefined,
@@ -347,23 +412,18 @@ async function main(): Promise<void> {
 
   if (dashboard) {
     const dashCfg = config.dashboard ?? { host: "127.0.0.1", port: 18701 };
-    console.log(`Dashboard: http://${dashCfg.host}:${dashCfg.port}`);
+    process.stdout.write(label("Dashboard", `http://${dashCfg.host}:${dashCfg.port}`));
   }
 
-  if (adapterNames.length > 0) {
-    console.log(`Adapters: ${adapterNames.join(", ")}`);
-  } else {
-    console.log(`Adapters: none configured`);
-  }
-
-  console.log(`Type a message to chat. Ctrl+C to quit.\n`);
+  process.stdout.write(label("Adapters", adapterNames.length > 0 ? adapterNames.join(", ") : dim("none")));
+  process.stdout.write("\n  " + stone("Type a message to chat. Ctrl+C to quit.") + "\n\n");
 
   const cliAdapter = new CliAdapter();
   router.registerAdapter(cliAdapter);
   await router.start();
 
   const shutdown = async () => {
-    console.log("\nShutting down...");
+    process.stdout.write("\n" + stone(dim("Shutting down...")) + "\n");
     await stop();
     process.exit(0);
   };

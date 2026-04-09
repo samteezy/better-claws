@@ -75,6 +75,28 @@ Dashboard: HTTP server at configurable port for session inspection and log viewi
 
 Telegram, Discord, Slack, Webhook. CLI adapter in `src/index.ts` for local testing.
 
+## Design Language — "Soft Clay"
+
+All user-facing surfaces share a cohesive warm, light aesthetic.
+
+**Palette** (CSS vars in `src/dashboard/public/style.css`):
+
+| Token | Hex | Role |
+|-------|-----|------|
+| `--accent` | `#6b8f71` | Sage green — primary accent, bot identity |
+| `--text` | `#3a3632` | Warm dark — body text |
+| `--text-muted` | `#9e9891` | Stone — secondary/meta text |
+| `--bg` | `#f6f4f0` | Warm off-white — backgrounds |
+| `--surface` | `#ffffff` | White — cards, inputs |
+| `--border` | `#e6e2db` | Warm gray — borders |
+| `--purple` | `#8b7fbe` | Lavender — tool activity, accents |
+| `--amber` | `#c49a5c` | Clay — warm highlights |
+| `--rose` | `#c77272` | Soft rose — errors, warnings |
+
+**Typography**: Outfit (headings), DM Sans (body), DM Mono (code). In terminal contexts, use ANSI 24-bit RGB equivalents of the palette.
+
+**Principles**: Mobile-first, soft shadows over hard borders, generous radius (14px web / 20px bubbles), subtle animations. No dark mode — the warmth is the identity.
+
 ## README
 
 The README is end-user focused. Keep it that way when updating. It should cover: what betterClaws is, how to set it up, how to configure it, how to connect chat platforms, built-in and custom tools, capabilities, security model (user-facing invariants), dashboard, and memory. Do not add internal architecture, project structure, component deep-dives, or test details — those belong here in CLAUDE.md.
