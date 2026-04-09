@@ -1,12 +1,15 @@
 import {
   BetterClawsError,
   isCapability,
+  isStreamableAdapter,
   type BetterClawsConfig,
   type ChannelAdapter,
   type InboundMessage,
   type OutboundMessage,
+  type StreamEvent,
   type ToolCall,
 } from "../types.js";
+import { StreamableResponse } from "./streamable-response.js";
 import { validateSchema } from "../utils/schema-validator.js";
 import { sanitizeOutput } from "../utils/output-sanitizer.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
@@ -80,9 +83,30 @@ export class MessageRouter {
   registerAdapter(adapter: ChannelAdapter): void {
     this.adapters.set(adapter.id, adapter);
     adapter.onMessage((msg) => {
-      void this.handleMessage(msg).then((response) => {
-        void adapter.send(msg.channelId, response);
-      });
+      const streamable = this.handleMessageStream(msg);
+      if (isStreamableAdapter(adapter)) {
+        void adapter.sendStream(msg.channelId, streamable).catch((err) => {
+          this.logger.log({
+            sessionId: null,
+            eventType: "message:outbound",
+            component: "router",
+            payload: {
+              error: err instanceof Error ? err.message : String(err),
+              adapterId: adapter.id,
+              channelId: msg.channelId,
+            },
+          });
+        });
+      } else {
+        void streamable.text.then((text) => {
+          void adapter.send(msg.channelId, { channelId: msg.channelId, text });
+        }).catch((err) => {
+          const errorText = err instanceof Error
+            ? `Sorry, something went wrong: ${err.message}`
+            : "Sorry, an unexpected error occurred.";
+          void adapter.send(msg.channelId, { channelId: msg.channelId, text: errorText });
+        });
+      }
     });
   }
 
@@ -100,91 +124,96 @@ export class MessageRouter {
   }
 
   async handleMessage(message: InboundMessage): Promise<OutboundMessage> {
-    this.logger.log({
-      sessionId: null,
-      eventType: "message:inbound",
-      component: "router",
-      payload: {
-        adapterId: message.adapterId,
-        channelId: message.channelId,
-        senderId: message.senderId,
-        textLength: message.text.length,
-      },
-    });
-
+    const streamable = this.handleMessageStream(message);
     try {
-      const session = await this.sessionManager.getOrCreate(
+      const text = await streamable.text;
+      return { channelId: message.channelId, text };
+    } catch (err) {
+      const errorText =
+        err instanceof Error
+          ? `Sorry, something went wrong: ${err.message}`
+          : "Sorry, an unexpected error occurred.";
+      return { channelId: message.channelId, text: errorText };
+    }
+  }
+
+  handleMessageStream(message: InboundMessage): StreamableResponse {
+    const self = this;
+
+    async function* generate(): AsyncGenerator<StreamEvent> {
+      self.logger.log({
+        sessionId: null,
+        eventType: "message:inbound",
+        component: "router",
+        payload: {
+          adapterId: message.adapterId,
+          channelId: message.channelId,
+          senderId: message.senderId,
+          textLength: message.text.length,
+        },
+      });
+
+      const session = await self.sessionManager.getOrCreate(
         message.adapterId,
         message.channelId,
         message.senderId,
       );
 
-      // Check for reset commands before logging to the session
       const cmd = message.text.trim();
 
       if (cmd === "/new") {
-        await this.sessionManager.close(session.id);
-        return {
-          channelId: message.channelId,
-          text: "Session archived. Starting fresh.",
-        };
+        await self.sessionManager.close(session.id);
+        yield { type: "text-delta", delta: "Session archived. Starting fresh." };
+        yield { type: "done", text: "Session archived. Starting fresh.", usage: { promptTokens: 0, completionTokens: 0 } };
+        return;
       }
 
       if (cmd === "/reset") {
-        await this.sessionManager.destroy(session.id);
-        return {
-          channelId: message.channelId,
-          text: "Session wiped. Starting fresh.",
-        };
+        await self.sessionManager.destroy(session.id);
+        yield { type: "text-delta", delta: "Session wiped. Starting fresh." };
+        yield { type: "done", text: "Session wiped. Starting fresh.", usage: { promptTokens: 0, completionTokens: 0 } };
+        return;
       }
 
-      await this.sessionManager.appendToLog(session.id, {
+      await self.sessionManager.appendToLog(session.id, {
         type: "inbound",
         message,
       });
 
       if (cmd === "/compact") {
-        if (!this.compactor) {
-          return {
-            channelId: message.channelId,
-            text: "Compaction is not configured.",
-          };
+        let text: string;
+        if (!self.compactor) {
+          text = "Compaction is not configured.";
+        } else {
+          const result = await self.compactor.compact(session.id);
+          text = result.compressedTurnCount === 0
+            ? "Nothing to compact yet."
+            : `Compaction complete. Summarised ${result.compressedTurnCount} turns (${result.summaryLength} chars).`;
         }
-        const result = await this.compactor.compact(session.id);
-        if (result.compressedTurnCount === 0) {
-          const reply: OutboundMessage = {
-            channelId: message.channelId,
-            text: "Nothing to compact yet.",
-          };
-          await this.sessionManager.appendToLog(session.id, { type: "outbound", message: reply });
-          return reply;
-        }
-        const reply: OutboundMessage = {
-          channelId: message.channelId,
-          text: `Compaction complete. Summarised ${result.compressedTurnCount} turns (${result.summaryLength} chars).`,
-        };
-        await this.sessionManager.appendToLog(session.id, { type: "outbound", message: reply });
-        return reply;
+        await self.sessionManager.appendToLog(session.id, {
+          type: "outbound",
+          message: { channelId: message.channelId, text },
+        });
+        yield { type: "text-delta", delta: text };
+        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+        return;
       }
 
-      let history = await this.sessionManager.getHistory(session.id);
+      let history = await self.sessionManager.getHistory(session.id);
 
-      // Auto-compaction: if token usage is approaching the budget, compact first
-      if (
-        this.compactor &&
-        this.config.compaction?.enabled
-      ) {
-        const compCfg = this.config.compaction;
-        const { estimatedTokens } = this.promptBuilder.build({
+      // Auto-compaction
+      if (self.compactor && self.config.compaction?.enabled) {
+        const compCfg = self.config.compaction;
+        const { estimatedTokens } = self.promptBuilder.build({
           history,
-          tools: this.toolRegistry.getDescriptors(),
+          tools: self.toolRegistry.getDescriptors(),
         });
         if (estimatedTokens > compCfg.tokenBudget - compCfg.reserveTokens) {
           try {
-            await this.compactor.compact(session.id);
-            history = await this.sessionManager.getHistory(session.id);
+            await self.compactor.compact(session.id);
+            history = await self.sessionManager.getHistory(session.id);
           } catch (err) {
-            this.logger.log({
+            self.logger.log({
               sessionId: session.id,
               eventType: "session:compaction",
               component: "router",
@@ -197,36 +226,108 @@ export class MessageRouter {
         }
       }
 
-      const tools = this.toolRegistry.getDescriptors();
-      const buildResult = this.promptBuilder.build({
+      const tools = self.toolRegistry.getDescriptors();
+      const buildResult = self.promptBuilder.build({
         history,
         tools,
-        currentDateTime: this.getCurrentDateTime(),
-        adapterPrompt: this.getAdapterPrompt(message.adapterId),
+        currentDateTime: self.getCurrentDateTime(),
+        adapterPrompt: self.getAdapterPrompt(message.adapterId),
       });
       const messages = buildResult.messages;
-      let response = await this.llmClient.chat(
-        messages,
-        tools.length > 0 ? tools : undefined,
-      );
 
-      // Tool call loop
+      let totalPromptTokens = 0;
+      let totalCompletionTokens = 0;
+      let fullText = "";
       let iterations = 0;
-      while (
-        response.message.tool_calls &&
-        response.message.tool_calls.length > 0 &&
-        iterations < MAX_TOOL_ITERATIONS
-      ) {
+
+      // Streaming LLM + tool call loop
+      while (iterations <= MAX_TOOL_ITERATIONS) {
+        let iterationText = "";
+        const toolAccumulators = new Map<number, { id: string; name: string; args: string }>();
+
+        for await (const chunk of self.llmClient.chatStream(
+          messages,
+          tools.length > 0 ? tools : undefined,
+        )) {
+          // Accumulate text deltas
+          if (chunk.delta) {
+            iterationText += chunk.delta;
+            yield { type: "text-delta", delta: chunk.delta };
+          }
+
+          // Accumulate tool call deltas
+          if (chunk.toolCallDeltas) {
+            for (const delta of chunk.toolCallDeltas) {
+              const existing = toolAccumulators.get(delta.index);
+              if (!existing) {
+                toolAccumulators.set(delta.index, {
+                  id: delta.id ?? "",
+                  name: delta.function?.name ?? "",
+                  args: delta.function?.arguments ?? "",
+                });
+              } else {
+                if (delta.id) existing.id = delta.id;
+                if (delta.function?.name) existing.name += delta.function.name;
+                if (delta.function?.arguments !== undefined) {
+                  existing.args += delta.function.arguments;
+                }
+              }
+            }
+          }
+        }
+
+        fullText += iterationText;
+
+        // Build completed tool calls
+        const completedToolCalls: ToolCall[] = [...toolAccumulators.values()]
+          .filter((tc) => tc.id && tc.name)
+          .map((tc) => ({
+            id: tc.id,
+            type: "function" as const,
+            function: { name: tc.name, arguments: tc.args },
+          }));
+
+        if (completedToolCalls.length === 0 || iterations >= MAX_TOOL_ITERATIONS) {
+          // Log the final outbound message
+          const outbound: OutboundMessage = { channelId: message.channelId, text: fullText };
+          await self.sessionManager.appendToLog(session.id, { type: "outbound", message: outbound });
+          self.logger.log({
+            sessionId: session.id,
+            eventType: "message:outbound",
+            component: "router",
+            payload: { textLength: fullText.length },
+          });
+
+          yield {
+            type: "done",
+            text: fullText,
+            usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
+          };
+          return;
+        }
+
+        // Tool call loop iteration
         iterations++;
 
         // Add assistant message with tool calls to conversation
-        messages.push(response.message);
+        messages.push({
+          role: "assistant",
+          content: iterationText,
+          tool_calls: completedToolCalls,
+        });
 
-        for (const toolCall of response.message.tool_calls) {
-          const toolResult = await this.processToolCall(
-            toolCall,
-            session.id,
-          );
+        // Execute each tool call
+        for (const toolCall of completedToolCalls) {
+          yield { type: "tool-start", toolCall };
+
+          const toolResult = await self.processToolCall(toolCall, session.id);
+
+          yield {
+            type: "tool-result",
+            toolName: toolCall.function.name,
+            output: toolResult.output,
+            error: toolResult.error,
+          };
 
           messages.push({
             role: "tool",
@@ -237,42 +338,12 @@ export class MessageRouter {
           });
         }
 
-        // Call LLM again with tool results
-        response = await this.llmClient.chat(
-          messages,
-          tools.length > 0 ? tools : undefined,
-        );
+        // Reset text for the next iteration — tool result follow-up may produce new text
+        fullText = "";
       }
-
-      const outbound: OutboundMessage = {
-        channelId: message.channelId,
-        text: response.message.content,
-      };
-
-      await this.sessionManager.appendToLog(session.id, {
-        type: "outbound",
-        message: outbound,
-      });
-
-      this.logger.log({
-        sessionId: session.id,
-        eventType: "message:outbound",
-        component: "router",
-        payload: { textLength: outbound.text.length },
-      });
-
-      return outbound;
-    } catch (err) {
-      const errorText =
-        err instanceof Error
-          ? `Sorry, something went wrong: ${err.message}`
-          : "Sorry, an unexpected error occurred.";
-
-      return {
-        channelId: message.channelId,
-        text: errorText,
-      };
     }
+
+    return new StreamableResponse(generate());
   }
 
   private getCurrentDateTime(): string {

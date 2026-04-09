@@ -18,9 +18,10 @@ import { SecretManager } from "./secrets/secret-manager.js";
 import { seedFromConfig } from "./secrets/seed.js";
 import type {
   BetterClawsConfig,
-  ChannelAdapter,
   InboundMessage,
   OutboundMessage,
+  StreamableChannelAdapter,
+  StreamableResponse,
 } from "./types.js";
 import { DashboardServer } from "./dashboard/dashboard-server.js";
 import { createAdapter } from "./adapters/adapter-factory.js";
@@ -29,7 +30,7 @@ import { SkillLoader } from "./skills/index.js";
 
 // ── CLI Adapter ───────────────────────────────────────────────────────────────
 
-class CliAdapter implements ChannelAdapter {
+class CliAdapter implements StreamableChannelAdapter {
   readonly id = "cli";
   readonly name = "CLI";
   private callback: ((msg: InboundMessage) => void) | null = null;
@@ -74,6 +75,17 @@ class CliAdapter implements ChannelAdapter {
 
   async send(_channelId: string, message: OutboundMessage): Promise<void> {
     process.stdout.write(`\nbot> ${message.text}\n\n`);
+    this.rl?.prompt();
+  }
+
+  async sendStream(_channelId: string, response: StreamableResponse): Promise<void> {
+    process.stdout.write("\nbot> ");
+    for await (const event of response.stream) {
+      if (event.type === "text-delta") {
+        process.stdout.write(event.delta);
+      }
+    }
+    process.stdout.write("\n\n");
     this.rl?.prompt();
   }
 }

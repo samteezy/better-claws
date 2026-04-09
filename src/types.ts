@@ -78,10 +78,45 @@ export interface LlmResponse {
   readonly raw: unknown;
 }
 
+export interface ToolCallStreamDelta {
+  readonly index: number;
+  readonly id?: string;
+  readonly type?: "function";
+  readonly function?: {
+    readonly name?: string;
+    readonly arguments?: string;
+  };
+}
+
 export interface LlmStreamChunk {
   readonly delta: string;
-  readonly toolCallDelta?: Partial<ToolCall>;
+  readonly toolCallDeltas?: readonly ToolCallStreamDelta[];
   readonly done: boolean;
+}
+
+// ── Streaming ────────────────────────────────────────────────────────────────
+
+export type StreamEvent =
+  | { readonly type: "text-delta"; readonly delta: string }
+  | { readonly type: "tool-start"; readonly toolCall: ToolCall }
+  | { readonly type: "tool-result"; readonly toolName: string; readonly output: unknown; readonly error?: string }
+  | { readonly type: "error"; readonly message: string }
+  | { readonly type: "done"; readonly text: string; readonly usage: { readonly promptTokens: number; readonly completionTokens: number } };
+
+export interface StreamableChannelAdapter extends ChannelAdapter {
+  sendStream(channelId: string, response: StreamableResponse): Promise<void>;
+}
+
+export function isStreamableAdapter(adapter: ChannelAdapter): adapter is StreamableChannelAdapter {
+  return "sendStream" in adapter && typeof (adapter as Record<string, unknown>)["sendStream"] === "function";
+}
+
+// Forward-declared to avoid circular imports; implementation in src/router/streamable-response.ts.
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface StreamableResponse {
+  readonly stream: AsyncIterable<StreamEvent>;
+  readonly text: Promise<string>;
+  readonly usage: Promise<{ readonly promptTokens: number; readonly completionTokens: number }>;
 }
 
 // ── Tools ─────────────────────────────────────────────────────────────────────

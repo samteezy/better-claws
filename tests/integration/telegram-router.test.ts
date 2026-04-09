@@ -9,7 +9,7 @@ import { CapabilityGate } from "../../src/tools/capability-gate.js";
 import { ToolExecutor } from "../../src/tools/executor.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { SecretManager } from "../../src/secrets/secret-manager.js";
-import type { BetterClawsConfig } from "../../src/types.js";
+import type { BetterClawsConfig, LlmStreamChunk } from "../../src/types.js";
 import { PromptBuilder } from "../../src/prompt/prompt-builder.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -96,6 +96,30 @@ function createDualMockFetch(options: {
 
     // LLM chat completions
     if (url.includes("/chat/completions")) {
+      const requestBody = body as Record<string, unknown> | null;
+      const isStream = requestBody?.["stream"] === true;
+
+      if (isStream) {
+        // Return SSE stream format
+        const sseData = [
+          `data: ${JSON.stringify({ choices: [{ delta: { role: "assistant", content: options.llmResponse }, finish_reason: null }] })}\n\n`,
+          `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}\n\n`,
+          `data: [DONE]\n\n`,
+        ].join("");
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(sseData));
+            controller.close();
+          },
+        });
+        return {
+          ok: true,
+          status: 200,
+          body: stream,
+        } as Response;
+      }
+
       return {
         ok: true,
         json: async () => ({
@@ -180,6 +204,11 @@ describe("Telegram → Router integration", () => {
         usage: { promptTokens: 10, completionTokens: 5 },
         raw,
       };
+    };
+    llmClient.chatStream = async function*(messages, tools): AsyncGenerator<LlmStreamChunk> {
+      const resp = await llmClient.chat(messages, tools);
+      if (resp.message.content) yield { delta: resp.message.content, done: false };
+      yield { delta: "", done: true };
     };
 
     const toolRegistry = new ToolRegistry({ toolsDirectory: path.join(tmpDir, "tools"), logger });
@@ -347,6 +376,11 @@ describe("Telegram → Router integration", () => {
         raw,
       };
     };
+    llmClient.chatStream = async function*(): AsyncGenerator<LlmStreamChunk> {
+      const resp = await llmClient.chat([], undefined);
+      if (resp.message.content) yield { delta: resp.message.content, done: false };
+      yield { delta: "", done: true };
+    };
 
     const toolRegistry = new ToolRegistry({ toolsDirectory: path.join(tmpDir, "tools"), logger });
     const capabilityGate = new CapabilityGate({ defaultPolicy: "deny", logger });
@@ -494,6 +528,11 @@ describe("Telegram → Router integration", () => {
         usage: { promptTokens: 5, completionTokens: 3 },
         raw,
       };
+    };
+    llmClient.chatStream = async function*(): AsyncGenerator<LlmStreamChunk> {
+      const resp = await llmClient.chat([], undefined);
+      if (resp.message.content) yield { delta: resp.message.content, done: false };
+      yield { delta: "", done: true };
     };
 
     const toolRegistry = new ToolRegistry({ toolsDirectory: path.join(tmpDir, "tools"), logger });

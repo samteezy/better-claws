@@ -2,9 +2,10 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { timingSafeEqual } from "node:crypto";
 import {
   BetterClawsError,
-  type ChannelAdapter,
   type InboundMessage,
   type OutboundMessage,
+  type StreamableChannelAdapter,
+  type StreamableResponse,
 } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
 
@@ -26,7 +27,7 @@ export interface WebChatAdapterOptions {
 
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
-export class WebChatAdapter implements ChannelAdapter {
+export class WebChatAdapter implements StreamableChannelAdapter {
   readonly id = "webchat";
   readonly name = "WebChat";
 
@@ -42,9 +43,15 @@ export class WebChatAdapter implements ChannelAdapter {
     resolve: (response: OutboundMessage) => void;
     timer: ReturnType<typeof setTimeout>;
   }>();
+  private readonly pendingStreamResponses = new Map<string, {
+    res: ServerResponse;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
 
   /** Response timeout in milliseconds. */
   private readonly timeoutMs: number;
+  /** Stream timeout — longer to accommodate tool call loops. */
+  private readonly streamTimeoutMs: number;
 
   constructor(options: WebChatAdapterOptions) {
     if (!options.port || options.port <= 0) {
@@ -55,6 +62,7 @@ export class WebChatAdapter implements ChannelAdapter {
     this.logger = options.logger;
     this.authToken = options.authToken;
     this.timeoutMs = 30_000;
+    this.streamTimeoutMs = 120_000;
   }
 
   async start(): Promise<void> {
@@ -98,6 +106,13 @@ export class WebChatAdapter implements ChannelAdapter {
     }
     this.pendingResponses.clear();
 
+    for (const [, pending] of this.pendingStreamResponses) {
+      clearTimeout(pending.timer);
+      pending.res.write(`data: ${JSON.stringify({ type: "error", message: "Server shutting down." })}\n\n`);
+      pending.res.end();
+    }
+    this.pendingStreamResponses.clear();
+
     return new Promise((resolve) => {
       if (!this.server) {
         resolve();
@@ -137,6 +152,43 @@ export class WebChatAdapter implements ChannelAdapter {
     });
   }
 
+  async sendStream(channelId: string, response: StreamableResponse): Promise<void> {
+    const pending = this.pendingStreamResponses.get(channelId);
+    if (!pending) {
+      // Fallback: no stream endpoint was used — collect and send as regular response
+      const text = await response.text;
+      return this.send(channelId, { channelId, text });
+    }
+
+    const { res, timer } = pending;
+    clearTimeout(timer);
+    this.pendingStreamResponses.delete(channelId);
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    });
+
+    try {
+      for await (const event of response.stream) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    } catch (err) {
+      res.write(`data: ${JSON.stringify({ type: "error", message: err instanceof Error ? err.message : "Stream failed" })}\n\n`);
+    }
+
+    res.write("data: [DONE]\n\n");
+    res.end();
+
+    this.logger.log({
+      sessionId: null,
+      eventType: "message:outbound",
+      component: "webchat",
+      payload: { channelId, streaming: true },
+    });
+  }
+
   // ── HTTP handling ─────────────────────────────────────────────────────────
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -153,7 +205,7 @@ export class WebChatAdapter implements ChannelAdapter {
       return;
     }
 
-    if (method === "POST" && path === "/chat") {
+    if (method === "POST" && (path === "/chat" || path === "/chat/stream")) {
       if (!this.authenticate(req)) {
         this.logger.log({
           sessionId: null,
@@ -164,6 +216,9 @@ export class WebChatAdapter implements ChannelAdapter {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Unauthorized" }));
         return;
+      }
+      if (path === "/chat/stream") {
+        return this.handleChatStream(req, res);
       }
       return this.handleChat(req, res);
     }
@@ -243,6 +298,75 @@ export class WebChatAdapter implements ChannelAdapter {
 
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ text: response.text, messageId }));
+  }
+
+  private async handleChatStream(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let rawBody: string;
+    try {
+      rawBody = await this.readBody(req);
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to read request body" }));
+      return;
+    }
+
+    let payload: { text?: unknown; senderId?: unknown };
+    try {
+      payload = JSON.parse(rawBody) as { text?: unknown; senderId?: unknown };
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid JSON" }));
+      return;
+    }
+
+    if (!payload.text || typeof payload.text !== "string" || payload.text.trim().length === 0) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Missing required field: text" }));
+      return;
+    }
+
+    const senderId = typeof payload.senderId === "string" && payload.senderId.length > 0
+      ? payload.senderId
+      : "webchat-user";
+    const messageId = `wc-${++this.messageCounter}`;
+
+    const inbound: InboundMessage = {
+      id: messageId,
+      adapterId: "webchat",
+      channelId: messageId,
+      senderId,
+      text: payload.text.trim(),
+      timestamp: Date.now(),
+    };
+
+    this.logger.log({
+      sessionId: null,
+      eventType: "message:inbound",
+      component: "webchat",
+      payload: { messageId, senderId, textLength: inbound.text.length, streaming: true },
+    });
+
+    const timer = setTimeout(() => {
+      this.pendingStreamResponses.delete(messageId);
+      this.logger.log({
+        sessionId: null,
+        eventType: "message:outbound",
+        component: "webchat",
+        payload: { messageId, action: "stream_timeout" },
+      });
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+      res.write(`data: ${JSON.stringify({ type: "error", message: "Request timed out — the LLM did not respond in time." })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }, this.streamTimeoutMs);
+
+    this.pendingStreamResponses.set(messageId, { res, timer });
+
+    this.callback?.(inbound);
   }
 
   private authenticate(req: IncomingMessage): boolean {
@@ -458,29 +582,67 @@ const CHAT_HTML = `<!DOCTYPE html>
     messages.push({ role: "user", text: text });
     input.value = "";
     render();
-    showTyping();
     setEnabled(false);
 
     var hdrs = { "Content-Type": "application/json" };
     if (authToken) hdrs["Authorization"] = "Bearer " + authToken;
 
-    fetch("/chat", {
+    // Stream response via SSE
+    fetch("/chat/stream", {
       method: "POST",
       headers: hdrs,
       body: JSON.stringify({ text: text })
     })
     .then(function(r) {
       if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || "Request failed"); });
-      return r.json();
-    })
-    .then(function(data) {
-      hideTyping();
-      messages.push({ role: "assistant", text: data.text });
+      // Create assistant bubble immediately for streaming
+      messages.push({ role: "assistant", text: "" });
       render();
+      var msgIdx = messages.length - 1;
+      var msgEl = messagesEl.lastElementChild;
+      var reader = r.body.getReader();
+      var decoder = new TextDecoder();
+      var buf = "";
+
+      function pump() {
+        return reader.read().then(function(result) {
+          if (result.done) return;
+          buf += decoder.decode(result.value, { stream: true });
+          var parts = buf.split("\\n\\n");
+          buf = parts.pop() || "";
+          for (var i = 0; i < parts.length; i++) {
+            var line = parts[i].trim();
+            if (!line.startsWith("data: ")) continue;
+            var data = line.slice(6);
+            if (data === "[DONE]") return;
+            try {
+              var evt = JSON.parse(data);
+              if (evt.type === "text-delta") {
+                messages[msgIdx].text += evt.delta;
+                if (msgEl) msgEl.textContent = messages[msgIdx].text;
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+              } else if (evt.type === "error") {
+                messages[msgIdx].role = "error";
+                messages[msgIdx].text = evt.message;
+                render();
+              }
+            } catch(ignored) {}
+          }
+          return pump();
+        });
+      }
+
+      return pump();
     })
     .catch(function(err) {
-      hideTyping();
-      messages.push({ role: "error", text: err.message || "Something went wrong" });
+      // If there's already a streaming bubble, convert it to error
+      var last = messages[messages.length - 1];
+      if (last && last.role === "assistant" && last.text === "") {
+        last.role = "error";
+        last.text = err.message || "Something went wrong";
+      } else {
+        messages.push({ role: "error", text: err.message || "Something went wrong" });
+      }
       render();
     })
     .finally(function() {

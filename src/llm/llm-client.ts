@@ -3,6 +3,7 @@ import {
   type ChatMessage,
   type LlmResponse,
   type LlmStreamChunk,
+  type ToolCallStreamDelta,
   type ToolDescriptor,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
@@ -304,23 +305,27 @@ export async function* parseSSEStream(
         const choice = parsed.choices?.[0];
         if (!choice?.delta) continue;
 
-        const toolCallDelta = choice.delta.tool_calls?.[0];
+        const rawDeltas = choice.delta.tool_calls;
+        let toolCallDeltas: readonly ToolCallStreamDelta[] | undefined;
+        if (rawDeltas && rawDeltas.length > 0) {
+          toolCallDeltas = rawDeltas.map((d) => ({
+            index: d.index,
+            ...(d.id !== undefined ? { id: d.id } : {}),
+            ...(d.type !== undefined ? { type: d.type } : {}),
+            ...(d.function
+              ? {
+                  function: {
+                    ...(d.function.name !== undefined ? { name: d.function.name } : {}),
+                    ...(d.function.arguments !== undefined ? { arguments: d.function.arguments } : {}),
+                  },
+                }
+              : {}),
+          }));
+        }
+
         yield {
           delta: choice.delta.content ?? "",
-          ...(toolCallDelta
-            ? {
-                toolCallDelta: {
-                  id: toolCallDelta.id,
-                  type: toolCallDelta.type,
-                  function: toolCallDelta.function
-                    ? {
-                        name: toolCallDelta.function.name ?? "",
-                        arguments: toolCallDelta.function.arguments ?? "",
-                      }
-                    : undefined,
-                },
-              }
-            : {}),
+          ...(toolCallDeltas ? { toolCallDeltas } : {}),
           done: choice.finish_reason !== null && choice.finish_reason !== undefined,
         };
       }

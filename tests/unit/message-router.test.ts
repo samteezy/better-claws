@@ -7,6 +7,7 @@ import { MessageRouter } from "../../src/router/message-router.js";
 import type {
   InboundMessage,
   LlmResponse,
+  LlmStreamChunk,
   ToolDescriptor,
   ToolHandler,
   ToolResult,
@@ -98,6 +99,34 @@ function createMockLlmClient() {
       capturedMessages.push([...messages]);
       if (options) capturedOptions.push(options);
       return responses.shift() ?? defaultResponse;
+    },
+    async *chatStream(messages: readonly ChatMessage[], _tools?: unknown, options?: Record<string, unknown>): AsyncGenerator<LlmStreamChunk> {
+      callCount++;
+      capturedMessages.push([...messages]);
+      if (options) capturedOptions.push(options);
+      const resp = responses.shift() ?? defaultResponse;
+      // Emit content as a single text delta
+      if (resp.message.content) {
+        yield { delta: resp.message.content, done: false };
+      }
+      // Emit tool calls as deltas
+      if (resp.message.tool_calls && resp.message.tool_calls.length > 0) {
+        for (let i = 0; i < resp.message.tool_calls.length; i++) {
+          const tc = resp.message.tool_calls[i]!;
+          yield {
+            delta: "",
+            toolCallDeltas: [{
+              index: i,
+              id: tc.id,
+              type: tc.type,
+              function: { name: tc.function.name, arguments: tc.function.arguments },
+            }],
+            done: false,
+          };
+        }
+      }
+      // Final done chunk
+      yield { delta: "", done: true };
     },
   } as unknown as LlmClient & {
     callCount: number;
@@ -266,7 +295,7 @@ describe("MessageRouter", () => {
 
     it("returns error message on LLM exception", async () => {
       const llmClient = createMockLlmClient();
-      (llmClient as unknown as Record<string, unknown>)["chat"] = async () => { throw new Error("LLM down"); };
+      (llmClient as unknown as Record<string, unknown>)["chatStream"] = async function*() { throw new Error("LLM down"); };
 
       const { router } = createRouter({ llmClient });
       const response = await router.handleMessage(makeInbound("Test"));
