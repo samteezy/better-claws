@@ -19,6 +19,21 @@
     "webhook": { "enabled": false, "secret": "env:BC_WEBHOOK_SECRET" },
     "webchat": { "enabled": false, "port": 18702, "secret": "env:BC_WEBCHAT_TOKEN" }
   },
+  "systemContext": {
+    "persona": "",
+    "userContext": "",
+    "timezone": "UTC"
+  },
+  "tools": {
+    "mcpServers": {
+      "context7": {
+        "command": "npx",
+        "args": ["-y", "@upstash/context7-mcp"],
+        "env": { "CONTEXT7_API_KEY": "env:BC_CONTEXT7_API_KEY" },
+        "defaultPolicy": "auto"
+      }
+    }
+  },
   "security": {
     "defaultCapabilityPolicy": "deny",
     "sandboxTimeout": 30000,
@@ -50,10 +65,5 @@
     "tokenBudget": 3584,
     "reserveTokens": 512,
     "keepRecentTokens": 1000
-  },
-  "systemContext": {
-    "persona": "",
-    "userContext": "",
-    "timezone": "UTC"
   }
 }
