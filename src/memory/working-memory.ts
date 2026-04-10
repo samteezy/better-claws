@@ -162,6 +162,24 @@ export class WorkingMemory {
     return sections.join("\n\n");
   }
 
+  /**
+   * Create an independent copy of this working memory bound to a new session.
+   * All entries are deep-copied; mutations to either instance are independent.
+   */
+  clone(newSessionId: string, options: WorkingMemoryOptions): WorkingMemory {
+    const cloned = new WorkingMemory(newSessionId, options);
+    for (const entry of this.entries.values()) {
+      cloned.entries.set(entry.key, {
+        key: entry.key,
+        category: entry.category,
+        content: entry.content,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
+      });
+    }
+    return cloned;
+  }
+
   private calculateSize(): number {
     let total = 0;
     for (const entry of this.entries.values()) {

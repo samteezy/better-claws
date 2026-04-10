@@ -175,6 +175,56 @@ export class MessageRouter {
         return;
       }
 
+      if (cmd === "/fork" || cmd.startsWith("/fork ")) {
+        const arg = cmd.slice("/fork".length).trim();
+        const sourceId = arg || session.id;
+
+        // Validate source exists
+        const sourceContent = await self.sessionManager.readRawLog(sourceId);
+        if (sourceContent === null) {
+          const text = `Session "${sourceId}" not found.`;
+          yield { type: "text-delta", delta: text };
+          yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+          return;
+        }
+
+        // Close current session, then fork source into this channel
+        await self.sessionManager.close(session.id);
+        const forked = await self.sessionManager.fork(
+          sourceId,
+          message.adapterId,
+          message.channelId,
+          message.senderId,
+        );
+
+        const text = `Forked session ${sourceId.slice(0, 8)}… into ${forked.id.slice(0, 8)}…. History preserved, capabilities reset.`;
+        yield { type: "text-delta", delta: text };
+        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+        return;
+      }
+
+      if (cmd === "/sessions") {
+        const items = await self.sessionManager.listForSender(message.senderId);
+
+        let text: string;
+        if (items.length === 0) {
+          text = "No sessions found.";
+        } else {
+          const lines = items.map((item) => {
+            const id = item.sessionId.slice(0, 8);
+            const status = item.archived ? "archived" : "active";
+            const date = new Date(item.createdAt).toISOString().slice(0, 10);
+            const preview = item.preview ? ` — ${item.preview}` : "";
+            return `${id}  ${item.adapterId.padEnd(10)} ${status.padEnd(9)} ${date}${preview}`;
+          });
+          text = `Sessions:\n${lines.join("\n")}`;
+        }
+
+        yield { type: "text-delta", delta: text };
+        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+        return;
+      }
+
       await self.sessionManager.appendToLog(session.id, {
         type: "inbound",
         message,

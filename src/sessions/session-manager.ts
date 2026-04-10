@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readdir, readFile, rename, unlink } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import {
@@ -28,6 +28,16 @@ export interface SessionManagerOptions {
   readonly sessionsDirectory: string;
   readonly idleTimeoutMs: number;
   readonly logger: StructuredLogger;
+}
+
+export interface SessionListItem {
+  readonly sessionId: string;
+  readonly adapterId: string;
+  readonly channelId: string;
+  readonly createdAt: number;
+  readonly lastActivityAt: number;
+  readonly archived: boolean;
+  readonly preview: string;
 }
 
 export class SessionManager {
@@ -179,8 +189,10 @@ export class SessionManager {
           break;
         case "toolCall":
         case "compaction":
+        case "fork":
           // toolCall is captured inline in the messages array by the router;
           // compaction entries are handled above via the summary scan.
+          // fork entries are provenance metadata — not part of the conversation.
           break;
       }
     }
@@ -392,6 +404,198 @@ export class SessionManager {
     }
 
     return recoveredCount;
+  }
+
+  async fork(
+    sourceSessionId: string,
+    adapterId: string,
+    channelId: string,
+    senderId: string,
+  ): Promise<Session> {
+    await this.ensureDirectory();
+
+    // 1. Read source JSONL content — check active sessions, then archived files
+    const sourceContent = await this.readRawLog(sourceSessionId);
+    if (sourceContent === null) {
+      throw new SessionError(
+        `Source session "${sourceSessionId}" not found`,
+        "NOT_FOUND",
+      );
+    }
+
+    // 2. Derive new session ID and handle collision with existing active session
+    const newId = this.deriveSessionId(adapterId, channelId, senderId);
+    if (this.sessions.has(newId)) {
+      await this.close(newId);
+    }
+
+    // 3. Build new JSONL: source content + fork provenance entry
+    const sourceLines = sourceContent.trim().split("\n").filter(Boolean);
+    const forkEntry: SessionLogEntry = {
+      type: "fork",
+      sourceSessionId,
+      forkTimestamp: Date.now(),
+      sourceLineCount: sourceLines.length,
+    };
+
+    const newContent = sourceContent.trimEnd() + "\n" + JSON.stringify(forkEntry) + "\n";
+    const logPath = join(this.sessionsDirectory, `${newId}.jsonl`);
+    await writeFile(logPath, newContent, "utf-8");
+
+    // 4. Create in-memory session with fresh state
+    const now = Date.now();
+    const session: Session = {
+      id: newId,
+      state: {
+        id: newId,
+        adapterId,
+        channelId,
+        senderId,
+        createdAt: now,
+        lastActivityAt: now,
+        capabilityGrants: new Map(),
+      },
+      logPath,
+    };
+
+    this.sessions.set(newId, session);
+
+    this.logger.log({
+      sessionId: newId,
+      eventType: "session:fork",
+      component: "session",
+      payload: { sourceSessionId, adapterId, channelId, senderId },
+    });
+
+    return session;
+  }
+
+  async listForSender(senderId: string): Promise<readonly SessionListItem[]> {
+    await this.ensureDirectory();
+
+    const items: SessionListItem[] = [];
+
+    // Active sessions
+    for (const session of this.sessions.values()) {
+      if (session.state.senderId === senderId) {
+        let preview = "";
+        try {
+          const content = await readFile(session.logPath, "utf-8");
+          preview = this.extractFirstMessageText(content);
+        } catch {
+          // No log file yet
+        }
+
+        items.push({
+          sessionId: session.id,
+          adapterId: session.state.adapterId,
+          channelId: session.state.channelId,
+          createdAt: session.state.createdAt,
+          lastActivityAt: session.state.lastActivityAt,
+          archived: false,
+          preview,
+        });
+      }
+    }
+
+    // Archived sessions
+    const archived = await this.listArchived();
+    for (const entry of archived) {
+      // Skip if we already have this session ID from active list
+      if (items.some((i) => i.sessionId === entry.sessionId)) continue;
+
+      const filePath = join(this.sessionsDirectory, entry.filename);
+      let content: string;
+      try {
+        content = await readFile(filePath, "utf-8");
+      } catch {
+        continue;
+      }
+
+      const firstInbound = this.extractFirstInbound(content);
+      if (!firstInbound || firstInbound.senderId !== senderId) continue;
+
+      const timestamps = this.extractTimestampBounds(content);
+      const preview = this.extractFirstMessageText(content);
+
+      items.push({
+        sessionId: entry.sessionId,
+        adapterId: firstInbound.adapterId,
+        channelId: firstInbound.channelId,
+        createdAt: timestamps.first,
+        lastActivityAt: timestamps.last,
+        archived: true,
+        preview,
+      });
+    }
+
+    this.logger.log({
+      sessionId: null,
+      eventType: "session:list",
+      component: "session",
+      payload: { senderId, resultCount: items.length },
+    });
+
+    return items;
+  }
+
+  private static readonly SESSION_ID_PATTERN = /^[0-9a-f]{16}$/;
+
+  async readRawLog(sessionId: string): Promise<string | null> {
+    if (!SessionManager.SESSION_ID_PATTERN.test(sessionId)) return null;
+
+    // Check active session first
+    const active = this.sessions.get(sessionId);
+    if (active) {
+      try {
+        return await readFile(active.logPath, "utf-8");
+      } catch {
+        return null;
+      }
+    }
+
+    // Check for active file on disk (not in memory — e.g. pre-recovery)
+    await this.ensureDirectory();
+    const activePath = join(this.sessionsDirectory, `${sessionId}.jsonl`);
+    try {
+      return await readFile(activePath, "utf-8");
+    } catch {
+      // Not an active file — check archives
+    }
+
+    // Check archived files — find most recent archive for this session ID
+    const archived = await this.listArchived();
+    const match = archived.find((a) => a.sessionId === sessionId);
+    if (match) {
+      const archivePath = join(this.sessionsDirectory, match.filename);
+      try {
+        return await readFile(archivePath, "utf-8");
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  private extractFirstMessageText(content: string): string {
+    const lines = content.split("\n");
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        if (entry["type"] === "inbound") {
+          const msg = entry["message"] as Record<string, unknown> | undefined;
+          const text = msg?.["text"];
+          if (typeof text === "string") {
+            return text.length > 80 ? text.slice(0, 77) + "..." : text;
+          }
+        }
+      } catch {
+        // skip
+      }
+    }
+    return "";
   }
 
   private extractFirstInbound(

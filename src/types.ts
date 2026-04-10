@@ -206,6 +206,8 @@ export const EVENT_TYPES = [
   "session:destroy",
   "session:recover",
   "session:compaction",
+  "session:fork",
+  "session:list",
   "config:change",
   "secret:access",
   "secret:register",
@@ -411,4 +413,10 @@ export type SessionLogEntry =
       readonly summary: string;
       readonly compressedTurnCount: number;
       readonly createdAt: number;
+    }
+  | {
+      readonly type: "fork";
+      readonly sourceSessionId: string;
+      readonly forkTimestamp: number;
+      readonly sourceLineCount: number;
     };

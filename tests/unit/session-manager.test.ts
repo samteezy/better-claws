@@ -1404,5 +1404,650 @@ describe("SessionManager", () => {
       // Should not have synthetic summary message
       assert.ok(!history.some((m) => m.content.includes("[Conversation summary:")));
     });
+
+    it("ignores fork entries (fork entry does not appear in messages)", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const userEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "User message",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, userEntry);
+
+      // Manually append a fork entry
+      const { appendFile } = await import("node:fs/promises");
+      const forkEntry: SessionLogEntry = {
+        type: "fork",
+        sourceSessionId: "source-session-id",
+        forkTimestamp: Date.now(),
+        sourceLineCount: 5,
+      };
+      await appendFile(session.logPath, JSON.stringify(forkEntry) + "\n", "utf-8");
+
+      const history = await sessionManager.getHistory(session.id);
+
+      // Fork entry should not appear in the history
+      assert.equal(history.length, 1, "fork entry should be ignored");
+      assert.equal(history[0]?.role, "user");
+      assert.equal(history[0]?.content, "User message");
+    });
+  });
+
+  describe("fork()", () => {
+    it("creates a new session with copied history from source session", async () => {
+      const sourceSession = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg1: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "First message",
+          timestamp: Date.now(),
+        },
+      };
+
+      const msg2: SessionLogEntry = {
+        type: "outbound",
+        message: {
+          channelId: "chat-123",
+          text: "Response message",
+        },
+      };
+
+      await sessionManager.appendToLog(sourceSession.id, msg1);
+      await sessionManager.appendToLog(sourceSession.id, msg2);
+
+      const forkedSession = await sessionManager.fork(
+        sourceSession.id,
+        "discord",
+        "channel-456",
+        "user-789"
+      );
+
+      // Verify forked session has different identity
+      assert.notEqual(forkedSession.id, sourceSession.id);
+      assert.equal(forkedSession.state.adapterId, "discord");
+      assert.equal(forkedSession.state.channelId, "channel-456");
+      assert.equal(forkedSession.state.senderId, "user-789");
+
+      // Verify forked session has the same history as source
+      const forkedHistory = await sessionManager.getHistory(forkedSession.id);
+      const sourceHistory = await sessionManager.getHistory(sourceSession.id);
+
+      assert.equal(forkedHistory.length, sourceHistory.length);
+      assert.equal(forkedHistory[0]?.content, sourceHistory[0]?.content);
+      assert.equal(forkedHistory[1]?.content, sourceHistory[1]?.content);
+    });
+
+    it("appends fork log entry to new session", async () => {
+      const sourceSession = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Test message",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(sourceSession.id, msg);
+
+      const forkedSession = await sessionManager.fork(
+        sourceSession.id,
+        "discord",
+        "channel-456",
+        "user-789"
+      );
+
+      const { readFile } = await import("node:fs/promises");
+      const rawLog = await readFile(forkedSession.logPath, "utf-8");
+      const lines = rawLog.trim().split("\n").filter(Boolean);
+
+      // Last line should be fork entry
+      const lastLine = lines[lines.length - 1]!;
+      const lastEntry = JSON.parse(lastLine) as SessionLogEntry;
+
+      assert.equal(lastEntry.type, "fork");
+      assert.equal(
+        (lastEntry as { type: "fork"; sourceSessionId: string }).sourceSessionId,
+        sourceSession.id
+      );
+      assert.ok(
+        typeof (lastEntry as { type: "fork"; forkTimestamp: number }).forkTimestamp === "number"
+      );
+      assert.equal(
+        (lastEntry as { type: "fork"; sourceLineCount: number }).sourceLineCount,
+        1
+      );
+    });
+
+    it("does NOT copy capability grants to forked session", async () => {
+      const sourceSession = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Test",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(sourceSession.id, msg);
+
+      // Grant capabilities on source session
+      sessionManager.grantCapability(sourceSession.id, "fs:read", "session");
+      sessionManager.grantCapability(sourceSession.id, "net:outbound", "persistent");
+
+      const forkedSession = await sessionManager.fork(
+        sourceSession.id,
+        "discord",
+        "channel-456",
+        "user-789"
+      );
+
+      // Verify forked session has no grants
+      const forkedGrants = sessionManager.getGrants(forkedSession.id);
+      assert.equal(forkedGrants.size, 0, "forked session should have no capability grants");
+
+      // Verify source session still has grants
+      const sourceGrants = sessionManager.getGrants(sourceSession.id);
+      assert.equal(sourceGrants.size, 2);
+    });
+
+    it("forks from archived session", async () => {
+      const sourceSession = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Archived message",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(sourceSession.id, msg);
+
+      // Archive the source session
+      await sessionManager.close(sourceSession.id);
+
+      // Fork from archived session
+      const forkedSession = await sessionManager.fork(
+        sourceSession.id,
+        "discord",
+        "channel-456",
+        "user-789"
+      );
+
+      const forkedHistory = await sessionManager.getHistory(forkedSession.id);
+
+      assert.equal(forkedHistory.length, 1);
+      assert.equal(forkedHistory[0]?.content, "Archived message");
+    });
+
+    it("archives existing session when target channel/sender already has active session", async () => {
+      // Create first session
+      const session1 = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+      const session1Id = session1.id;
+
+      const msg1: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Session 1 message",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session1.id, msg1);
+
+      // Verify session1 exists before fork
+      const session1Before = sessionManager.get(session1Id);
+      assert.ok(session1Before, "session1 should exist before fork");
+
+      // Create source session to fork from
+      const sourceSession = await sessionManager.getOrCreate("discord", "channel-456", "user-789");
+
+      const msg2: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-2",
+          adapterId: "discord",
+          channelId: "channel-456",
+          senderId: "user-789",
+          text: "Source message",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(sourceSession.id, msg2);
+
+      // Fork into session1's identity — should archive session1 first
+      const forkedSession = await sessionManager.fork(
+        sourceSession.id,
+        "telegram",
+        "chat-123",
+        "user-456"
+      );
+
+      // Forked session should have the same ID as session1 (since same identity triple)
+      assert.equal(forkedSession.id, session1Id);
+
+      // After fork, the forked session should now be in active sessions
+      const forkedRetrieved = sessionManager.get(forkedSession.id);
+      assert.ok(forkedRetrieved, "forked session should be active");
+
+      // Forked session should have source's content (not session1's content)
+      const forkedHistory = await sessionManager.getHistory(forkedSession.id);
+      assert.equal(forkedHistory[0]?.content, "Source message");
+
+      // Verify the archived file exists for session1
+      const { readdir } = await import("node:fs/promises");
+      const files = await readdir(sessionManager["sessionsDirectory"]);
+      const archivePattern = new RegExp(`^${session1Id}\\.\\d+\\.jsonl$`);
+      const archiveFiles = files.filter((f) => archivePattern.test(f));
+      assert.equal(archiveFiles.length, 1, "session1 should have been archived");
+    });
+
+    it("throws SessionError when source session ID is not found", async () => {
+      try {
+        await sessionManager.fork("nonexistent-source", "telegram", "chat-123", "user-456");
+        assert.fail("should throw SessionError");
+      } catch (err) {
+        assert.ok(err instanceof SessionError);
+        assert.equal((err as SessionError).code, "NOT_FOUND");
+      }
+    });
+
+    it("logs session:fork event", async () => {
+      const sourceSession = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Test",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(sourceSession.id, msg);
+
+      await sessionManager.fork(sourceSession.id, "discord", "channel-456", "user-789");
+
+      const forkLog = logger.logs.find((l) => l.eventType === "session:fork");
+      assert.ok(forkLog, "should log session:fork event");
+      assert.equal(forkLog.payload.sourceSessionId, sourceSession.id);
+      assert.equal(forkLog.payload.adapterId, "discord");
+      assert.equal(forkLog.payload.channelId, "channel-456");
+      assert.equal(forkLog.payload.senderId, "user-789");
+    });
+  });
+
+  describe("listForSender()", () => {
+    it("returns matching active sessions for sender", async () => {
+      const session1 = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+      const session2 = await sessionManager.getOrCreate("discord", "channel-456", "user-456");
+      const session3 = await sessionManager.getOrCreate("telegram", "chat-789", "user-999");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session1.id, msg);
+
+      const items = await sessionManager.listForSender("user-456");
+
+      assert.equal(items.length, 2, "should return 2 sessions for user-456");
+      assert.ok(items.some((i) => i.sessionId === session1.id));
+      assert.ok(items.some((i) => i.sessionId === session2.id));
+      assert.ok(!items.some((i) => i.sessionId === session3.id));
+    });
+
+    it("returns matching archived sessions for sender", async () => {
+      const session1 = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+      const session2 = await sessionManager.getOrCreate("discord", "channel-456", "user-456");
+
+      const msg1: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Session 1",
+          timestamp: Date.now(),
+        },
+      };
+
+      const msg2: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-2",
+          adapterId: "discord",
+          channelId: "channel-456",
+          senderId: "user-456",
+          text: "Session 2",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session1.id, msg1);
+      await sessionManager.appendToLog(session2.id, msg2);
+
+      // Archive session1
+      await sessionManager.close(session1.id);
+
+      // List should return both active and archived
+      const items = await sessionManager.listForSender("user-456");
+
+      assert.equal(items.length, 2);
+
+      const archivedItem = items.find((i) => i.sessionId === session1.id);
+      const activeItem = items.find((i) => i.sessionId === session2.id);
+
+      assert.ok(archivedItem?.archived, "archived session should have archived=true");
+      assert.ok(!activeItem?.archived, "active session should have archived=false");
+    });
+
+    it("does not return sessions from other senders", async () => {
+      await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+      await sessionManager.getOrCreate("discord", "channel-456", "user-789");
+
+      const items = await sessionManager.listForSender("user-456");
+
+      assert.equal(items.length, 1);
+      assert.equal(items[0]?.sessionId, (await sessionManager.getOrCreate("telegram", "chat-123", "user-456")).id);
+    });
+
+    it("includes preview text from first inbound message", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "This is a test message",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, msg);
+
+      const items = await sessionManager.listForSender("user-456");
+
+      assert.equal(items.length, 1);
+      assert.equal(items[0]?.preview, "This is a test message");
+    });
+
+    it("truncates preview text longer than 80 characters", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const longText = "a".repeat(100);
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: longText,
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, msg);
+
+      const items = await sessionManager.listForSender("user-456");
+
+      assert.ok(items[0]?.preview.endsWith("..."), "preview should end with ...");
+      assert.equal(items[0]?.preview.length, 80, "truncated preview should be 80 chars");
+    });
+
+    it("includes correct timestamps in list items", async () => {
+      const beforeCreate = Date.now();
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+      const afterCreate = Date.now();
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Test",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, msg);
+
+      const items = await sessionManager.listForSender("user-456");
+
+      assert.equal(items.length, 1);
+      assert.ok(
+        items[0]!.createdAt >= beforeCreate && items[0]!.createdAt <= afterCreate,
+        "createdAt should be around session creation time"
+      );
+      assert.ok(
+        items[0]!.lastActivityAt >= items[0]!.createdAt,
+        "lastActivityAt should be at or after createdAt"
+      );
+    });
+
+    it("includes adapterId and channelId in list items", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Test",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, msg);
+
+      const items = await sessionManager.listForSender("user-456");
+
+      assert.equal(items[0]?.adapterId, "telegram");
+      assert.equal(items[0]?.channelId, "chat-123");
+    });
+
+    it("returns empty array for sender with no sessions", async () => {
+      const items = await sessionManager.listForSender("nonexistent-user");
+
+      assert.equal(items.length, 0);
+    });
+
+    it("logs session:list event", async () => {
+      await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+      await sessionManager.getOrCreate("discord", "channel-456", "user-456");
+
+      await sessionManager.listForSender("user-456");
+
+      const listLog = logger.logs.find((l) => l.eventType === "session:list");
+      assert.ok(listLog, "should log session:list event");
+      assert.equal(listLog.payload.senderId, "user-456");
+      assert.equal(listLog.payload.resultCount, 2);
+    });
+  });
+
+  describe("readRawLog()", () => {
+    it("returns raw JSONL content for active session", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Test message",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, msg);
+
+      const rawLog = await sessionManager.readRawLog(session.id);
+
+      assert.ok(rawLog, "should return non-null content");
+      assert.ok(rawLog.includes("Test message"));
+      assert.ok(rawLog.includes('"type":"inbound"'));
+    });
+
+    it("returns raw JSONL content for archived session", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Archived message",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, msg);
+
+      // Archive the session
+      await sessionManager.close(session.id);
+
+      const rawLog = await sessionManager.readRawLog(session.id);
+
+      assert.ok(rawLog, "should return non-null content for archived session");
+      assert.ok(rawLog.includes("Archived message"));
+    });
+
+    it("returns null for nonexistent session", async () => {
+      const rawLog = await sessionManager.readRawLog("nonexistent-session-id");
+
+      assert.equal(rawLog, null);
+    });
+
+    it("returns null when session has no log file", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      // Don't write any entries, just try to read
+      const rawLog = await sessionManager.readRawLog(session.id);
+
+      assert.equal(rawLog, null);
+    });
+
+    it("returns content when checked via multiple paths (active then disk)", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Test",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, msg);
+
+      // First call should find it via active session
+      const rawLog1 = await sessionManager.readRawLog(session.id);
+      assert.ok(rawLog1);
+
+      // Second call should still find it (tests the fallback path on disk)
+      const rawLog2 = await sessionManager.readRawLog(session.id);
+      assert.ok(rawLog2);
+      assert.equal(rawLog1, rawLog2);
+    });
+
+    it("returns correct JSONL format (valid JSON lines)", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg1: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "First",
+          timestamp: Date.now(),
+        },
+      };
+
+      const msg2: SessionLogEntry = {
+        type: "outbound",
+        message: {
+          channelId: "chat-123",
+          text: "Second",
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, msg1);
+      await sessionManager.appendToLog(session.id, msg2);
+
+      const rawLog = await sessionManager.readRawLog(session.id);
+      assert.ok(rawLog);
+
+      const lines = rawLog.trim().split("\n").filter(Boolean);
+      assert.equal(lines.length, 2);
+
+      // Each line should be valid JSON
+      const parsed1 = JSON.parse(lines[0]!);
+      const parsed2 = JSON.parse(lines[1]!);
+
+      assert.equal(parsed1.type, "inbound");
+      assert.equal(parsed2.type, "outbound");
+    });
   });
 });

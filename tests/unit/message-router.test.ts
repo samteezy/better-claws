@@ -626,6 +626,161 @@ describe("MessageRouter", () => {
       );
       assert.ok(outboundEntries.length > 0, "should append outbound reply");
     });
+
+    it("/fork (no arg) forks current session and returns confirmation", async () => {
+      const sessionManager = createMockSessionManager();
+      let closeCalled = false;
+      let forkCalled = false;
+      (sessionManager as unknown as Record<string, unknown>)["readRawLog"] = async (sessionId: string) => {
+        if (sessionId === "telegram:chat-123:user-456") {
+          return "log content";
+        }
+        return null;
+      };
+      (sessionManager as unknown as Record<string, unknown>)["close"] = async () => {
+        closeCalled = true;
+      };
+      (sessionManager as unknown as Record<string, unknown>)["fork"] = async (_sourceId: string, _adapterId: string, _channelId: string, _senderId: string) => {
+        forkCalled = true;
+        return {
+          id: "forked-session-id",
+          logPath: "/tmp/forked.jsonl",
+          state: { lastActivityAt: Date.now(), capabilityGrants: new Map() },
+        };
+      };
+
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+      const response = await router.handleMessage(makeInbound("/fork"));
+
+      assert.ok(response.text.includes("Forked session"), "response should mention forking");
+      assert.ok(response.text.includes("History preserved"), "response should mention history preservation");
+      assert.equal(closeCalled, true, "should call sessionManager.close()");
+      assert.equal(forkCalled, true, "should call sessionManager.fork()");
+    });
+
+    it("/fork <sessionId> forks specific session by ID", async () => {
+      const sessionManager = createMockSessionManager();
+      let forkSourceId: string | null = null;
+      (sessionManager as unknown as Record<string, unknown>)["readRawLog"] = async (sessionId: string) => {
+        if (sessionId === "target-session-123") {
+          return "log content from target";
+        }
+        return null;
+      };
+      (sessionManager as unknown as Record<string, unknown>)["close"] = async () => {};
+      (sessionManager as unknown as Record<string, unknown>)["fork"] = async (sourceId: string, _adapterId: string, _channelId: string, _senderId: string) => {
+        forkSourceId = sourceId;
+        return {
+          id: "new-forked-id",
+          logPath: "/tmp/new-forked.jsonl",
+          state: { lastActivityAt: Date.now(), capabilityGrants: new Map() },
+        };
+      };
+
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+      const response = await router.handleMessage(makeInbound("/fork target-session-123"));
+
+      assert.equal(forkSourceId, "target-session-123", "should fork from specified session ID");
+      assert.ok(response.text.includes("Forked session"), "response should mention forking");
+      assert.ok(response.text.includes("History preserved"), "response should confirm history preservation");
+    });
+
+    it("/fork <invalidid> with nonexistent session returns not found error", async () => {
+      const sessionManager = createMockSessionManager();
+      (sessionManager as unknown as Record<string, unknown>)["readRawLog"] = async () => null;
+
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+      const response = await router.handleMessage(makeInbound("/fork invalidid"));
+
+      assert.equal(response.text, 'Session "invalidid" not found.');
+    });
+
+    it("/fork does not append inbound message to session log", async () => {
+      const sessionManager = createMockSessionManager();
+      (sessionManager as unknown as Record<string, unknown>)["readRawLog"] = async () => "log content";
+      (sessionManager as unknown as Record<string, unknown>)["close"] = async () => {};
+      (sessionManager as unknown as Record<string, unknown>)["fork"] = async () => ({
+        id: "forked-id",
+        logPath: "/tmp/forked.jsonl",
+        state: { lastActivityAt: Date.now(), capabilityGrants: new Map() },
+      });
+
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+      await router.handleMessage(makeInbound("/fork"));
+
+      assert.ok(!sessionManager.appendedEntries.some(
+        (e) => (e as Record<string, unknown>).type === "inbound"
+      ), "/fork should not append inbound message to log");
+    });
+
+    it("/sessions lists user's sessions", async () => {
+      const sessionManager = createMockSessionManager();
+      (sessionManager as unknown as Record<string, unknown>)["listForSender"] = async () => [
+        {
+          sessionId: "session-abc-123",
+          adapterId: "telegram",
+          channelId: "chat-456",
+          createdAt: new Date("2026-04-01").getTime(),
+          lastActivityAt: Date.now(),
+          archived: false,
+          preview: "Latest message preview",
+        },
+        {
+          sessionId: "session-def-456",
+          adapterId: "discord",
+          channelId: "channel-789",
+          createdAt: new Date("2026-04-05").getTime(),
+          lastActivityAt: Date.now(),
+          archived: true,
+          preview: "Some old conversation",
+        },
+      ];
+
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+      const response = await router.handleMessage(makeInbound("/sessions"));
+
+      assert.ok(response.text.includes("Sessions:"), "response should contain 'Sessions:' header");
+      assert.ok(response.text.includes("session-a"), "response should contain first session ID");
+      assert.ok(response.text.includes("session-d"), "response should contain second session ID");
+      assert.ok(response.text.includes("active"), "response should show active status");
+      assert.ok(response.text.includes("archived"), "response should show archived status");
+    });
+
+    it("/sessions returns 'No sessions found' when user has no sessions", async () => {
+      const sessionManager = createMockSessionManager();
+      (sessionManager as unknown as Record<string, unknown>)["listForSender"] = async () => [];
+
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+      const response = await router.handleMessage(makeInbound("/sessions"));
+
+      assert.equal(response.text, "No sessions found.");
+    });
+
+    it("/sessions does not append inbound message to session log", async () => {
+      const sessionManager = createMockSessionManager();
+      (sessionManager as unknown as Record<string, unknown>)["listForSender"] = async () => [];
+
+      const llmClient = createMockLlmClient();
+
+      const { router } = createRouter({ sessionManager, llmClient });
+      await router.handleMessage(makeInbound("/sessions"));
+
+      assert.ok(!sessionManager.appendedEntries.some(
+        (e) => (e as Record<string, unknown>).type === "inbound"
+      ), "/sessions should not append inbound message to log");
+    });
   });
 
   describe("auto-compaction", () => {

@@ -256,4 +256,71 @@ describe("WorkingMemory", () => {
       );
     });
   });
+
+  describe("clone()", () => {
+    it("produces a new instance with the same entries but different sessionId", () => {
+      memory.set("a", "fact", "Fact A");
+      memory.set("b", "goal", "Goal B");
+      memory.set("c", "decision", "Decision C");
+
+      const cloned = memory.clone("session-new", {
+        maxSizeChars: 1000,
+        logger,
+      });
+
+      // Cloned instance has a different sessionId
+      assert.notEqual(cloned["sessionId"], memory["sessionId"]);
+      assert.equal(cloned["sessionId"], "session-new");
+
+      // Cloned instance has the same entries
+      assert.equal(cloned.count, memory.count);
+      assert.equal(cloned.count, 3);
+
+      // All entries are present with same content
+      assert.equal(cloned.get("a")?.content, "Fact A");
+      assert.equal(cloned.get("b")?.content, "Goal B");
+      assert.equal(cloned.get("c")?.content, "Decision C");
+    });
+
+    it("mutations to the clone do not affect the original", () => {
+      memory.set("original", "fact", "Original entry");
+
+      const cloned = memory.clone("session-clone", {
+        maxSizeChars: 1000,
+        logger,
+      });
+
+      // Add an entry to the clone
+      cloned.set("new-in-clone", "goal", "New goal in clone");
+
+      // Original should not have the new entry
+      assert.equal(memory.get("new-in-clone"), undefined);
+      assert.equal(memory.count, 1);
+
+      // Clone should have both entries
+      assert.ok(cloned.get("new-in-clone"));
+      assert.equal(cloned.count, 2);
+    });
+
+    it("mutations to the original do not affect the clone", () => {
+      memory.set("a", "fact", "Entry A");
+      memory.set("b", "fact", "Entry B");
+
+      const cloned = memory.clone("session-clone", {
+        maxSizeChars: 1000,
+        logger,
+      });
+
+      // Delete an entry from the original
+      memory.delete("a");
+
+      // Clone should still have the deleted entry
+      assert.ok(cloned.get("a"));
+      assert.equal(cloned.count, 2);
+
+      // Original should not have it
+      assert.equal(memory.get("a"), undefined);
+      assert.equal(memory.count, 1);
+    });
+  });
 });
