@@ -200,6 +200,16 @@ export async function createApp(config: BetterClawsConfig, options?: {
 
   await toolRegistry.loadTools();
 
+  // Track tool sources for dashboard display
+  const toolSources = new Map<string, "built-in" | "plugin" | "mcp" | "skill">();
+  for (const tool of builtInTools) {
+    toolSources.set(tool.descriptor.name, "built-in");
+  }
+  // Plugin tools are loaded by toolRegistry.loadTools() — any tool not in builtInTools is a plugin
+  for (const desc of toolRegistry.getDescriptors()) {
+    if (!toolSources.has(desc.name)) toolSources.set(desc.name, "plugin");
+  }
+
   // ── MCP servers ──────────────────────────────────────────────────────────
   const mcpClients: McpClient[] = [];
 
@@ -214,6 +224,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
         const tools = await bridge.discoverTools();
         for (const tool of tools) {
           toolRegistry.register(tool);
+          toolSources.set(tool.descriptor.name, "mcp");
         }
 
         logger.log({
@@ -245,6 +256,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
         const tools = await skillLoader.loadSkill(name, skillConfig);
         for (const tool of tools) {
           toolRegistry.register(tool);
+          toolSources.set(tool.descriptor.name, "skill");
         }
 
         logger.log({
@@ -362,6 +374,12 @@ export async function createApp(config: BetterClawsConfig, options?: {
         config,
         logsDirectory: config.logging.directory,
         memoryDirectory: "data/memory",
+        toolDescriptors: toolRegistry.getDescriptors().map(d => ({
+          name: d.name,
+          description: d.description,
+          capabilities: d.capabilities as unknown as readonly string[],
+          source: toolSources.get(d.name) ?? "built-in",
+        })),
         configPath: options?.configPath,
         rawConfig: options?.rawConfig,
         scheduler,

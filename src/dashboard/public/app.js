@@ -273,22 +273,44 @@
       if (data.tools.length === 0) {
         html = "<p>No tools registered</p>";
       } else {
+        // Group tools by source
+        var groups = {};
+        var groupOrder = ["built-in", "plugin", "mcp", "skill"];
+        var groupLabels = { "built-in": "Built-in Tools", "plugin": "Custom Tools", "mcp": "MCP Server Tools", "skill": "Skill Tools" };
+
         data.tools.forEach(function (t) {
-          var policy = t.policy || "auto";
-          html += '<div class="tool-item tool-item-managed">';
-          html += '<div class="tool-info">';
-          html += '<div class="tool-name">' + esc(t.name) + "</div>";
-          html += '<div class="tool-desc">' + esc(t.description) + "</div>";
-          html += '<div class="tool-caps">Capabilities: ' + esc(t.capabilities.join(", ") || "none") + "</div>";
-          html += "</div>";
-          html += '<div class="tool-policy">';
-          html += '<select class="policy-select" data-tool="' + esc(t.name) + '">';
-          html += '<option value="auto"' + (policy === "auto" ? " selected" : "") + '>Auto</option>';
-          html += '<option value="confirm"' + (policy === "confirm" ? " selected" : "") + '>Confirm</option>';
-          html += '<option value="disabled"' + (policy === "disabled" ? " selected" : "") + '>Disabled</option>';
-          html += "</select>";
-          html += "</div>";
-          html += "</div>";
+          var src = t.source || "built-in";
+          if (!groups[src]) groups[src] = [];
+          groups[src].push(t);
+        });
+
+        groupOrder.forEach(function (src) {
+          if (!groups[src] || groups[src].length === 0) return;
+          html += '<div class="tools-group-header">' + esc(groupLabels[src] || src) + " (" + groups[src].length + ")</div>";
+          groups[src].forEach(function (t) {
+            var policy = t.policy || "auto";
+            var isBuiltIn = src === "built-in";
+            html += '<div class="tool-item tool-item-managed">';
+            html += '<div class="tool-info">';
+            html += '<div class="tool-name">' + esc(t.name);
+            html += '<span class="tool-source-badge source-' + esc(src) + '">' + esc(src) + "</span>";
+            html += "</div>";
+            html += '<div class="tool-desc">' + esc(t.description) + "</div>";
+            html += '<div class="tool-caps">Capabilities: ' + esc(t.capabilities.join(", ") || "none") + "</div>";
+            html += "</div>";
+            html += '<div class="tool-policy">';
+            if (isBuiltIn) {
+              html += '<select class="policy-select" data-tool="' + esc(t.name) + '">';
+            } else {
+              html += '<select class="policy-select" data-tool="' + esc(t.name) + '">';
+            }
+            html += '<option value="auto"' + (policy === "auto" ? " selected" : "") + '>Auto</option>';
+            html += '<option value="confirm"' + (policy === "confirm" ? " selected" : "") + '>Confirm</option>';
+            html += '<option value="disabled"' + (policy === "disabled" ? " selected" : "") + '>Disabled</option>';
+            html += "</select>";
+            html += "</div>";
+            html += "</div>";
+          });
         });
       }
       document.getElementById("tools-content").innerHTML = html;
@@ -317,34 +339,153 @@
 
   // ── Config View ─────────────────────────────────────────────────────────
 
+  var configSchema = null;
+  var configData = null;
+  var activeConfigSection = null;
+
   function loadConfig() {
-    api("/api/config").then(function (data) {
-      var editor = document.getElementById("config-editor");
-      editor.value = JSON.stringify(data.config, null, 2);
+    Promise.all([
+      api("/api/config/schema"),
+      api("/api/config"),
+    ]).then(function (results) {
+      configSchema = results[0].sections;
+      configData = results[1].config;
       document.getElementById("config-status").textContent = "";
+
+      // Update JSON viewer
+      document.getElementById("config-editor").value = JSON.stringify(configData, null, 2);
+
+      // Render tabs
+      renderConfigTabs();
+
+      // Show first section or previously active
+      if (!activeConfigSection && configSchema.length > 0) {
+        activeConfigSection = configSchema[0].key;
+      }
+      if (activeConfigSection) renderConfigSection(activeConfigSection);
     });
   }
 
-  document.getElementById("config-save").addEventListener("click", function () {
-    var editor = document.getElementById("config-editor");
-    var statusEl = document.getElementById("config-status");
-    var parsed;
+  function renderConfigTabs() {
+    var tabsEl = document.getElementById("config-tabs");
+    var html = "";
+    configSchema.forEach(function (section) {
+      var active = section.key === activeConfigSection ? " active" : "";
+      html += '<button class="config-tab' + active + '" data-section="' + esc(section.key) + '">' + esc(section.label) + "</button>";
+    });
+    tabsEl.innerHTML = html;
 
-    try {
-      parsed = JSON.parse(editor.value);
-    } catch (e) {
-      statusEl.textContent = "Invalid JSON: " + e.message;
-      statusEl.className = "config-error";
-      return;
+    tabsEl.querySelectorAll(".config-tab").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        activeConfigSection = btn.dataset.section;
+        tabsEl.querySelectorAll(".config-tab").forEach(function (b) { b.classList.remove("active"); });
+        btn.classList.add("active");
+        renderConfigSection(activeConfigSection);
+      });
+    });
+  }
+
+  function renderConfigSection(sectionKey) {
+    var section = null;
+    for (var i = 0; i < configSchema.length; i++) {
+      if (configSchema[i].key === sectionKey) { section = configSchema[i]; break; }
     }
+    if (!section) return;
+
+    var sectionData = configData[sectionKey] || {};
+    var html = '<p class="config-section-desc">' + esc(section.description) + "</p>";
+
+    section.fields.forEach(function (field) {
+      var value = sectionData[field.key];
+      html += '<div class="config-field">';
+      html += '<div class="config-field-header">';
+      html += '<label class="config-field-label" for="cfg-' + esc(field.key) + '">' + esc(field.label) + "</label>";
+      if (field.restart) html += '<span class="restart-badge">restart</span>';
+      html += "</div>";
+      html += '<div class="config-field-desc">' + esc(field.description) + "</div>";
+
+      if (field.type === "boolean") {
+        var checked = value === true;
+        html += '<div class="toggle-row">';
+        html += '<label class="toggle-switch">';
+        html += '<input type="checkbox" id="cfg-' + esc(field.key) + '" data-field="' + esc(field.key) + '"' + (checked ? " checked" : "") + ">";
+        html += '<span class="toggle-slider"></span>';
+        html += "</label>";
+        html += '<span class="toggle-label">' + (checked ? "Enabled" : "Disabled") + "</span>";
+        html += "</div>";
+      } else if (field.type === "select") {
+        html += '<select id="cfg-' + esc(field.key) + '" data-field="' + esc(field.key) + '">';
+        (field.options || []).forEach(function (opt) {
+          html += '<option value="' + esc(opt) + '"' + (String(value) === opt ? " selected" : "") + '>' + esc(opt) + "</option>";
+        });
+        html += "</select>";
+      } else if (field.type === "textarea") {
+        html += '<textarea id="cfg-' + esc(field.key) + '" data-field="' + esc(field.key) + '" rows="3" placeholder="' + esc(field.placeholder || "") + '">' + esc(value != null ? String(value) : "") + "</textarea>";
+      } else {
+        var inputType = field.type === "password" ? "password" : field.type === "number" ? "number" : "text";
+        var displayValue = value != null ? String(value) : "";
+        // Show env: references as-is for password fields
+        if (field.type === "password" && typeof value === "string" && value === "[REDACTED]") {
+          displayValue = "";
+        }
+        html += '<input type="' + inputType + '" id="cfg-' + esc(field.key) + '" data-field="' + esc(field.key) + '" value="' + esc(displayValue) + '" placeholder="' + esc(field.placeholder || "") + '"';
+        if (field.type === "number") html += ' step="any"';
+        html += ">";
+      }
+      html += "</div>";
+    });
+
+    document.getElementById("config-section-content").innerHTML = html;
+
+    // Bind toggle label updates
+    document.querySelectorAll('#config-section-content .toggle-switch input').forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var label = cb.parentElement.parentElement.querySelector(".toggle-label");
+        if (label) label.textContent = cb.checked ? "Enabled" : "Disabled";
+      });
+    });
+  }
+
+  function collectSectionValues(sectionKey) {
+    var section = null;
+    for (var i = 0; i < configSchema.length; i++) {
+      if (configSchema[i].key === sectionKey) { section = configSchema[i]; break; }
+    }
+    if (!section) return null;
+
+    var values = {};
+    section.fields.forEach(function (field) {
+      var el = document.getElementById("cfg-" + field.key);
+      if (!el) return;
+
+      if (field.type === "boolean") {
+        values[field.key] = el.checked;
+      } else if (field.type === "number") {
+        var num = parseFloat(el.value);
+        if (!isNaN(num)) values[field.key] = num;
+      } else if (field.type === "password") {
+        // Only include if user actually typed something
+        if (el.value.trim() !== "") values[field.key] = el.value.trim();
+      } else {
+        values[field.key] = el.value;
+      }
+    });
+    return values;
+  }
+
+  document.getElementById("config-save").addEventListener("click", function () {
+    if (!activeConfigSection) return;
+    var statusEl = document.getElementById("config-status");
+    var values = collectSectionValues(activeConfigSection);
+    if (!values) return;
 
     statusEl.textContent = "Saving...";
     statusEl.className = "";
 
-    fetch("/api/config", {
+    fetch("/api/config/section/" + activeConfigSection, {
       method: "PUT",
       headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify(parsed),
+      body: JSON.stringify(values),
     }).then(function (r) { return r.json(); }).then(function (result) {
       if (result.error) {
         statusEl.textContent = result.error;
@@ -352,9 +493,25 @@
       } else {
         statusEl.textContent = "Saved. " + (result.note || "");
         statusEl.className = "config-success";
+        // Update local data
+        if (!configData[activeConfigSection]) configData[activeConfigSection] = {};
+        Object.assign(configData[activeConfigSection], values);
+        document.getElementById("config-editor").value = JSON.stringify(configData, null, 2);
         setTimeout(function () { statusEl.textContent = ""; }, 4000);
       }
     });
+  });
+
+  document.getElementById("config-toggle-json").addEventListener("click", function () {
+    var area = document.getElementById("config-json-area");
+    var btn = document.getElementById("config-toggle-json");
+    if (area.style.display === "none") {
+      area.style.display = "block";
+      btn.textContent = "Hide JSON";
+    } else {
+      area.style.display = "none";
+      btn.textContent = "View JSON";
+    }
   });
 
   // ── Schedules View ──────────────────────────────────────────────────────
