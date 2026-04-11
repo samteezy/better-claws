@@ -14,6 +14,8 @@ import { MessageRouter, SYSTEM_PROMPT, SLASH_COMMANDS } from "./router/message-r
 import { PromptBuilder } from "./prompt/prompt-builder.js";
 import { join } from "node:path";
 import { builtInTools } from "./tools/built-in/index.js";
+import { setLongTermStore } from "./tools/built-in/memory-update.js";
+import { LongTermStore } from "./memory/long-term-store.js";
 import { SecretManager } from "./secrets/secret-manager.js";
 import { seedFromConfig } from "./secrets/seed.js";
 import type {
@@ -350,6 +352,15 @@ export async function createApp(config: BetterClawsConfig, options?: {
       payload: { action: "startup_recovery", count: recoveredCount },
     });
   }
+
+  // ── Long-term memory store ──────────────────────────────────────────────
+  const longTermStore = new LongTermStore({
+    directory: "data/memory",
+    config: config.memory,
+    logger,
+  });
+  await longTermStore.load();
+  setLongTermStore(longTermStore);
 
   const compactionCfg = config.compaction;
   const compactor = compactionCfg?.enabled

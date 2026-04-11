@@ -1,9 +1,11 @@
 import type { WorkingMemory } from "../../memory/working-memory.js";
+import type { LongTermStore } from "../../memory/long-term-store.js";
 import type {
   ToolDescriptor,
   ToolHandler,
   ExecutionContext,
   ToolResult,
+  MemoryEntry,
 } from "../../types.js";
 
 /**
@@ -11,6 +13,25 @@ import type {
  * Populated by the application bootstrap when sessions are created.
  */
 export const workingMemoryRegistry = new Map<string, WorkingMemory>();
+
+/**
+ * Singleton long-term store instance, set by bootstrap.
+ * When present, memory-update writes through to persistent storage
+ * so entries appear in the dashboard.
+ */
+export let longTermStoreInstance: LongTermStore | null = null;
+
+export function setLongTermStore(store: LongTermStore): void {
+  longTermStoreInstance = store;
+}
+
+/** Map working-memory categories to long-term-store categories. */
+const CATEGORY_MAP: Record<string, MemoryEntry["category"]> = {
+  fact: "fact",
+  goal: "project",
+  correction: "preference",
+  decision: "procedure",
+};
 
 export const descriptor: ToolDescriptor = {
   name: "memory-update",
@@ -85,6 +106,32 @@ export const handler: ToolHandler = {
             category as "fact" | "goal" | "correction" | "decision",
             content,
           );
+
+          // Write through to long-term store so the entry appears in the dashboard
+          if (longTermStoreInstance) {
+            const ltCategory = CATEGORY_MAP[category] ?? "fact";
+            const tag = `wm:${key}`;
+
+            // Check for an existing entry with this working-memory key to avoid duplicates
+            const existing = longTermStoreInstance
+              .search({ tags: [tag] })
+              .find((e) => e.tags.includes(tag));
+
+            if (existing) {
+              await longTermStoreInstance.update(existing.id, {
+                content,
+                confidence: 1.0,
+              });
+            } else {
+              await longTermStoreInstance.create({
+                category: ltCategory,
+                content,
+                sourceSessions: [context.sessionId],
+                confidence: 1.0,
+                tags: [tag, category],
+              });
+            }
+          }
 
           return {
             success: true,
