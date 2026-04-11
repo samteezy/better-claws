@@ -440,7 +440,7 @@ describe("CurationWorker", () => {
 
       const winner = ctx.store.get(id2);
       assert.equal(winner!.content, "User lives in San Francisco (relocated from New York)");
-      assert.equal(winner!.confidence, 0.95);
+      assert.ok(Math.abs(winner!.confidence - 0.95) < 1e-6, `expected confidence ≈ 0.95, got ${winner!.confidence}`);
 
       // Superseded entry should have confidence 0
       const superseded = ctx.store.get(id1);

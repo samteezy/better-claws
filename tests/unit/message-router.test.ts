@@ -725,7 +725,7 @@ describe("MessageRouter", () => {
       const sessionManager = createMockSessionManager();
       (sessionManager as unknown as Record<string, unknown>)["listForSender"] = async () => [
         {
-          sessionId: "session-abc-123",
+          sessionId: "a1b2c3d4e5f60001",
           adapterId: "telegram",
           channelId: "chat-456",
           createdAt: new Date("2026-04-01").getTime(),
@@ -734,7 +734,7 @@ describe("MessageRouter", () => {
           preview: "Latest message preview",
         },
         {
-          sessionId: "session-def-456",
+          sessionId: "d4e5f6a7b8c90002",
           adapterId: "discord",
           channelId: "channel-789",
           createdAt: new Date("2026-04-05").getTime(),
@@ -750,8 +750,8 @@ describe("MessageRouter", () => {
       const response = await router.handleMessage(makeInbound("/sessions"));
 
       assert.ok(response.text.includes("Sessions:"), "response should contain 'Sessions:' header");
-      assert.ok(response.text.includes("session-a"), "response should contain first session ID");
-      assert.ok(response.text.includes("session-d"), "response should contain second session ID");
+      assert.ok(response.text.includes("a1b2c3d4"), "response should contain first session ID");
+      assert.ok(response.text.includes("d4e5f6a7"), "response should contain second session ID");
       assert.ok(response.text.includes("active"), "response should show active status");
       assert.ok(response.text.includes("archived"), "response should show archived status");
     });

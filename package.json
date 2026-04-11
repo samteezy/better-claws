@@ -5,9 +5,11 @@
   "type": "module",
   "main": "dist/src/index.js",
   "scripts": {
+    "clean": "rm -rf dist",
     "build": "tsc",
     "start": "node dist/src/index.js",
-    "test": "node --test 'dist/tests/**/*.test.js'",
+    "pretest": "npm run clean",
+    "test": "npm run build && node --test 'dist/tests/**/*.test.js'",
     "dev": "tsc --watch"
   },
   "devDependencies": {
