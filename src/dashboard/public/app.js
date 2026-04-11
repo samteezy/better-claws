@@ -288,9 +288,9 @@
             body: JSON.stringify({ tool: toolName, policy: newPolicy }),
           }).then(function (r) { return r.json(); }).then(function (result) {
             if (result.error) {
-              sel.style.borderColor = "#f85149";
+              sel.style.borderColor = "#c77272";
             } else {
-              sel.style.borderColor = "#3fb950";
+              sel.style.borderColor = "#6b8f71";
               setTimeout(function () { sel.style.borderColor = ""; }, 1500);
             }
           });
@@ -375,7 +375,7 @@
           html += "</div>";
         });
       }
-      html += '<p style="margin-top:12px;font-size:12px;color:#8b949e">Total: ' + data.total + " entries</p>";
+      html += '<p style="margin-top:12px;font-size:12px;color:#9e9891">Total: ' + data.total + " entries</p>";
       document.getElementById("memory-content").innerHTML = html;
     });
   }

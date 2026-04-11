@@ -19,8 +19,6 @@
   --amber-soft:  #f5eddd;
   --rose:        #c77272;
   --rose-soft:   #fae8e8;
-  --green:       #6b8f71;
-  --green-soft:  #e3ede4;
   --radius:      14px;
   --radius-sm:   10px;
   --shadow:      0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
@@ -28,7 +26,6 @@
   --font-body:   "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-head:   "Outfit", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:   "DM Mono", "SF Mono", "Fira Code", monospace;
-  --nav-height:  72px;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -88,45 +85,39 @@ header h1 {
 /* ── Bottom Navigation (mobile-first) ──────────────────────────────────── */
 
 #main-nav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  position: sticky;
+  top: 0;
   z-index: 100;
   background: var(--surface);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   display: flex;
-  justify-content: space-around;
-  padding: 6px 4px calc(env(safe-area-inset-bottom, 0px) + 6px);
-  height: var(--nav-height);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  background: rgba(255,255,255,0.92);
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 16px;
 }
 
 .nav-btn {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 3px;
+  gap: 7px;
   background: transparent;
   border: none;
   color: var(--text-muted);
-  padding: 6px 8px;
+  padding: 8px 12px;
   border-radius: 12px;
   cursor: pointer;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.2px;
   transition: color 0.2s, background 0.2s;
   -webkit-tap-highlight-color: transparent;
-  min-width: 52px;
 }
 
 .nav-btn svg {
-  width: 22px;
-  height: 22px;
+  width: 16px;
+  height: 16px;
   stroke-width: 1.6;
   transition: transform 0.2s;
 }
@@ -145,7 +136,7 @@ header h1 {
 main {
   max-width: 960px;
   margin: 0 auto;
-  padding: 20px 16px calc(var(--nav-height) + 20px);
+  padding: 20px 16px;
   animation: fadeIn 0.3s ease;
 }
 
@@ -484,7 +475,7 @@ h3 {
   gap: 12px;
 }
 .config-error   { color: var(--rose); font-size: 13px; }
-.config-success { color: var(--green); font-size: 13px; }
+.config-success { color: var(--accent); font-size: 13px; }
 
 pre {
   background: var(--surface-alt);
@@ -590,35 +581,12 @@ pre {
 /* ── Desktop breakpoint ────────────────────────────────────────────────── */
 
 @media (min-width: 768px) {
-  :root { --nav-height: 0px; }
-
   header {
     padding: 14px 32px;
   }
 
-  #main-nav {
-    position: static;
-    border-top: none;
-    border-bottom: 1px solid var(--border);
-    justify-content: center;
-    gap: 4px;
-    padding: 8px 16px;
-    height: auto;
-    background: var(--surface);
-    backdrop-filter: none;
-  }
-
   .nav-btn {
-    flex-direction: row;
-    gap: 7px;
     padding: 8px 16px;
-    font-size: 13px;
-    min-width: auto;
-  }
-
-  .nav-btn svg {
-    width: 16px;
-    height: 16px;
   }
 
   main {
