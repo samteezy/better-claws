@@ -154,6 +154,7 @@ export interface ExecutionContext {
   readonly timeout: number;
   readonly secrets: ReadonlyMap<string, string>;
   readonly allowedFsRoots?: readonly string[];
+  readonly scheduler?: import("./scheduler/scheduler.js").Scheduler;
 }
 
 export interface BuiltInToolModule {
@@ -372,6 +373,7 @@ export interface BetterClawsConfig {
   readonly tools?: ToolsConfig;
   readonly compaction?: CompactionConfig;
   readonly systemContext?: SystemContextConfig;
+  readonly schedules?: readonly import("./scheduler/scheduler.js").ScheduleDefinition[];
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────

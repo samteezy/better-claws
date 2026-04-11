@@ -3,6 +3,21 @@
 (function () {
   "use strict";
 
+  // ── Theme ───────────────────────────────────────────────────────────────
+  var THEME_KEY = "bc_theme";
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(THEME_KEY, theme);
+  }
+
+  applyTheme(localStorage.getItem(THEME_KEY) || "light");
+
+  document.getElementById("theme-toggle").addEventListener("click", function () {
+    var current = document.documentElement.getAttribute("data-theme");
+    applyTheme(current === "dark" ? "light" : "dark");
+  });
+
   // ── Navigation ──────────────────────────────────────────────────────────
 
   const navBtns = document.querySelectorAll(".nav-btn");
@@ -27,6 +42,7 @@
       case "sessions": loadSessions(); break;
       case "logs": loadLogs(); break;
       case "memory": loadMemory(); break;
+      case "schedules": loadSchedules(); break;
       case "tools": loadTools(); break;
       case "config": loadConfig(); break;
     }
@@ -338,6 +354,160 @@
         statusEl.className = "config-success";
         setTimeout(function () { statusEl.textContent = ""; }, 4000);
       }
+    });
+  });
+
+  // ── Schedules View ──────────────────────────────────────────────────────
+
+  var schedEditingId = null; // null = adding, string = editing
+
+  function cronToHuman(cron) {
+    var parts = cron.split(" ");
+    if (parts.length !== 5) return cron;
+    var m = parts[0], h = parts[1], dom = parts[2], mon = parts[3], dow = parts[4];
+    if (m === "*" && h === "*") return "Every minute";
+    if (h === "*") return "Every hour at :" + m.padStart(2, "0");
+    if (dom === "*" && mon === "*" && dow === "*") return "Daily at " + h + ":" + m.padStart(2, "0");
+    if (dom === "*" && mon === "*" && dow !== "*") {
+      var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      var d = parseInt(dow, 10);
+      var dayName = days[d] || dow;
+      return "Every " + dayName + " at " + h + ":" + m.padStart(2, "0");
+    }
+    return cron;
+  }
+
+  function loadSchedules() {
+    api("/api/schedules").then(function (data) {
+      var html = "";
+      if (data.length === 0) {
+        html = '<p class="empty-state">No scheduled tasks yet. Click "Add Task" to create one.</p>';
+      } else {
+        data.forEach(function (s) {
+          var nextStr = s.nextFireTime
+            ? new Date(s.nextFireTime).toLocaleString()
+            : "—";
+          var updatedStr = s.updatedAt
+            ? new Date(s.updatedAt).toLocaleString()
+            : "—";
+
+          html += '<div class="schedule-card' + (s.enabled ? "" : " disabled") + '">';
+          html += '<div class="schedule-header">';
+          html += '<div class="schedule-title">';
+          html += '<span class="schedule-id">#' + esc(s.id || "?") + "</span>";
+          html += '<span class="schedule-name">' + esc(s.name) + "</span>";
+          html += "</div>";
+          html += '<label class="toggle-switch">';
+          html += '<input type="checkbox" data-id="' + esc(s.id) + '"' + (s.enabled ? " checked" : "") + ">";
+          html += '<span class="toggle-slider"></span>';
+          html += "</label>";
+          html += "</div>";
+
+          html += '<div class="schedule-body">';
+          html += '<div class="schedule-meta">';
+          html += '<span class="schedule-cron" title="' + esc(s.cron) + '">' + esc(cronToHuman(s.cron)) + "</span>";
+          if (s.enabled) {
+            html += '<span class="schedule-next">Next: ' + esc(nextStr) + "</span>";
+          }
+          html += "</div>";
+          html += '<div class="schedule-prompt">' + esc(s.prompt) + "</div>";
+          html += '<div class="schedule-footer">';
+          html += '<span class="schedule-updated">Updated: ' + esc(updatedStr) + "</span>";
+          html += '<div class="schedule-actions">';
+          html += '<button class="btn btn-sm sched-edit-btn" data-id="' + esc(s.id) + '" data-name="' + esc(s.name) + '" data-cron="' + esc(s.cron) + '" data-prompt="' + esc(s.prompt) + '">Edit</button>';
+          html += '<button class="btn btn-sm btn-danger sched-delete-btn" data-id="' + esc(s.id) + '" data-name="' + esc(s.name) + '">Delete</button>';
+          html += "</div>";
+          html += "</div>";
+          html += "</div>";
+          html += "</div>";
+        });
+      }
+      document.getElementById("schedules-content").innerHTML = html;
+
+      // Bind toggle switches
+      document.querySelectorAll(".schedule-card input[type=checkbox]").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+          var id = cb.dataset.id;
+          fetch("/api/schedules/" + id, {
+            method: "PUT",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ enabled: cb.checked }),
+          }).then(function (r) { return r.json(); }).then(function () {
+            loadSchedules();
+          });
+        });
+      });
+
+      // Bind edit buttons
+      document.querySelectorAll(".sched-edit-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          schedEditingId = btn.dataset.id;
+          document.getElementById("sched-name").value = btn.dataset.name;
+          document.getElementById("sched-cron").value = btn.dataset.cron;
+          document.getElementById("sched-prompt").value = btn.dataset.prompt;
+          document.getElementById("schedule-form").style.display = "block";
+          document.getElementById("schedule-add-btn").style.display = "none";
+        });
+      });
+
+      // Bind delete buttons
+      document.querySelectorAll(".sched-delete-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (!confirm('Delete schedule "' + btn.dataset.name + '"?')) return;
+          fetch("/api/schedules/" + btn.dataset.id, {
+            method: "DELETE",
+            headers: authHeaders(),
+          }).then(function (r) { return r.json(); }).then(function () {
+            loadSchedules();
+          });
+        });
+      });
+    });
+  }
+
+  // Add Task button
+  document.getElementById("schedule-add-btn").addEventListener("click", function () {
+    schedEditingId = null;
+    document.getElementById("sched-name").value = "";
+    document.getElementById("sched-cron").value = "";
+    document.getElementById("sched-prompt").value = "";
+    document.getElementById("schedule-form").style.display = "block";
+    this.style.display = "none";
+    document.getElementById("sched-name").focus();
+  });
+
+  // Cancel form
+  document.getElementById("sched-cancel").addEventListener("click", function () {
+    document.getElementById("schedule-form").style.display = "none";
+    document.getElementById("schedule-add-btn").style.display = "";
+  });
+
+  // Save form (create or update)
+  document.getElementById("sched-save").addEventListener("click", function () {
+    var name = document.getElementById("sched-name").value.trim();
+    var cron = document.getElementById("sched-cron").value.trim();
+    var prompt = document.getElementById("sched-prompt").value.trim();
+
+    if (!name || !cron || !prompt) return;
+
+    var method = schedEditingId ? "PUT" : "POST";
+    var url = schedEditingId ? "/api/schedules/" + schedEditingId : "/api/schedules";
+    var body = schedEditingId
+      ? { name: name, cron: cron, prompt: prompt }
+      : { name: name, cron: cron, prompt: prompt, enabled: true };
+
+    fetch(url, {
+      method: method,
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body),
+    }).then(function (r) { return r.json(); }).then(function (result) {
+      if (result.error) {
+        alert("Error: " + result.error);
+        return;
+      }
+      document.getElementById("schedule-form").style.display = "none";
+      document.getElementById("schedule-add-btn").style.display = "";
+      loadSchedules();
     });
   });
 

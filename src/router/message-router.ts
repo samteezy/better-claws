@@ -52,6 +52,7 @@ export interface MessageRouterOptions {
   readonly config: BetterClawsConfig;
   readonly compactor?: SessionCompactor;
   readonly promptBuilder: PromptBuilder;
+  readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
 }
 
 export class MessageRouter {
@@ -65,6 +66,7 @@ export class MessageRouter {
   private readonly config: BetterClawsConfig;
   private readonly compactor: SessionCompactor | undefined;
   private readonly promptBuilder: PromptBuilder;
+  private readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
   private readonly adapters = new Map<string, ChannelAdapter>();
 
   constructor(options: MessageRouterOptions) {
@@ -78,6 +80,7 @@ export class MessageRouter {
     this.config = options.config;
     this.compactor = options.compactor;
     this.promptBuilder = options.promptBuilder;
+    this.scheduler = options.scheduler;
   }
 
   registerAdapter(adapter: ChannelAdapter): void {
@@ -220,6 +223,13 @@ export class MessageRouter {
           text = `Sessions:\n${lines.join("\n")}`;
         }
 
+        yield { type: "text-delta", delta: text };
+        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+        return;
+      }
+
+      if (cmd === "/schedule" || cmd.startsWith("/schedule ")) {
+        const text = await self.handleScheduleCommand(cmd);
         yield { type: "text-delta", delta: text };
         yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
         return;
@@ -430,6 +440,90 @@ export class MessageRouter {
     return adapterConfig?.systemPrompt;
   }
 
+  private async handleScheduleCommand(cmd: string): Promise<string> {
+    if (!this.scheduler) {
+      return "Scheduling is not configured.";
+    }
+
+    const args = cmd.slice("/schedule".length).trim();
+
+    // /schedule enable all
+    if (args === "enable all") {
+      await this.scheduler.setAllEnabled(true);
+      return "All schedules enabled.";
+    }
+
+    // /schedule disable all
+    if (args === "disable all") {
+      await this.scheduler.setAllEnabled(false);
+      return "All schedules disabled.";
+    }
+
+    // /schedule enable <id>
+    if (args.startsWith("enable ")) {
+      const id = args.slice("enable ".length).trim();
+      const schedule = this.scheduler.getSchedule(id);
+      if (!schedule) return `Schedule "${id}" not found.`;
+      await this.scheduler.setEnabled(id, true);
+      return `Schedule #${id} "${schedule.name}" enabled.`;
+    }
+
+    // /schedule disable <id>
+    if (args.startsWith("disable ")) {
+      const id = args.slice("disable ".length).trim();
+      const schedule = this.scheduler.getSchedule(id);
+      if (!schedule) return `Schedule "${id}" not found.`;
+      await this.scheduler.setEnabled(id, false);
+      return `Schedule #${id} "${schedule.name}" disabled.`;
+    }
+
+    // /schedule remove <id>
+    if (args.startsWith("remove ")) {
+      const id = args.slice("remove ".length).trim();
+      const schedule = this.scheduler.getSchedule(id);
+      if (!schedule) return `Schedule "${id}" not found.`;
+      await this.scheduler.removeSchedule(id);
+      return `Schedule #${id} "${schedule.name}" removed.`;
+    }
+
+    // /schedule (list all)
+    const all = this.scheduler.getAll();
+    if (all.length === 0) {
+      return "No scheduled tasks.\n\nUse the schedule-add tool to create one.";
+    }
+
+    const lines: string[] = [];
+    let enabledCount = 0;
+
+    for (const s of all) {
+      const id = s.id ?? "?";
+      const status = s.enabled !== false ? "✓ enabled" : "✗ disabled";
+      if (s.enabled !== false) enabledCount++;
+
+      let nextStr = "";
+      if (s.enabled !== false && s.id) {
+        const next = this.scheduler.getNextFireTime(s.id);
+        if (next) {
+          nextStr = `   next: ${next.toISOString().slice(0, 16).replace("T", " ")}`;
+        }
+      }
+
+      const name = s.name.length > 20 ? s.name.slice(0, 19) + "…" : s.name.padEnd(20);
+      lines.push(` #${id.padEnd(3)}  ${name}  ${s.cron.padEnd(13)}  ${status}${nextStr}`);
+    }
+
+    const disabledCount = all.length - enabledCount;
+    return [
+      "Scheduled Tasks",
+      "───────────────",
+      ...lines,
+      "───────────────",
+      `${all.length} task${all.length === 1 ? "" : "s"} (${enabledCount} enabled, ${disabledCount} disabled)`,
+      "",
+      "Use: /schedule enable|disable|remove <id|all>",
+    ].join("\n");
+  }
+
   private async processToolCall(
     toolCall: ToolCall,
     sessionId: string,
@@ -545,6 +639,7 @@ export class MessageRouter {
       timeout: this.config.security.sandboxTimeout ?? 30000,
       secrets,
       allowedFsRoots: this.config.security.allowedFsRoots ?? [],
+      scheduler: this.scheduler,
     });
 
     await this.sessionManager.appendToLog(sessionId, {

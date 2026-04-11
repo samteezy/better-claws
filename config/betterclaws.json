@@ -24,6 +24,7 @@
     "userContext": "",
     "timezone": "UTC"
   },
+  "schedules": [],
   "tools": {
     "mcpServers": {
       "context7": {
@@ -31,6 +32,12 @@
         "args": ["-y", "@upstash/context7-mcp"],
         "env": { "CONTEXT7_API_KEY": "env:BC_CONTEXT7_API_KEY" },
         "defaultPolicy": "auto"
+      }
+    },
+    "skills": {
+      "scheduling": {
+        "path": "skills/scheduling",
+        "enabled": true
       }
     }
   },

@@ -33,6 +33,8 @@ export interface DashboardContext {
   readonly configPath?: string;
   /** Raw config as read from disk (with env: references intact). Used for saving. */
   rawConfig?: Record<string, unknown>;
+  /** Scheduler instance for schedule management. */
+  readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
 }
 
 export interface DashboardServerOptions {
@@ -203,6 +205,16 @@ export class DashboardServer {
       // Config editing
       case path === "/api/config" && method === "PUT":
         return await this.handleUpdateConfig(req, res);
+
+      // Schedules
+      case path === "/api/schedules" && method === "GET":
+        return this.handleGetSchedules(res);
+      case path === "/api/schedules" && method === "POST":
+        return await this.handleCreateSchedule(req, res);
+      case path.startsWith("/api/schedules/") && method === "PUT":
+        return await this.handleUpdateSchedule(req, res, path);
+      case path.startsWith("/api/schedules/") && method === "DELETE":
+        return await this.handleDeleteSchedule(res, path);
 
       default:
         this.sendJson(res, 404, { error: "API endpoint not found" });
@@ -481,6 +493,125 @@ export class DashboardServer {
     }
 
     await saveConfig(this.context.rawConfig, this.context.configPath);
+  }
+
+  // ── Schedule endpoints ────────────────────────────────────────────────
+
+  private handleGetSchedules(res: ServerResponse): void {
+    if (!this.context.scheduler) {
+      this.sendJson(res, 200, []);
+      return;
+    }
+
+    const schedules = this.context.scheduler.getAll().map((s) => {
+      const nextFire = s.id ? this.context.scheduler!.getNextFireTime(s.id) : null;
+      return {
+        id: s.id,
+        name: s.name,
+        cron: s.cron,
+        prompt: s.prompt,
+        enabled: s.enabled !== false,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+        nextFireTime: nextFire?.toISOString() ?? null,
+      };
+    });
+
+    this.sendJson(res, 200, schedules);
+  }
+
+  private async handleCreateSchedule(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!this.context.scheduler) {
+      this.sendJson(res, 400, { error: "Scheduling is not configured" });
+      return;
+    }
+
+    const body = await this.readRequestBody(req);
+    if (!body) {
+      this.sendJson(res, 400, { error: "Invalid request body" });
+      return;
+    }
+
+    const { name, cron, prompt, enabled } = body as {
+      name?: string; cron?: string; prompt?: string; enabled?: boolean;
+    };
+
+    if (!name || !cron || !prompt) {
+      this.sendJson(res, 400, { error: "Missing required fields: name, cron, prompt" });
+      return;
+    }
+
+    try {
+      const id = await this.context.scheduler.addSchedule({
+        name: String(name),
+        cron: String(cron),
+        prompt: String(prompt),
+        enabled: enabled !== false,
+      });
+
+      const created = this.context.scheduler.getSchedule(id);
+      this.sendJson(res, 201, { id, ...created });
+    } catch (err) {
+      this.sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private async handleUpdateSchedule(
+    req: IncomingMessage,
+    res: ServerResponse,
+    path: string,
+  ): Promise<void> {
+    if (!this.context.scheduler) {
+      this.sendJson(res, 400, { error: "Scheduling is not configured" });
+      return;
+    }
+
+    const id = path.split("/api/schedules/")[1];
+    if (!id) {
+      this.sendJson(res, 400, { error: "Missing schedule ID" });
+      return;
+    }
+
+    const body = await this.readRequestBody(req);
+    if (!body) {
+      this.sendJson(res, 400, { error: "Invalid request body" });
+      return;
+    }
+
+    try {
+      const updated = await this.context.scheduler.updateSchedule(id, {
+        ...(body["name"] !== undefined ? { name: String(body["name"]) } : {}),
+        ...(body["cron"] !== undefined ? { cron: String(body["cron"]) } : {}),
+        ...(body["prompt"] !== undefined ? { prompt: String(body["prompt"]) } : {}),
+        ...(body["enabled"] !== undefined ? { enabled: Boolean(body["enabled"]) } : {}),
+      });
+      this.sendJson(res, 200, updated);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = msg.includes("not found") ? 404 : 400;
+      this.sendJson(res, status, { error: msg });
+    }
+  }
+
+  private async handleDeleteSchedule(res: ServerResponse, path: string): Promise<void> {
+    if (!this.context.scheduler) {
+      this.sendJson(res, 400, { error: "Scheduling is not configured" });
+      return;
+    }
+
+    const id = path.split("/api/schedules/")[1];
+    if (!id) {
+      this.sendJson(res, 400, { error: "Missing schedule ID" });
+      return;
+    }
+
+    const removed = await this.context.scheduler.removeSchedule(id);
+    if (!removed) {
+      this.sendJson(res, 404, { error: `Schedule "${id}" not found` });
+      return;
+    }
+
+    this.sendJson(res, 200, { success: true });
   }
 
   // ── Request body parsing ────────────────────────────────────────────────

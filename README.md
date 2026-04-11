@@ -156,6 +156,9 @@ Each adapter can include a `systemPrompt` field to tailor behavior per channel. 
 | `file-write` | `fs:write` | Write files with automatic directory creation |
 | `web-fetch` | `net:outbound` | HTTP requests with configurable response size limits |
 | `memory-update` | `memory:write` | Update session working memory |
+| `schedule-list` | — | List all scheduled tasks |
+| `schedule-add` | — | Create a new scheduled task |
+| `schedule-edit` | — | Update an existing scheduled task |
 
 ## MCP and Skills
 
@@ -171,6 +174,34 @@ betterClaws can connect to remote [MCP](https://modelcontextprotocol.io/) server
 
 It also supports loading tools from [agentskills.io](https://agentskills.io/) via `SKILL.md` definitions. All remote tools pass through the same capability gate as local ones.
 
+## Task scheduling
+
+betterClaws can run prompts on a cron schedule. Each scheduled task fires through the normal message pipeline — including capability gate enforcement — so scheduled tasks have the same permissions as any user message.
+
+Add schedules in `config/betterclaws.json`:
+
+```json
+"schedules": [
+  {
+    "id": "1",
+    "name": "Daily Summary",
+    "cron": "0 9 * * *",
+    "prompt": "Summarize yesterday's activity",
+    "enabled": true
+  }
+]
+```
+
+Cron expressions use the standard 5-field format: `minute hour day-of-month month day-of-week`.
+
+### Managing schedules
+
+There are three ways to manage scheduled tasks:
+
+- **Dashboard** — The Schedules tab lets you add, edit, toggle, and delete tasks with a visual interface.
+- **Chat commands** — Use `/schedule` to list tasks, and `/schedule enable|disable|remove <id|all>` to manage them inline.
+- **Agent tools** — The AI can create and edit schedules using the `schedule-add` and `schedule-edit` tools. It cannot remove schedules — only disable them. Removal is a human-only action.
+
 ## Session commands
 
 During a conversation, you can use these commands:
@@ -180,6 +211,10 @@ During a conversation, you can use these commands:
 | `/new` | Start a fresh session |
 | `/reset` | Clear the current session's working memory |
 | `/compact` | Compact the conversation history to reclaim context |
+| `/schedule` | List all scheduled tasks |
+| `/schedule enable\|disable <id>` | Enable or disable a scheduled task |
+| `/schedule enable\|disable all` | Enable or disable all scheduled tasks |
+| `/schedule remove <id>` | Remove a scheduled task |
 
 ## Adding your own tools
 

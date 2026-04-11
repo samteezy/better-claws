@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { loadConfig, resolveWeakLlmConfig } from "./config.js";
+import { loadConfig, resolveWeakLlmConfig, saveConfig } from "./config.js";
 import { StructuredLogger } from "./logger/structured-logger.js";
 import { LlmClient } from "./llm/llm-client.js";
 import { ToolRegistry } from "./tools/registry.js";
@@ -27,6 +27,7 @@ import { DashboardServer } from "./dashboard/dashboard-server.js";
 import { createAdapter } from "./adapters/adapter-factory.js";
 import { McpClient, McpToolBridge } from "./mcp/index.js";
 import { SkillLoader } from "./skills/index.js";
+import { Scheduler } from "./scheduler/scheduler.js";
 import { sage, clay, lavender, rose, stone, bold, dim } from "./utils/ansi.js";
 import { renderMarkdown, StreamingMarkdownWriter } from "./utils/terminal-markdown.js";
 
@@ -306,6 +307,15 @@ export async function createApp(config: BetterClawsConfig, options?: {
     userContext: config.systemContext?.userContext,
   });
 
+  // ── Scheduler ───────────────────────────────────────────────────────────
+  const scheduler = new Scheduler({
+    schedules: config.schedules ?? [],
+    logger,
+    configPath: options?.configPath,
+    rawConfig: options?.rawConfig,
+    saveConfig,
+  });
+
   const router = new MessageRouter({
     sessionManager,
     llmClient,
@@ -317,6 +327,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
     config,
     compactor,
     promptBuilder,
+    scheduler,
   });
 
   // ── Config-driven adapters ───────────────────────────────────────────────
@@ -328,6 +339,8 @@ export async function createApp(config: BetterClawsConfig, options?: {
       adapterNames.push(adapter.name);
     }
   }
+
+  router.registerAdapter(scheduler);
 
   // ── Dashboard ────────────────────────────────────────────────────────────
   const dashboardEnabled = options?.dashboard ?? config.dashboard?.enabled ?? false;
@@ -351,6 +364,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
         memoryDirectory: "data/memory",
         configPath: options?.configPath,
         rawConfig: options?.rawConfig,
+        scheduler,
       },
     });
 
@@ -363,6 +377,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
     adapterNames,
     stop: async () => {
       await dashboard?.stop();
+      await scheduler.stop();
       await router.stop();
       for (const client of mcpClients) {
         await client.disconnect();
