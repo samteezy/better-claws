@@ -85,6 +85,15 @@ describe("WebChatAdapter", () => {
     return { status: response.status, body };
   }
 
+  async function getCommands(port: number): Promise<{ status: number; contentType: string; body: unknown }> {
+    const response = await fetch(`http://127.0.0.1:${port}/commands`, {
+      method: "GET",
+    });
+    const body = await response.json();
+    const contentType = response.headers.get("content-type") ?? "";
+    return { status: response.status, contentType, body };
+  }
+
   describe("constructor", () => {
     it("creates successfully with valid port", () => {
       const { adapter } = makeAdapter();
@@ -732,6 +741,141 @@ describe("WebChatAdapter", () => {
         // Socket destroyed by server — this is expected for oversized bodies
         assert.ok(true);
       }
+    });
+  });
+
+  describe("GET /commands", () => {
+    it("returns 200 with application/json content type", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { status, contentType } = await getCommands(port);
+
+      assert.equal(status, 200);
+      assert.ok(contentType.includes("application/json"));
+    });
+
+    it("returns a JSON array of slash commands", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { body } = await getCommands(port);
+
+      assert.ok(Array.isArray(body), "Response body should be an array");
+    });
+
+    it("returns at least 6 commands", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { body } = await getCommands(port);
+
+      assert.ok(Array.isArray(body));
+      assert.ok(body.length >= 6, "Should have at least 6 commands");
+    });
+
+    it("each command has name, description, and optional args", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { body } = await getCommands(port);
+
+      assert.ok(Array.isArray(body));
+      for (const cmd of body) {
+        const command = cmd as Record<string, unknown>;
+        assert.ok(typeof command["name"] === "string", "Command should have a name");
+        assert.ok(typeof command["description"] === "string", "Command should have a description");
+        if (command["args"] !== undefined) {
+          assert.ok(typeof command["args"] === "string", "Args should be a string if present");
+        }
+      }
+    });
+
+    it("includes /new command", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { body } = await getCommands(port);
+
+      assert.ok(Array.isArray(body));
+      const newCmd = body.find((cmd: unknown) => (cmd as Record<string, unknown>)["name"] === "/new");
+      assert.ok(newCmd, "/new command should be present");
+    });
+
+    it("includes /reset command", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { body } = await getCommands(port);
+
+      assert.ok(Array.isArray(body));
+      const resetCmd = body.find((cmd: unknown) => (cmd as Record<string, unknown>)["name"] === "/reset");
+      assert.ok(resetCmd, "/reset command should be present");
+    });
+
+    it("includes /fork command with args", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { body } = await getCommands(port);
+
+      assert.ok(Array.isArray(body));
+      const forkCmd = body.find((cmd: unknown) => (cmd as Record<string, unknown>)["name"] === "/fork");
+      assert.ok(forkCmd, "/fork command should be present");
+      assert.strictEqual((forkCmd as Record<string, unknown>)["args"], "[sessionId]");
+    });
+
+    it("includes /sessions command", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { body } = await getCommands(port);
+
+      assert.ok(Array.isArray(body));
+      const sessionsCmd = body.find((cmd: unknown) => (cmd as Record<string, unknown>)["name"] === "/sessions");
+      assert.ok(sessionsCmd, "/sessions command should be present");
+    });
+
+    it("includes /schedule command with args", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { body } = await getCommands(port);
+
+      assert.ok(Array.isArray(body));
+      const scheduleCmd = body.find((cmd: unknown) => (cmd as Record<string, unknown>)["name"] === "/schedule");
+      assert.ok(scheduleCmd, "/schedule command should be present");
+      assert.strictEqual((scheduleCmd as Record<string, unknown>)["args"], "<subcommand>");
+    });
+
+    it("includes /compact command", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const { body } = await getCommands(port);
+
+      assert.ok(Array.isArray(body));
+      const compactCmd = body.find((cmd: unknown) => (cmd as Record<string, unknown>)["name"] === "/compact");
+      assert.ok(compactCmd, "/compact command should be present");
+    });
+
+    it("does not require authentication", async () => {
+      const { adapter, port } = makeAdapter({ authToken: "secret" });
+      await adapter.start();
+
+      const { status } = await getCommands(port);
+
+      assert.equal(status, 200, "/commands should not require auth");
+    });
+
+    it("returns consistent results across multiple requests", async () => {
+      const { adapter, port } = makeAdapter();
+      await adapter.start();
+
+      const result1 = await getCommands(port);
+      const result2 = await getCommands(port);
+
+      assert.deepStrictEqual(result1.body, result2.body);
     });
   });
 });

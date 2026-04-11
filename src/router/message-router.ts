@@ -41,6 +41,21 @@ const NEVER_AUTO_GRANT = new Set([
 
 export const SYSTEM_PROMPT = `You are betterClaws, a personal AI assistant. You can use tools when they are available. Be helpful, concise, and accurate. If you are unsure about something, say so.`;
 
+export interface SlashCommandDescriptor {
+  readonly name: string;
+  readonly description: string;
+  readonly args?: string;
+}
+
+export const SLASH_COMMANDS: readonly SlashCommandDescriptor[] = [
+  { name: "/new", description: "Archive the current session and start fresh" },
+  { name: "/reset", description: "Wipe the current session entirely" },
+  { name: "/fork", description: "Fork the current (or a specific) session", args: "[sessionId]" },
+  { name: "/sessions", description: "List all sessions for your account" },
+  { name: "/schedule", description: "Manage scheduled tasks", args: "<subcommand>" },
+  { name: "/compact", description: "Compact the current session history" },
+];
+
 export interface MessageRouterOptions {
   readonly sessionManager: SessionManager;
   readonly llmClient: LlmClient;
@@ -68,6 +83,10 @@ export class MessageRouter {
   private readonly promptBuilder: PromptBuilder;
   private readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
   private readonly adapters = new Map<string, ChannelAdapter>();
+
+  static getSlashCommands(): readonly SlashCommandDescriptor[] {
+    return SLASH_COMMANDS;
+  }
 
   constructor(options: MessageRouterOptions) {
     this.sessionManager = options.sessionManager;
@@ -540,24 +559,21 @@ export class MessageRouter {
     // Check tool policy before proceeding
     const policy = this.toolRegistry.getPolicy(toolName);
     if (policy === "disabled") {
-      return {
-        output: null,
-        error: `Tool "${toolName}" is disabled`,
-      };
+      const error = `Tool "${toolName}" is disabled`;
+      this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
+      return { output: null, error };
     }
     if (policy === "confirm") {
-      return {
-        output: null,
-        error: `Tool "${toolName}" requires user confirmation (not yet supported in this adapter)`,
-      };
+      const error = `Tool "${toolName}" requires user confirmation (not yet supported in this adapter)`;
+      this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
+      return { output: null, error };
     }
 
     const descriptor = this.toolRegistry.getDescriptor(toolName);
     if (!descriptor) {
-      return {
-        output: null,
-        error: `Unknown tool: ${toolName}`,
-      };
+      const error = `Unknown tool: ${toolName}`;
+      this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
+      return { output: null, error };
     }
 
     let grants = this.sessionManager.getGrants(sessionId);
@@ -589,19 +605,17 @@ export class MessageRouter {
       }
 
       if (!decision.allowed) {
-        return {
-          output: null,
-          error: `Tool "${toolName}" denied: ${decision.reason}`,
-        };
+        const error = `Tool "${toolName}" denied: ${decision.reason}`;
+        this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
+        return { output: null, error };
       }
     }
 
     const handler = this.toolRegistry.getHandler(toolName);
     if (!handler) {
-      return {
-        output: null,
-        error: `No handler found for tool: ${toolName}`,
-      };
+      const error = `No handler found for tool: ${toolName}`;
+      this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
+      return { output: null, error };
     }
 
     let params: Record<string, unknown>;
@@ -611,19 +625,17 @@ export class MessageRouter {
         unknown
       >;
     } catch {
-      return {
-        output: null,
-        error: `Invalid JSON arguments for tool "${toolName}"`,
-      };
+      const error = `Invalid JSON arguments for tool "${toolName}"`;
+      this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
+      return { output: null, error };
     }
 
     // Fix 5: validate arguments against the tool's parameter schema
     const validation = validateSchema(params, descriptor.parameters);
     if (!validation.valid) {
-      return {
-        output: null,
-        error: `Invalid arguments for tool "${toolName}": ${validation.errors.join("; ")}`,
-      };
+      const error = `Invalid arguments for tool "${toolName}": ${validation.errors.join("; ")}`;
+      this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
+      return { output: null, error };
     }
 
     const secrets = this.secretManager.projectForTool(
@@ -641,6 +653,15 @@ export class MessageRouter {
       allowedFsRoots: this.config.security.allowedFsRoots ?? [],
       scheduler: this.scheduler,
     });
+
+    if (!result.success) {
+      this.logger.log({
+        sessionId,
+        eventType: "tool:error",
+        component: "router",
+        payload: { tool: toolName, error: result.error ?? "unknown error", durationMs: result.durationMs },
+      });
+    }
 
     await this.sessionManager.appendToLog(sessionId, {
       type: "toolResult",

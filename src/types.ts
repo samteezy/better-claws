@@ -194,6 +194,7 @@ export const EVENT_TYPES = [
   "llm:response",
   "tool:invoke",
   "tool:warning",
+  "tool:error",
   "gate:decision",
   "executor:start",
   "executor:result",
@@ -292,6 +293,7 @@ export interface MemoryConfig {
   readonly staleThreshold: number;
   readonly curationIntervalMinutes: number;
   readonly curationEnabled: boolean;
+  readonly workingMemoryBudgetChars: number;
 }
 
 export interface LoggingConfig {

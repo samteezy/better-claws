@@ -33,7 +33,7 @@ const TEST_CONFIG: BetterClawsConfig = {
   llm: { baseUrl: "http://localhost:11434/v1", apiKey: "env:TEST_KEY", model: "test", maxTokens: 1024, temperature: 0.7 },
   adapters: { telegram: { enabled: false, token: "env:BC_TELEGRAM_TOKEN" } },
   security: { defaultCapabilityPolicy: "deny", sandboxTimeout: 30000, stripEnvironment: true, allowPersistentGrants: false },
-  memory: { maxLongTermEntries: 2000, confidenceDecayRate: 0.01, staleThreshold: 0.2, curationIntervalMinutes: 60, curationEnabled: true },
+  memory: { maxLongTermEntries: 2000, confidenceDecayRate: 0.01, staleThreshold: 0.2, curationIntervalMinutes: 60, curationEnabled: true, workingMemoryBudgetChars: 8192 },
   logging: { directory: "data/logs", redactSensitive: true, retentionDays: 90 },
 };
 
@@ -86,6 +86,7 @@ describe("DashboardServer", () => {
       sessionsDirectory: sessionsDir,
       idleTimeoutMs: 60000,
       logger,
+      workingMemoryBudgetChars: 8192,
     });
 
     const context: DashboardContext = {
@@ -159,7 +160,7 @@ describe("DashboardServer", () => {
   describe("GET /api/tools", () => {
     it("returns registered tools", async () => {
       const tools = [
-        { name: "shell", description: "Execute shell commands", capabilities: ["exec:shell"] },
+        { name: "shell", description: "Execute shell commands", capabilities: ["exec:shell"], source: "built-in" as const },
       ];
       const { server, port } = makeServer({ toolDescriptors: tools });
       await server.start();
@@ -171,6 +172,40 @@ describe("DashboardServer", () => {
       const toolList = data["tools"] as Array<Record<string, unknown>>;
       assert.equal(toolList.length, 1);
       assert.equal(toolList[0]!["name"], "shell");
+    });
+
+    it("includes source field on each tool", async () => {
+      const tools = [
+        { name: "shell", description: "Execute shell commands", capabilities: ["exec:shell"], source: "built-in" as const },
+        { name: "web-fetch", description: "Fetch from web", capabilities: ["net:http"], source: "plugin" as const },
+        { name: "custom-tool", description: "User-defined tool", capabilities: ["custom"], source: "skill" as const },
+      ];
+      const { server, port } = makeServer({ toolDescriptors: tools });
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/tools");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const toolList = data["tools"] as Array<Record<string, unknown>>;
+      assert.equal(toolList.length, 3);
+
+      // Verify each tool has source field with correct values
+      assert.equal(toolList[0]!["source"], "built-in");
+      assert.equal(toolList[1]!["source"], "plugin");
+      assert.equal(toolList[2]!["source"], "skill");
+    });
+
+    it("returns empty tools array when none registered", async () => {
+      const { server, port } = makeServer();
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/tools");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const toolList = data["tools"] as Array<Record<string, unknown>>;
+      assert.equal(toolList.length, 0);
     });
   });
 
@@ -617,6 +652,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -658,6 +694,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -700,6 +737,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -736,6 +774,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -772,6 +811,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -928,6 +968,504 @@ describe("DashboardServer", () => {
       // Verify structure is present
       assert.ok(config["llm"]);
       assert.ok(config["adapters"]);
+    });
+  });
+
+  describe("GET /api/config/schema", () => {
+    it("returns config schema with all sections", async () => {
+      const { server, port } = makeServer();
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/config/schema");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const sections = data["sections"] as Array<Record<string, unknown>>;
+
+      // Should have at least 8 sections as documented
+      assert.ok(sections.length >= 8, `Expected at least 8 sections, got ${sections.length}`);
+    });
+
+    it("includes required section keys", async () => {
+      const { server, port } = makeServer();
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/config/schema");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const sections = data["sections"] as Array<Record<string, unknown>>;
+
+      // Extract section keys
+      const sectionKeys = new Set(sections.map(s => s["key"]));
+
+      // Verify required sections exist
+      const requiredSections = ["gateway", "llm", "systemContext", "security", "memory", "logging", "dashboard", "compaction"];
+      for (const required of requiredSections) {
+        assert.ok(sectionKeys.has(required), `Missing required section: ${required}`);
+      }
+    });
+
+    it("each section has label, description, and fields array", async () => {
+      const { server, port } = makeServer();
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/config/schema");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const sections = data["sections"] as Array<Record<string, unknown>>;
+
+      for (const section of sections) {
+        assert.ok(typeof section["key"] === "string", "section.key should be string");
+        assert.ok(typeof section["label"] === "string", "section.label should be string");
+        assert.ok(typeof section["description"] === "string", "section.description should be string");
+        assert.ok(Array.isArray(section["fields"]), "section.fields should be array");
+      }
+    });
+
+    it("each field has key, label, type, and description", async () => {
+      const { server, port } = makeServer();
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/config/schema");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const sections = data["sections"] as Array<Record<string, unknown>>;
+
+      for (const section of sections) {
+        const fields = section["fields"] as Array<Record<string, unknown>>;
+        for (const field of fields) {
+          assert.ok(typeof field["key"] === "string", `field.key should be string in section ${section["key"]}`);
+          assert.ok(typeof field["label"] === "string", `field.label should be string in section ${section["key"]}`);
+          assert.ok(typeof field["type"] === "string", `field.type should be string in section ${section["key"]}`);
+          assert.ok(typeof field["description"] === "string", `field.description should be string in section ${section["key"]}`);
+        }
+      }
+    });
+
+    it("gateway section includes host and port fields", async () => {
+      const { server, port } = makeServer();
+      await server.start();
+
+      const { body } = await fetchJson(port, "/api/config/schema");
+      const data = body as Record<string, unknown>;
+      const sections = data["sections"] as Array<Record<string, unknown>>;
+
+      const gatewaySection = sections.find(s => s["key"] === "gateway");
+      assert.ok(gatewaySection, "gateway section should exist");
+
+      const fields = gatewaySection!["fields"] as Array<Record<string, unknown>>;
+      const fieldKeys = new Set(fields.map(f => f["key"]));
+      assert.ok(fieldKeys.has("host"), "gateway section should have host field");
+      assert.ok(fieldKeys.has("port"), "gateway section should have port field");
+    });
+
+    it("llm section includes baseUrl, apiKey, model, maxTokens, temperature fields", async () => {
+      const { server, port } = makeServer();
+      await server.start();
+
+      const { body } = await fetchJson(port, "/api/config/schema");
+      const data = body as Record<string, unknown>;
+      const sections = data["sections"] as Array<Record<string, unknown>>;
+
+      const llmSection = sections.find(s => s["key"] === "llm");
+      assert.ok(llmSection, "llm section should exist");
+
+      const fields = llmSection!["fields"] as Array<Record<string, unknown>>;
+      const fieldKeys = new Set(fields.map(f => f["key"]));
+
+      const requiredFields = ["baseUrl", "apiKey", "model", "maxTokens", "temperature"];
+      for (const required of requiredFields) {
+        assert.ok(fieldKeys.has(required), `llm section should have ${required} field`);
+      }
+    });
+  });
+
+  describe("PUT /api/config/section/:sectionKey", () => {
+    it("updates a config section and returns success", async () => {
+      const tmpDir = makeTmpDir();
+      const configPath = path.join(tmpDir, "config.json");
+      const logger = createMockLogger();
+      const port = nextPort();
+      const logsDir = path.join(tmpDir, "logs");
+      const staticDir = path.join(tmpDir, "static");
+
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+        workingMemoryBudgetChars: 8192,
+      });
+
+      // Create context with rawConfig and configPath for persistence
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: logsDir,
+        configPath,
+        rawConfig: JSON.parse(JSON.stringify(TEST_CONFIG)) as Record<string, unknown>,
+      };
+
+      const server = new DashboardServer({
+        port,
+        context,
+        logger,
+        staticDir,
+      });
+      servers.push(server);
+      await server.start();
+
+      // Send PUT request to update memory section
+      const response = await fetch(`http://127.0.0.1:${port}/api/config/section/memory`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxLongTermEntries: 5000 }),
+      });
+
+      assert.equal(response.status, 200);
+      const data = (await response.json()) as Record<string, unknown>;
+      assert.equal(data["saved"], true);
+      assert.equal(data["section"], "memory");
+    });
+
+    it("merges new values into existing section", async () => {
+      const tmpDir = makeTmpDir();
+      const configPath = path.join(tmpDir, "config.json");
+      const logger = createMockLogger();
+      const port = nextPort();
+      const logsDir = path.join(tmpDir, "logs");
+      const staticDir = path.join(tmpDir, "static");
+
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+        workingMemoryBudgetChars: 8192,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: logsDir,
+        configPath,
+        rawConfig: JSON.parse(JSON.stringify(TEST_CONFIG)) as Record<string, unknown>,
+      };
+
+      const server = new DashboardServer({
+        port,
+        context,
+        logger,
+        staticDir,
+      });
+      servers.push(server);
+      await server.start();
+
+      // Send PUT request with only one field update
+      const response = await fetch(`http://127.0.0.1:${port}/api/config/section/memory`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxLongTermEntries: 3000 }),
+      });
+
+      assert.equal(response.status, 200);
+      const data = (await response.json()) as Record<string, unknown>;
+      assert.equal(data["saved"], true);
+
+      // Verify other memory section fields were not removed (merge, not replace)
+      const memorySection = (context.config as unknown as Record<string, unknown>)["memory"] as Record<string, unknown>;
+      assert.ok(typeof memorySection["confidenceDecayRate"] === "number", "existing fields should be preserved");
+    });
+
+    it("returns 400 if body is not an object", async () => {
+      const tmpDir = makeTmpDir();
+      const logger = createMockLogger();
+      const port = nextPort();
+      const staticDir = path.join(tmpDir, "static");
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+        workingMemoryBudgetChars: 8192,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: path.join(tmpDir, "logs"),
+        rawConfig: JSON.parse(JSON.stringify(TEST_CONFIG)) as Record<string, unknown>,
+      };
+
+      const server = new DashboardServer({
+        port,
+        context,
+        logger,
+        staticDir,
+      });
+      servers.push(server);
+      await server.start();
+
+      // Send array instead of object
+      const response = await fetch(`http://127.0.0.1:${port}/api/config/section/memory`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([1, 2, 3]),
+      });
+
+      assert.equal(response.status, 400);
+      const data = (await response.json()) as Record<string, unknown>;
+      assert.ok(data["error"]);
+    });
+
+    it("returns 400 if body is not valid JSON", async () => {
+      const tmpDir = makeTmpDir();
+      const logger = createMockLogger();
+      const port = nextPort();
+      const staticDir = path.join(tmpDir, "static");
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+        workingMemoryBudgetChars: 8192,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: path.join(tmpDir, "logs"),
+        rawConfig: JSON.parse(JSON.stringify(TEST_CONFIG)) as Record<string, unknown>,
+      };
+
+      const server = new DashboardServer({
+        port,
+        context,
+        logger,
+        staticDir,
+      });
+      servers.push(server);
+      await server.start();
+
+      // Send invalid JSON
+      const response = await fetch(`http://127.0.0.1:${port}/api/config/section/memory`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: "not json",
+      });
+
+      assert.equal(response.status, 400);
+    });
+
+    it("returns 400 if section key contains slash (path traversal attempt)", async () => {
+      const tmpDir = makeTmpDir();
+      const configPath = path.join(tmpDir, "config.json");
+      const logger = createMockLogger();
+      const port = nextPort();
+      const logsDir = path.join(tmpDir, "logs");
+      const staticDir = path.join(tmpDir, "static");
+
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+        workingMemoryBudgetChars: 8192,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: logsDir,
+        configPath,
+        rawConfig: JSON.parse(JSON.stringify(TEST_CONFIG)) as Record<string, unknown>,
+      };
+
+      const server = new DashboardServer({
+        port,
+        context,
+        logger,
+        staticDir,
+      });
+      servers.push(server);
+      await server.start();
+
+      // Send with section key containing slash
+      const response = await fetch(`http://127.0.0.1:${port}/api/config/section/bad/key`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ foo: "bar" }),
+      });
+
+      assert.equal(response.status, 400);
+      const data = (await response.json()) as Record<string, unknown>;
+      assert.ok(data["error"]);
+    });
+
+    it("returns 500 if rawConfig is not available (persistConfig fails)", async () => {
+      const tmpDir = makeTmpDir();
+      const logger = createMockLogger();
+      const port = nextPort();
+      const staticDir = path.join(tmpDir, "static");
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+        workingMemoryBudgetChars: 8192,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: path.join(tmpDir, "logs"),
+        // rawConfig NOT provided
+      };
+
+      const server = new DashboardServer({
+        port,
+        context,
+        logger,
+        staticDir,
+      });
+      servers.push(server);
+      await server.start();
+
+      // Should fail because rawConfig is missing
+      const response = await fetch(`http://127.0.0.1:${port}/api/config/section/memory`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxLongTermEntries: 5000 }),
+      });
+
+      assert.equal(response.status, 500);
+      const data = (await response.json()) as Record<string, unknown>;
+      assert.ok(typeof data["error"] === "string");
+    });
+
+    it("logs config section update event", async () => {
+      const tmpDir = makeTmpDir();
+      const configPath = path.join(tmpDir, "config.json");
+      const logger = createMockLogger();
+      const port = nextPort();
+      const logsDir = path.join(tmpDir, "logs");
+      const staticDir = path.join(tmpDir, "static");
+
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+        workingMemoryBudgetChars: 8192,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: logsDir,
+        configPath,
+        rawConfig: JSON.parse(JSON.stringify(TEST_CONFIG)) as Record<string, unknown>,
+      };
+
+      const server = new DashboardServer({
+        port,
+        context,
+        logger,
+        staticDir,
+      });
+      servers.push(server);
+      await server.start();
+
+      const response = await fetch(`http://127.0.0.1:${port}/api/config/section/logging`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ retentionDays: 180 }),
+      });
+
+      assert.equal(response.status, 200);
+
+      // Verify logging event
+      const configChangeLog = logger.logs.find(
+        (l) => (l["payload"] as Record<string, unknown>)["action"] === "config_section_updated",
+      );
+      assert.ok(configChangeLog, "should log config_section_updated");
+      assert.equal(
+        (configChangeLog!["payload"] as Record<string, unknown>)["section"],
+        "logging",
+      );
+    });
+
+    it("updates multiple fields in a section at once", async () => {
+      const tmpDir = makeTmpDir();
+      const configPath = path.join(tmpDir, "config.json");
+      const logger = createMockLogger();
+      const port = nextPort();
+      const logsDir = path.join(tmpDir, "logs");
+      const staticDir = path.join(tmpDir, "static");
+
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.mkdirSync(staticDir, { recursive: true });
+
+      const sessionManager = new SessionManager({
+        sessionsDirectory: path.join(tmpDir, "sessions"),
+        idleTimeoutMs: 60000,
+        logger,
+        workingMemoryBudgetChars: 8192,
+      });
+
+      const context: DashboardContext = {
+        sessionManager,
+        logger,
+        config: TEST_CONFIG,
+        logsDirectory: logsDir,
+        configPath,
+        rawConfig: JSON.parse(JSON.stringify(TEST_CONFIG)) as Record<string, unknown>,
+      };
+
+      const server = new DashboardServer({
+        port,
+        context,
+        logger,
+        staticDir,
+      });
+      servers.push(server);
+      await server.start();
+
+      const response = await fetch(`http://127.0.0.1:${port}/api/config/section/logging`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          retentionDays: 120,
+          redactSensitive: false,
+        }),
+      });
+
+      assert.equal(response.status, 200);
+
+      const loggingSection = (context.config as unknown as Record<string, unknown>)["logging"] as Record<string, unknown>;
+      assert.equal(loggingSection["retentionDays"], 120);
+      assert.equal(loggingSection["redactSensitive"], false);
     });
   });
 });

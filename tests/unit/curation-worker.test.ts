@@ -9,6 +9,7 @@ import {
 } from "../../src/memory/curation-worker.js";
 import { LongTermStore } from "../../src/memory/long-term-store.js";
 import { SessionManager } from "../../src/sessions/session-manager.js";
+import { DEFAULT_MEMORY_CONFIG } from "../helpers/memory-config.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { MemoryConfig, LlmResponse, ChatMessage } from "../../src/types.js";
 
@@ -30,11 +31,7 @@ function makeTmpDir(): string {
 
 function makeConfig(overrides?: Partial<MemoryConfig>): MemoryConfig {
   return {
-    maxLongTermEntries: 2000,
-    confidenceDecayRate: 0.01,
-    staleThreshold: 0.2,
-    curationIntervalMinutes: 60,
-    curationEnabled: true,
+    ...DEFAULT_MEMORY_CONFIG,
     ...overrides,
   };
 }
@@ -85,6 +82,7 @@ async function setup(configOverrides?: Partial<MemoryConfig>): Promise<TestConte
     sessionsDirectory: path.join(tmpDir, "sessions"),
     idleTimeoutMs: 50, // very short for testing
     logger,
+    workingMemoryBudgetChars: 8192,
   });
 
   return { tmpDir, logger, store, sessionManager, config };

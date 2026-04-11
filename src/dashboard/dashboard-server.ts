@@ -33,13 +33,20 @@ export interface DashboardAdapterInfo {
   readonly url?: string;
 }
 
+export interface DashboardToolDescriptor {
+  readonly name: string;
+  readonly description: string;
+  readonly capabilities: readonly string[];
+  readonly source: "built-in" | "plugin" | "mcp" | "skill";
+}
+
 export interface DashboardContext {
   readonly sessionManager: SessionManager;
   readonly logger: StructuredLogger;
   config: BetterClawsConfig;
   readonly logsDirectory: string;
   readonly memoryDirectory?: string;
-  readonly toolDescriptors?: readonly { name: string; description: string; capabilities: readonly string[] }[];
+  readonly toolDescriptors?: readonly DashboardToolDescriptor[];
   readonly adapterStatuses?: ReadonlyMap<string, { connected: boolean; name: string }>;
   readonly adapterInfos?: readonly DashboardAdapterInfo[];
   /** Path to the config file on disk. Required for config save operations. */
@@ -60,6 +67,115 @@ export interface DashboardServerOptions {
   /** Bearer token for API authentication. If omitted, API routes are open. */
   readonly authToken?: string;
 }
+
+// ── Config schema metadata ────────────────────────────────────────────────
+
+interface ConfigFieldSchema {
+  readonly key: string;
+  readonly label: string;
+  readonly type: "text" | "number" | "boolean" | "select" | "textarea" | "password";
+  readonly description: string;
+  readonly options?: readonly string[];
+  readonly placeholder?: string;
+  readonly restart?: boolean;
+}
+
+interface ConfigSectionSchema {
+  readonly key: string;
+  readonly label: string;
+  readonly description: string;
+  readonly fields: readonly ConfigFieldSchema[];
+}
+
+const CONFIG_SCHEMA_SECTIONS: readonly ConfigSectionSchema[] = [
+  {
+    key: "gateway",
+    label: "Gateway",
+    description: "Network binding for the internal gateway server.",
+    fields: [
+      { key: "host", label: "Host", type: "text", description: "IP address to bind to.", placeholder: "127.0.0.1", restart: true },
+      { key: "port", label: "Port", type: "number", description: "Port for the gateway server.", placeholder: "18700", restart: true },
+    ],
+  },
+  {
+    key: "llm",
+    label: "Language Model",
+    description: "Primary LLM connection settings. Changes require a restart.",
+    fields: [
+      { key: "baseUrl", label: "Base URL", type: "text", description: "OpenAI-compatible API endpoint.", placeholder: "http://localhost:11434/v1", restart: true },
+      { key: "apiKey", label: "API Key", type: "password", description: "API key for authentication. Use env:VAR_NAME to reference environment variables.", restart: true },
+      { key: "model", label: "Model", type: "text", description: "Model identifier to use for inference.", placeholder: "qwen3:8b", restart: true },
+      { key: "maxTokens", label: "Max Tokens", type: "number", description: "Maximum tokens per LLM response.", placeholder: "4096" },
+      { key: "temperature", label: "Temperature", type: "number", description: "Sampling temperature (0\u20132). Lower = more deterministic.", placeholder: "0.7" },
+    ],
+  },
+  {
+    key: "systemContext",
+    label: "System Context",
+    description: "Personality, user context, and timezone injected into every conversation.",
+    fields: [
+      { key: "persona", label: "Persona", type: "textarea", description: "AI personality text injected into every system prompt. Defines how the bot speaks and behaves.", placeholder: "You are a helpful assistant..." },
+      { key: "userContext", label: "User Context", type: "textarea", description: "Static information about the user (name, preferences, location) included in prompts.", placeholder: "The user is..." },
+      { key: "timezone", label: "Timezone", type: "text", description: "IANA timezone string for time-aware tasks.", placeholder: "UTC" },
+    ],
+  },
+  {
+    key: "security",
+    label: "Security",
+    description: "Capability gate and sandbox settings controlling what the bot can do.",
+    fields: [
+      { key: "defaultCapabilityPolicy", label: "Default Policy", type: "select", description: "Default action when no specific capability grant exists.", options: ["deny", "allow"] },
+      { key: "sandboxTimeout", label: "Sandbox Timeout (ms)", type: "number", description: "Maximum execution time for sandboxed tool calls.", placeholder: "30000" },
+      { key: "stripEnvironment", label: "Strip Environment", type: "boolean", description: "Remove environment variables from sandboxed processes for security." },
+      { key: "allowPersistentGrants", label: "Allow Persistent Grants", type: "boolean", description: "Whether capability grants can persist across sessions." },
+      { key: "maxMemoryMb", label: "Max Memory (MB)", type: "number", description: "Memory limit for sandboxed processes.", placeholder: "128" },
+    ],
+  },
+  {
+    key: "memory",
+    label: "Memory",
+    description: "Long-term memory storage, confidence decay, and curation settings.",
+    fields: [
+      { key: "maxLongTermEntries", label: "Max Entries", type: "number", description: "Maximum number of long-term memory entries to retain.", placeholder: "2000" },
+      { key: "confidenceDecayRate", label: "Decay Rate", type: "number", description: "Rate at which memory confidence decays over time (0\u20131).", placeholder: "0.01" },
+      { key: "staleThreshold", label: "Stale Threshold", type: "number", description: "Confidence level below which entries are considered stale.", placeholder: "0.2" },
+      { key: "curationIntervalMinutes", label: "Curation Interval (min)", type: "number", description: "How often the background curation worker runs.", placeholder: "60" },
+      { key: "curationEnabled", label: "Curation Enabled", type: "boolean", description: "Enable automatic memory curation (distillation, consolidation, decay)." },
+    ],
+  },
+  {
+    key: "logging",
+    label: "Logging",
+    description: "Structured logging output and retention settings.",
+    fields: [
+      { key: "directory", label: "Log Directory", type: "text", description: "Directory for structured log files.", placeholder: "data/logs", restart: true },
+      { key: "redactSensitive", label: "Redact Sensitive", type: "boolean", description: "Automatically redact sensitive values in log output." },
+      { key: "retentionDays", label: "Retention (days)", type: "number", description: "Number of days to keep log files before cleanup.", placeholder: "90" },
+    ],
+  },
+  {
+    key: "dashboard",
+    label: "Dashboard",
+    description: "This dashboard\u2019s server settings. Changes require a restart.",
+    fields: [
+      { key: "enabled", label: "Enabled", type: "boolean", description: "Enable or disable the dashboard server.", restart: true },
+      { key: "host", label: "Host", type: "text", description: "IP address to bind the dashboard to.", placeholder: "127.0.0.1", restart: true },
+      { key: "port", label: "Port", type: "number", description: "Port for the dashboard server.", placeholder: "18701", restart: true },
+      { key: "authToken", label: "Auth Token", type: "password", description: "Bearer token for dashboard authentication. Use env:VAR_NAME to reference environment variables.", restart: true },
+    ],
+  },
+  {
+    key: "compaction",
+    label: "Compaction",
+    description: "Context window compaction to manage long conversations.",
+    fields: [
+      { key: "enabled", label: "Enabled", type: "boolean", description: "Enable automatic context compaction when nearing token limits." },
+      { key: "tokenBudget", label: "Token Budget", type: "number", description: "Total context budget. Should match or be less than llm.maxTokens.", placeholder: "3584" },
+      { key: "reserveTokens", label: "Reserve Tokens", type: "number", description: "Headroom to reserve before triggering compaction.", placeholder: "512" },
+      { key: "keepRecentTokens", label: "Keep Recent Tokens", type: "number", description: "Tokens of recent history to preserve during compaction.", placeholder: "1000" },
+    ],
+  },
+];
 
 // ── MIME types ──────────────────────────────────────────────────────────────
 
@@ -212,6 +328,8 @@ export class DashboardServer {
         return this.handleGetTools(res);
       case path === "/api/config" && method === "GET":
         return this.handleGetConfig(res);
+      case path === "/api/config/schema" && method === "GET":
+        return this.handleGetConfigSchema(res);
 
       // Tool policy management
       case path === "/api/tools/policy" && method === "POST":
@@ -220,6 +338,8 @@ export class DashboardServer {
       // Config editing
       case path === "/api/config" && method === "PUT":
         return await this.handleUpdateConfig(req, res);
+      case path.startsWith("/api/config/section/") && method === "PUT":
+        return await this.handleUpdateConfigSection(req, res, path);
 
       // Schedules
       case path === "/api/schedules" && method === "GET":
@@ -404,6 +524,10 @@ export class DashboardServer {
     this.sendJson(res, 200, { tools });
   }
 
+  private handleGetConfigSchema(_res: ServerResponse): void {
+    this.sendJson(_res, 200, { sections: CONFIG_SCHEMA_SECTIONS });
+  }
+
   private handleGetConfig(res: ServerResponse): void {
     // Redact secrets from config before sending
     const config = JSON.parse(JSON.stringify(this.context.config)) as Record<string, unknown>;
@@ -497,6 +621,47 @@ export class DashboardServer {
     });
 
     this.sendJson(res, 200, { saved: true, note: "Some changes may require a restart to take effect." });
+  }
+
+  private async handleUpdateConfigSection(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+    const sectionKey = path.replace("/api/config/section/", "");
+    if (!sectionKey || sectionKey.includes("/")) {
+      this.sendJson(res, 400, { error: "Invalid section key" });
+      return;
+    }
+
+    const body = await this.readRequestBody(req);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      this.sendJson(res, 400, { error: "Body must be a JSON object" });
+      return;
+    }
+
+    // Merge section into config
+    const currentSection = (this.context.config as unknown as Record<string, unknown>)[sectionKey];
+    const merged = typeof currentSection === "object" && currentSection !== null && !Array.isArray(currentSection)
+      ? { ...currentSection as Record<string, unknown>, ...body }
+      : body;
+
+    try {
+      await this.persistConfig({ [sectionKey]: merged });
+    } catch (err) {
+      this.sendJson(res, 500, {
+        error: `Failed to save config: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return;
+    }
+
+    // Update in-memory config
+    (this.context.config as unknown as Record<string, unknown>)[sectionKey] = merged;
+
+    this.logger.log({
+      sessionId: null,
+      eventType: "config:change",
+      component: "dashboard",
+      payload: { action: "config_section_updated", section: sectionKey },
+    });
+
+    this.sendJson(res, 200, { saved: true, section: sectionKey, note: "Some changes may require a restart to take effect." });
   }
 
   // ── Config persistence helper ───────────────────────────────────────────

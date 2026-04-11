@@ -10,7 +10,7 @@ import { CapabilityGate } from "./tools/capability-gate.js";
 import { ToolExecutor } from "./tools/executor.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { SessionCompactor } from "./sessions/compactor.js";
-import { MessageRouter, SYSTEM_PROMPT } from "./router/message-router.js";
+import { MessageRouter, SYSTEM_PROMPT, SLASH_COMMANDS } from "./router/message-router.js";
 import { PromptBuilder } from "./prompt/prompt-builder.js";
 import { join } from "node:path";
 import { builtInTools } from "./tools/built-in/index.js";
@@ -50,16 +50,58 @@ class CliAdapter implements StreamableChannelAdapter {
     process.stdout.write("\r" + PROMPT_COLOR);
   }
 
+  private hintVisible = false;
+
+  private clearHint(): void {
+    if (!this.hintVisible) return;
+    // Move down one line, clear it, move back up
+    process.stdout.write("\x1b[1B\x1b[2K\x1b[1A");
+    this.hintVisible = false;
+  }
+
+  private showHint(): void {
+    const line = (this.rl as unknown as { line: string }).line ?? "";
+    this.clearHint();
+    if (!line.startsWith("/") || line.includes(" ") || line.length === 0) return;
+
+    const q = line.toLowerCase();
+    const matches = SLASH_COMMANDS.filter((c) => c.name.startsWith(q));
+    if (matches.length === 0) return;
+
+    // Save cursor, move down, write hints, restore cursor
+    const hint = matches
+      .slice(0, 4)
+      .map((c) => stone(`  ${c.name}`) + (c.args ? stone(dim(` ${c.args}`)) : "") + stone(dim(` — ${c.description}`)))
+      .join("\n");
+    process.stdout.write("\x1b[s\n" + hint + "\x1b[u");
+    this.hintVisible = true;
+  }
+
   async start(): Promise<void> {
+    const commandNames = SLASH_COMMANDS.map((c) => c.name);
+
     this.rl = createInterface({
       input: process.stdin,
       output: process.stdout,
       prompt: PROMPT_PLAIN,
+      completer: (line: string): [string[], string] => {
+        if (!line.startsWith("/")) return [[], line];
+        const hits = commandNames.filter((n) => n.startsWith(line));
+        return [hits, line];
+      },
     });
+
+    // Show command hints as user types
+    if (process.stdin.isTTY) {
+      process.stdin.on("data", () => {
+        setImmediate(() => this.showHint());
+      });
+    }
 
     this.showPrompt();
 
     this.rl.on("line", (line) => {
+      this.clearHint();
       const text = line.trim();
       if (!text) {
         this.showPrompt();
@@ -200,6 +242,16 @@ export async function createApp(config: BetterClawsConfig, options?: {
 
   await toolRegistry.loadTools();
 
+  // Track tool sources for dashboard display
+  const toolSources = new Map<string, "built-in" | "plugin" | "mcp" | "skill">();
+  for (const tool of builtInTools) {
+    toolSources.set(tool.descriptor.name, "built-in");
+  }
+  // Plugin tools are loaded by toolRegistry.loadTools() — any tool not in builtInTools is a plugin
+  for (const desc of toolRegistry.getDescriptors()) {
+    if (!toolSources.has(desc.name)) toolSources.set(desc.name, "plugin");
+  }
+
   // ── MCP servers ──────────────────────────────────────────────────────────
   const mcpClients: McpClient[] = [];
 
@@ -214,6 +266,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
         const tools = await bridge.discoverTools();
         for (const tool of tools) {
           toolRegistry.register(tool);
+          toolSources.set(tool.descriptor.name, "mcp");
         }
 
         logger.log({
@@ -245,6 +298,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
         const tools = await skillLoader.loadSkill(name, skillConfig);
         for (const tool of tools) {
           toolRegistry.register(tool);
+          toolSources.set(tool.descriptor.name, "skill");
         }
 
         logger.log({
@@ -284,6 +338,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
     sessionsDirectory: "data/sessions",
     idleTimeoutMs: 30 * 60 * 1000, // 30 minutes
     logger,
+    workingMemoryBudgetChars: config.memory.workingMemoryBudgetChars,
   });
 
   const recoveredCount = await sessionManager.recover();
@@ -391,6 +446,12 @@ export async function createApp(config: BetterClawsConfig, options?: {
         logsDirectory: config.logging.directory,
         memoryDirectory: "data/memory",
         adapterInfos,
+        toolDescriptors: toolRegistry.getDescriptors().map(d => ({
+          name: d.name,
+          description: d.description,
+          capabilities: d.capabilities as unknown as readonly string[],
+          source: toolSources.get(d.name) ?? "built-in",
+        })),
         configPath: options?.configPath,
         rawConfig: options?.rawConfig,
         scheduler,

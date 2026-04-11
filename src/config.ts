@@ -57,6 +57,7 @@ export const DEFAULT_CONFIG: BetterClawsConfig = {
     staleThreshold: 0.2,
     curationIntervalMinutes: 60,
     curationEnabled: true,
+    workingMemoryBudgetChars: 8192,
   },
   logging: {
     directory: "data/logs",

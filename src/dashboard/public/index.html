@@ -95,6 +95,7 @@
           <option value="llm:request">llm:request</option>
           <option value="llm:response">llm:response</option>
           <option value="tool:invoke">tool:invoke</option>
+          <option value="tool:error">tool:error</option>
           <option value="gate:decision">gate:decision</option>
           <option value="executor:start">executor:start</option>
           <option value="executor:result">executor:result</option>
@@ -181,13 +182,20 @@
     <!-- Config View -->
     <section id="view-config" class="view">
       <h2>Configuration</h2>
-      <p class="view-desc">Edit the runtime configuration. Changes are saved to disk. Some settings require a restart.</p>
-      <div id="config-editor-area" class="content-area">
-        <textarea id="config-editor" spellcheck="false"></textarea>
-        <div class="config-actions">
-          <span id="config-status"></span>
-          <button id="config-save" class="btn btn-primary">Save Configuration</button>
+      <p class="view-desc">Edit runtime configuration by section. Changes are saved to disk. Fields marked with <span class="restart-badge">restart</span> require a restart.</p>
+      <div id="config-tabs" class="config-tabs"></div>
+      <div id="config-section-content" class="content-area">
+        <div class="loading-placeholder">Loading...</div>
+      </div>
+      <div class="config-actions">
+        <span id="config-status"></span>
+        <div class="config-actions-right">
+          <button id="config-toggle-json" class="btn">View JSON</button>
+          <button id="config-save" class="btn btn-primary">Save Section</button>
         </div>
+      </div>
+      <div id="config-json-area" style="display:none">
+        <textarea id="config-editor" spellcheck="false" readonly></textarea>
       </div>
     </section>
   </main>

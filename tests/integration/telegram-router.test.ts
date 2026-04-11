@@ -20,7 +20,7 @@ const TEST_CONFIG: BetterClawsConfig = {
   llm: { baseUrl: "http://localhost:11434/v1", apiKey: "", model: "test", maxTokens: 1024, temperature: 0.7 },
   adapters: {},
   security: { defaultCapabilityPolicy: "deny", sandboxTimeout: 30000, stripEnvironment: true, allowPersistentGrants: false },
-  memory: { maxLongTermEntries: 2000, confidenceDecayRate: 0.01, staleThreshold: 0.2, curationIntervalMinutes: 60, curationEnabled: true },
+  memory: { maxLongTermEntries: 2000, confidenceDecayRate: 0.01, staleThreshold: 0.2, curationIntervalMinutes: 60, curationEnabled: true, workingMemoryBudgetChars: 8192 },
   logging: { directory: "data/logs", redactSensitive: true, retentionDays: 90 },
 };
 
@@ -173,6 +173,7 @@ describe("Telegram → Router integration", () => {
       sessionsDirectory: path.join(tmpDir, "sessions"),
       idleTimeoutMs: 60000,
       logger,
+      workingMemoryBudgetChars: 8192,
     });
 
     const mockSecrets = createMockSecretManager();
@@ -351,6 +352,7 @@ describe("Telegram → Router integration", () => {
       sessionsDirectory: path.join(tmpDir, "sessions"),
       idleTimeoutMs: 60000,
       logger,
+      workingMemoryBudgetChars: 8192,
     });
 
     const llmClient = new LlmClient({
@@ -504,6 +506,7 @@ describe("Telegram → Router integration", () => {
       sessionsDirectory: path.join(tmpDir, "sessions"),
       idleTimeoutMs: 60000,
       logger,
+      workingMemoryBudgetChars: 8192,
     });
 
     const llmClient = new LlmClient({

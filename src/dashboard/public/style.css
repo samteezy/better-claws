@@ -725,6 +725,34 @@ h3 {
   color: var(--accent-text);
   font-weight: 600;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tool-source-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+.tool-source-badge.source-built-in {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.tool-source-badge.source-plugin {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+.tool-source-badge.source-mcp {
+  color: var(--purple);
+  background: var(--purple-soft);
+}
+.tool-source-badge.source-skill {
+  color: var(--rose);
+  background: var(--rose-soft);
 }
 .tool-desc { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .tool-caps {
@@ -732,6 +760,19 @@ h3 {
   color: var(--purple);
   margin-top: 4px;
 }
+
+.tools-group-header {
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  padding: 12px 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0;
+}
+.tools-group-header:first-child { padding-top: 0; }
 
 .tool-policy { flex-shrink: 0; }
 
@@ -761,6 +802,115 @@ h3 {
 
 /* ── Config Editor ─────────────────────────────────────────────────────── */
 
+.config-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.config-tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  transition: all 0.2s;
+}
+.config-tab:hover { color: var(--text-mid); border-color: var(--text-muted); }
+.config-tab.active {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.config-section-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.config-field {
+  margin-bottom: 16px;
+}
+.config-field:last-child { margin-bottom: 0; }
+
+.config-field-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.config-field-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.restart-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--amber);
+  background: var(--amber-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.config-field-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.config-field input[type="text"],
+.config-field input[type="number"],
+.config-field input[type="password"],
+.config-field textarea,
+.config-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+.config-field textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-size: 13px;
+}
+.config-field input:focus,
+.config-field textarea:focus,
+.config-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.config-field .toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.config-field .toggle-label {
+  font-size: 13px;
+  color: var(--text-mid);
+}
+
 #config-editor {
   width: 100%;
   min-height: 300px;
@@ -775,6 +925,7 @@ h3 {
   tab-size: 2;
   line-height: 1.6;
   transition: border-color 0.2s, box-shadow 0.2s;
+  margin-top: 12px;
 }
 #config-editor:focus {
   outline: none;
@@ -788,6 +939,11 @@ h3 {
   justify-content: space-between;
   margin-top: 14px;
   gap: 12px;
+}
+.config-actions-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 .config-error   { color: var(--rose); font-size: 13px; }
 .config-success { color: var(--accent); font-size: 13px; }
