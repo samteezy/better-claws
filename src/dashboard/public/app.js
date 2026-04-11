@@ -43,6 +43,7 @@
       case "logs": loadLogs(); break;
       case "memory": loadMemory(); break;
       case "schedules": loadSchedules(); break;
+      case "adapters": loadAdapters(); break;
       case "tools": loadTools(); break;
       case "config": loadConfig(); break;
     }
@@ -264,6 +265,65 @@
     logOffset += logLimit;
     loadLogs();
   });
+
+  // ── Adapters View ───────────────────────────────────────────────────────
+
+  function loadAdapters() {
+    api("/api/adapters").then(function (data) {
+      var adapters = data.adapters || [];
+      var html = "";
+
+      if (adapters.length === 0) {
+        html = '<p class="empty-state">No adapters configured. Add adapters in the configuration to connect betterClaws to chat platforms.</p>';
+      } else {
+        // Show enabled adapters first, then disabled
+        var sorted = adapters.slice().sort(function (a, b) {
+          if (a.enabled === b.enabled) return a.name.localeCompare(b.name);
+          return a.enabled ? -1 : 1;
+        });
+
+        sorted.forEach(function (a) {
+          var statusClass = a.enabled ? (a.connected ? "connected" : "error") : "disabled";
+          var statusText = a.enabled ? (a.connected ? "Connected" : "Error") : "Disabled";
+          var typeLabels = { "polling": "Polling", "websocket": "WebSocket", "http-server": "HTTP Server", "internal": "Internal" };
+
+          html += '<div class="adapter-card' + (a.enabled ? "" : " adapter-disabled") + '">';
+          html += '<div class="adapter-header">';
+          html += '<div class="adapter-title">';
+          html += '<span class="adapter-status-dot status-' + statusClass + '"></span>';
+          html += '<span class="adapter-name">' + esc(a.name) + '</span>';
+          html += '<span class="adapter-type-badge">' + esc(typeLabels[a.type] || a.type) + '</span>';
+          html += '</div>';
+          html += '<span class="adapter-status-text status-' + statusClass + '">' + esc(statusText) + '</span>';
+          html += '</div>';
+
+          html += '<div class="adapter-details">';
+          if (a.host || a.port) {
+            var binding = '';
+            if (a.host) binding += a.host;
+            if (a.port) binding += (binding ? ':' : '') + a.port;
+            html += '<div class="adapter-detail"><span class="adapter-detail-label">Binding</span><span class="adapter-detail-value">' + esc(binding) + '</span></div>';
+          }
+          if (a.path) {
+            html += '<div class="adapter-detail"><span class="adapter-detail-label">Path</span><span class="adapter-detail-value">' + esc(a.path) + '</span></div>';
+          }
+          html += '<div class="adapter-detail"><span class="adapter-detail-label">ID</span><span class="adapter-detail-value adapter-id">' + esc(a.id) + '</span></div>';
+          html += '</div>';
+
+          // Quick link for webchat
+          if (a.id === "webchat" && a.enabled && a.url) {
+            html += '<div class="adapter-link">';
+            html += '<a href="' + esc(a.url) + '" target="_blank" rel="noopener" class="btn btn-sm btn-primary">Open WebChat</a>';
+            html += '</div>';
+          }
+
+          html += '</div>';
+        });
+      }
+
+      document.getElementById("adapters-content").innerHTML = html;
+    });
+  }
 
   // ── Tools View ──────────────────────────────────────────────────────────
 

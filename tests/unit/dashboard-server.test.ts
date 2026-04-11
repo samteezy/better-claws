@@ -67,6 +67,7 @@ describe("DashboardServer", () => {
     memoryDir?: string;
     toolDescriptors?: DashboardContext["toolDescriptors"];
     adapterStatuses?: DashboardContext["adapterStatuses"];
+    adapterInfos?: DashboardContext["adapterInfos"];
   }) {
     const tmpDir = makeTmpDir();
     const logger = createMockLogger();
@@ -96,6 +97,7 @@ describe("DashboardServer", () => {
       memoryDirectory: overrides?.memoryDir,
       toolDescriptors: overrides?.toolDescriptors,
       adapterStatuses: overrides?.adapterStatuses,
+      adapterInfos: overrides?.adapterInfos,
     };
 
     const server = new DashboardServer({
@@ -204,6 +206,166 @@ describe("DashboardServer", () => {
       const data = body as Record<string, unknown>;
       const toolList = data["tools"] as Array<Record<string, unknown>>;
       assert.equal(toolList.length, 0);
+    });
+  });
+
+  describe("GET /api/adapters", () => {
+    it("returns empty array when no adapterInfos provided", async () => {
+      const { server, port } = makeServer();
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/adapters");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const adapters = data["adapters"] as Array<Record<string, unknown>>;
+      assert.equal(adapters.length, 0);
+    });
+
+    it("returns adapter info when adapterInfos is populated", async () => {
+      const adapterInfos = [
+        {
+          id: "telegram",
+          name: "Telegram",
+          enabled: true,
+          type: "polling" as const,
+          connected: true,
+        },
+      ];
+      const { server, port } = makeServer({ adapterInfos });
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/adapters");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const adapters = data["adapters"] as Array<Record<string, unknown>>;
+      assert.equal(adapters.length, 1);
+      assert.equal(adapters[0]!["id"], "telegram");
+      assert.equal(adapters[0]!["name"], "Telegram");
+    });
+
+    it("returns correct fields for each adapter (id, name, enabled, type, connected)", async () => {
+      const adapterInfos = [
+        {
+          id: "slack",
+          name: "Slack",
+          enabled: true,
+          type: "websocket" as const,
+          connected: true,
+        },
+      ];
+      const { server, port } = makeServer({ adapterInfos });
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/adapters");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const adapters = data["adapters"] as Array<Record<string, unknown>>;
+      assert.equal(adapters.length, 1);
+
+      const adapter = adapters[0]!;
+      assert.equal(adapter["id"], "slack");
+      assert.equal(adapter["name"], "Slack");
+      assert.equal(adapter["enabled"], true);
+      assert.equal(adapter["type"], "websocket");
+      assert.equal(adapter["connected"], true);
+    });
+
+    it("includes optional fields (host, port, path, url) when present", async () => {
+      const adapterInfos = [
+        {
+          id: "webhook",
+          name: "Webhook Server",
+          enabled: true,
+          type: "http-server" as const,
+          connected: true,
+          host: "localhost",
+          port: 3000,
+          path: "/webhook",
+          url: "http://localhost:3000/webhook",
+        },
+      ];
+      const { server, port } = makeServer({ adapterInfos });
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/adapters");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const adapters = data["adapters"] as Array<Record<string, unknown>>;
+      const adapter = adapters[0]!;
+
+      assert.equal(adapter["host"], "localhost");
+      assert.equal(adapter["port"], 3000);
+      assert.equal(adapter["path"], "/webhook");
+      assert.equal(adapter["url"], "http://localhost:3000/webhook");
+    });
+
+    it("returns disabled adapters with connected=false", async () => {
+      const adapterInfos = [
+        {
+          id: "discord",
+          name: "Discord",
+          enabled: false,
+          type: "websocket" as const,
+          connected: false,
+        },
+      ];
+      const { server, port } = makeServer({ adapterInfos });
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/adapters");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const adapters = data["adapters"] as Array<Record<string, unknown>>;
+      const adapter = adapters[0]!;
+
+      assert.equal(adapter["enabled"], false);
+      assert.equal(adapter["connected"], false);
+    });
+
+    it("returns multiple adapters in the array", async () => {
+      const adapterInfos = [
+        {
+          id: "telegram",
+          name: "Telegram",
+          enabled: true,
+          type: "polling" as const,
+          connected: true,
+        },
+        {
+          id: "slack",
+          name: "Slack",
+          enabled: true,
+          type: "websocket" as const,
+          connected: false,
+        },
+        {
+          id: "webhook",
+          name: "Webhook",
+          enabled: true,
+          type: "http-server" as const,
+          connected: true,
+          host: "0.0.0.0",
+          port: 8080,
+        },
+      ];
+      const { server, port } = makeServer({ adapterInfos });
+      await server.start();
+
+      const { status, body } = await fetchJson(port, "/api/adapters");
+      assert.equal(status, 200);
+
+      const data = body as Record<string, unknown>;
+      const adapters = data["adapters"] as Array<Record<string, unknown>>;
+      assert.equal(adapters.length, 3);
+
+      assert.equal(adapters[0]!["id"], "telegram");
+      assert.equal(adapters[1]!["id"], "slack");
+      assert.equal(adapters[2]!["id"], "webhook");
     });
   });
 

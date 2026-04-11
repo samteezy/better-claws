@@ -23,7 +23,7 @@ import type {
   StreamableChannelAdapter,
   StreamableResponse,
 } from "./types.js";
-import { DashboardServer } from "./dashboard/dashboard-server.js";
+import { DashboardServer, type DashboardAdapterInfo } from "./dashboard/dashboard-server.js";
 import { createAdapter } from "./adapters/adapter-factory.js";
 import { McpClient, McpToolBridge } from "./mcp/index.js";
 import { SkillLoader } from "./skills/index.js";
@@ -387,7 +387,35 @@ export async function createApp(config: BetterClawsConfig, options?: {
 
   // ── Config-driven adapters ───────────────────────────────────────────────
   const adapterNames: string[] = [];
+  const adapterInfos: DashboardAdapterInfo[] = [];
+
+  const ADAPTER_TYPES: Record<string, DashboardAdapterInfo["type"]> = {
+    telegram: "polling",
+    discord: "websocket",
+    slack: "websocket",
+    signal: "polling",
+    webhook: "http-server",
+    webchat: "http-server",
+  };
+
   for (const [name, adapterConfig] of Object.entries(config.adapters)) {
+    const info: DashboardAdapterInfo = {
+      id: name,
+      name: name.charAt(0).toUpperCase() + name.slice(1),
+      enabled: adapterConfig.enabled,
+      type: ADAPTER_TYPES[name] ?? "internal",
+      connected: adapterConfig.enabled,
+      host: adapterConfig.host,
+      port: adapterConfig.port,
+      path: adapterConfig.path,
+      url: name === "webchat" && adapterConfig.enabled
+        ? `http://${adapterConfig.host ?? "127.0.0.1"}:${adapterConfig.port ?? 18702}`
+        : name === "webhook" && adapterConfig.enabled
+          ? `http://${adapterConfig.host ?? "127.0.0.1"}:${adapterConfig.port}${adapterConfig.path ?? "/webhook"}`
+          : undefined,
+    };
+    adapterInfos.push(info);
+
     if (adapterConfig.enabled) {
       const adapter = createAdapter(name, adapterConfig, logger);
       router.registerAdapter(adapter);
@@ -417,6 +445,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
         config,
         logsDirectory: config.logging.directory,
         memoryDirectory: "data/memory",
+        adapterInfos,
         toolDescriptors: toolRegistry.getDescriptors().map(d => ({
           name: d.name,
           description: d.description,

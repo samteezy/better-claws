@@ -21,6 +21,18 @@ export class DashboardError extends BetterClawsError {
 
 // ── Types for API responses ─────────────────────────────────────────────────
 
+export interface DashboardAdapterInfo {
+  readonly id: string;
+  readonly name: string;
+  readonly enabled: boolean;
+  readonly type: "polling" | "websocket" | "http-server" | "internal";
+  readonly connected: boolean;
+  readonly host?: string;
+  readonly port?: number;
+  readonly path?: string;
+  readonly url?: string;
+}
+
 export interface DashboardToolDescriptor {
   readonly name: string;
   readonly description: string;
@@ -36,6 +48,7 @@ export interface DashboardContext {
   readonly memoryDirectory?: string;
   readonly toolDescriptors?: readonly DashboardToolDescriptor[];
   readonly adapterStatuses?: ReadonlyMap<string, { connected: boolean; name: string }>;
+  readonly adapterInfos?: readonly DashboardAdapterInfo[];
   /** Path to the config file on disk. Required for config save operations. */
   readonly configPath?: string;
   /** Raw config as read from disk (with env: references intact). Used for saving. */
@@ -309,6 +322,8 @@ export class DashboardServer {
       // System
       case path === "/api/status" && method === "GET":
         return this.handleGetStatus(res);
+      case path === "/api/adapters" && method === "GET":
+        return this.handleGetAdapters(res);
       case path === "/api/tools" && method === "GET":
         return this.handleGetTools(res);
       case path === "/api/config" && method === "GET":
@@ -494,6 +509,10 @@ export class DashboardServer {
       adapters,
       memoryUsage: process.memoryUsage(),
     });
+  }
+
+  private handleGetAdapters(res: ServerResponse): void {
+    this.sendJson(res, 200, { adapters: this.context.adapterInfos ?? [] });
   }
 
   private handleGetTools(res: ServerResponse): void {
