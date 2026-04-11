@@ -50,6 +50,33 @@ class CliAdapter implements StreamableChannelAdapter {
     process.stdout.write("\r" + PROMPT_COLOR);
   }
 
+  private hintVisible = false;
+
+  private clearHint(): void {
+    if (!this.hintVisible) return;
+    // Move down one line, clear it, move back up
+    process.stdout.write("\x1b[1B\x1b[2K\x1b[1A");
+    this.hintVisible = false;
+  }
+
+  private showHint(): void {
+    const line = (this.rl as unknown as { line: string }).line ?? "";
+    this.clearHint();
+    if (!line.startsWith("/") || line.includes(" ") || line.length === 0) return;
+
+    const q = line.toLowerCase();
+    const matches = SLASH_COMMANDS.filter((c) => c.name.startsWith(q));
+    if (matches.length === 0) return;
+
+    // Save cursor, move down, write hints, restore cursor
+    const hint = matches
+      .slice(0, 4)
+      .map((c) => stone(`  ${c.name}`) + (c.args ? stone(dim(` ${c.args}`)) : "") + stone(dim(` — ${c.description}`)))
+      .join("\n");
+    process.stdout.write("\x1b[s\n" + hint + "\x1b[u");
+    this.hintVisible = true;
+  }
+
   async start(): Promise<void> {
     const commandNames = SLASH_COMMANDS.map((c) => c.name);
 
@@ -64,9 +91,17 @@ class CliAdapter implements StreamableChannelAdapter {
       },
     });
 
+    // Show command hints as user types
+    if (process.stdin.isTTY) {
+      process.stdin.on("data", () => {
+        setImmediate(() => this.showHint());
+      });
+    }
+
     this.showPrompt();
 
     this.rl.on("line", (line) => {
+      this.clearHint();
       const text = line.trim();
       if (!text) {
         this.showPrompt();

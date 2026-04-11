@@ -961,11 +961,18 @@ const CHAT_HTML = `<!DOCTYPE html>
   var slashCmds = [];
 
   fetch("/commands")
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
     .then(function(cmds) { slashCmds = cmds; })
-    .catch(function() {});
+    .catch(function(err) { console.warn("Failed to load slash commands:", err); });
 
   var acIdx = -1;
+
+  function esc(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
 
   function acRender(items) {
     acList.innerHTML = "";
@@ -976,9 +983,9 @@ const CHAT_HTML = `<!DOCTYPE html>
       div.className = "ac-item";
       div.dataset.name = c.name;
       div.innerHTML =
-        '<span class="ac-name">' + c.name + '</span>' +
-        (c.args ? '<span class="ac-args">' + c.args + '</span>' : '') +
-        '<span class="ac-desc">' + c.description + '</span>';
+        '<span class="ac-name">' + esc(c.name) + '</span>' +
+        (c.args ? '<span class="ac-args">' + esc(c.args) + '</span>' : '') +
+        '<span class="ac-desc">' + esc(c.description) + '</span>';
       div.addEventListener("mousedown", function(ev) {
         ev.preventDefault();
         acSelect(this.dataset.name);
