@@ -57,6 +57,7 @@
       case "memory": loadMemory(); break;
       case "schedules": loadSchedules(); break;
       case "adapters": loadAdapters(); break;
+      case "suggestions": loadSuggestions(); break;
       case "tools": loadTools(); break;
       case "config": loadConfig(); break;
     }
@@ -415,6 +416,107 @@
       document.getElementById("adapters-content").innerHTML = html;
     });
   }
+
+  // ── Suggestions View ────────────────────────────────────────────────────
+
+  var suggestionsFilter = "pending";
+  var suggestionsData = [];
+
+  function loadSuggestions() {
+    api("/api/suggestions").then(function (data) {
+      suggestionsData = data.suggestions || [];
+      renderSuggestions();
+    });
+  }
+
+  function renderSuggestions() {
+    var filtered = suggestionsFilter === "all"
+      ? suggestionsData
+      : suggestionsData.filter(function (s) { return s.status === suggestionsFilter; });
+
+    var html = "";
+    if (filtered.length === 0) {
+      var msg = suggestionsFilter === "pending"
+        ? "No pending suggestions. They'll appear here as betterClaws learns your usage patterns."
+        : "No " + suggestionsFilter + " suggestions.";
+      html = '<p class="empty-state">' + esc(msg) + "</p>";
+    } else {
+      filtered.forEach(function (s) {
+        var catClass = "cat-" + s.category.replace(/[^a-z]/g, "");
+        html += '<div class="suggestion-card suggestion-' + esc(s.status) + '">';
+        html += '<div class="suggestion-header">';
+        html += '<span class="suggestion-cat ' + catClass + '">' + esc(s.category) + "</span>";
+        html += '<span class="suggestion-time">' + new Date(s.createdAt).toLocaleDateString() + "</span>";
+        html += "</div>";
+        html += '<div class="suggestion-title">' + esc(s.title) + "</div>";
+        html += '<div class="suggestion-body">' + esc(s.body) + "</div>";
+        html += '<div class="suggestion-actions">';
+        if (s.status === "pending") {
+          html += '<button class="btn btn-sm btn-primary sug-accept-btn" data-id="' + esc(s.id) + '">Accept</button>';
+          html += '<button class="btn btn-sm sug-dismiss-btn" data-id="' + esc(s.id) + '">Dismiss</button>';
+        } else if (s.status === "dismissed") {
+          html += '<button class="btn btn-sm sug-restore-btn" data-id="' + esc(s.id) + '">Restore</button>';
+          html += '<button class="btn btn-sm btn-danger sug-delete-btn" data-id="' + esc(s.id) + '">Delete</button>';
+        } else {
+          html += '<span class="suggestion-status-label">' + esc(s.status) + "</span>";
+          html += '<button class="btn btn-sm btn-danger sug-delete-btn" data-id="' + esc(s.id) + '">Delete</button>';
+        }
+        html += "</div>";
+        html += "</div>";
+      });
+    }
+    document.getElementById("suggestions-content").innerHTML = html;
+
+    // Bind action buttons
+    document.querySelectorAll(".sug-accept-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () { updateSuggestionStatus(btn.dataset.id, "accepted"); });
+    });
+    document.querySelectorAll(".sug-dismiss-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () { updateSuggestionStatus(btn.dataset.id, "dismissed"); });
+    });
+    document.querySelectorAll(".sug-restore-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () { updateSuggestionStatus(btn.dataset.id, "pending"); });
+    });
+    document.querySelectorAll(".sug-delete-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (!confirm("Delete this suggestion permanently?")) return;
+        fetch("/api/suggestions/" + btn.dataset.id, {
+          method: "DELETE",
+          headers: authHeaders(),
+        }).then(function (r) { return r.json(); }).then(function () { loadSuggestions(); });
+      });
+    });
+  }
+
+  function updateSuggestionStatus(id, status) {
+    fetch("/api/suggestions/" + id, {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ status: status }),
+    }).then(function (r) { return r.json(); }).then(function (result) {
+      if (!result.error) {
+        // Update local data
+        for (var i = 0; i < suggestionsData.length; i++) {
+          if (suggestionsData[i].id === id) {
+            suggestionsData[i].status = status;
+            suggestionsData[i].updatedAt = Date.now();
+            break;
+          }
+        }
+        renderSuggestions();
+      }
+    });
+  }
+
+  // Bind filter buttons
+  document.querySelectorAll(".suggestions-filter-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      suggestionsFilter = btn.dataset.filter;
+      document.querySelectorAll(".suggestions-filter-btn").forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      renderSuggestions();
+    });
+  });
 
   // ── Tools View ──────────────────────────────────────────────────────────
 

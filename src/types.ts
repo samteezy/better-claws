@@ -227,6 +227,8 @@ export const EVENT_TYPES = [
   "session:fork",
   "session:list",
   "config:change",
+  "suggestion:generated",
+  "suggestion:status",
   "secret:access",
   "secret:register",
   "secret:revoke",
@@ -384,6 +386,34 @@ export interface SystemContextConfig {
   readonly timezone?: string;
 }
 
+export interface SuggestionsConfig {
+  readonly enabled: boolean;
+  /** How often to run the suggestion worker, in minutes. */
+  readonly intervalMinutes: number;
+  /** Maximum LLM calls per suggestion cycle. */
+  readonly maxLlmCallsPerCycle: number;
+}
+
+export type SuggestionCategory =
+  | "persona"
+  | "user-context"
+  | "tools"
+  | "integration"
+  | "workflow"
+  | "general";
+
+export type SuggestionStatus = "pending" | "accepted" | "dismissed";
+
+export interface Suggestion {
+  readonly id: string;
+  readonly category: SuggestionCategory;
+  readonly title: string;
+  readonly body: string;
+  status: SuggestionStatus;
+  readonly createdAt: number;
+  updatedAt: number;
+}
+
 export interface BetterClawsConfig {
   readonly gateway: GatewayConfig;
   readonly llm: LlmConfig;
@@ -396,6 +426,7 @@ export interface BetterClawsConfig {
   readonly tools?: ToolsConfig;
   readonly compaction?: CompactionConfig;
   readonly systemContext?: SystemContextConfig;
+  readonly suggestions?: SuggestionsConfig;
   readonly schedules?: readonly import("./scheduler/scheduler.js").ScheduleDefinition[];
 }
 

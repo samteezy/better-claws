@@ -24,6 +24,11 @@
     "userContext": "",
     "timezone": "UTC"
   },
+  "suggestions": {
+    "enabled": false,
+    "intervalMinutes": 120,
+    "maxLlmCallsPerCycle": 2
+  },
   "schedules": [],
   "tools": {
     "mcpServers": {

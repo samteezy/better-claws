@@ -45,6 +45,9 @@
     <button class="nav-btn" data-view="adapters">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
       <span>Adapters</span>
+    <button class="nav-btn" data-view="suggestions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+      <span>Suggestions</span>
     </button>
     <button class="nav-btn" data-view="tools">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
@@ -188,6 +191,17 @@
       <h2>Adapters & Channels</h2>
       <p class="view-desc">Connected chat platforms and their status. Adapters bridge betterClaws to messaging services.</p>
       <div id="adapters-content" class="content-area">
+    <!-- Suggestions View -->
+    <section id="view-suggestions" class="view">
+      <h2>Suggestions</h2>
+      <p class="view-desc">Auto-generated improvement suggestions based on usage patterns. Accept to act on them, or dismiss to hide.</p>
+      <div class="suggestions-filters">
+        <button class="btn suggestions-filter-btn active" data-filter="pending">Pending</button>
+        <button class="btn suggestions-filter-btn" data-filter="accepted">Accepted</button>
+        <button class="btn suggestions-filter-btn" data-filter="dismissed">Dismissed</button>
+        <button class="btn suggestions-filter-btn" data-filter="all">All</button>
+      </div>
+      <div id="suggestions-content" class="content-area">
         <div class="loading-placeholder">Loading...</div>
       </div>
     </section>

@@ -692,6 +692,26 @@ h3 {
 /* ── Adapters View ────────────────────────────────────────────────────── */
 
 .adapter-card {
+/* ── Suggestions View ─────────────────────────────────────────────────── */
+
+.suggestions-filters {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.suggestions-filter-btn {
+  border-radius: 20px;
+  font-size: 12px;
+  padding: 5px 14px;
+}
+.suggestions-filter-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.suggestion-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -731,6 +751,17 @@ h3 {
 }
 
 .adapter-type-badge {
+.suggestion-card.suggestion-dismissed { opacity: 0.5; }
+.suggestion-card.suggestion-accepted { border-left: 3px solid var(--accent); }
+
+.suggestion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.suggestion-cat {
   display: inline-block;
   font-size: 10px;
   font-weight: 600;
@@ -786,6 +817,51 @@ h3 {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--border-light);
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.suggestion-cat.cat-persona     { color: var(--purple); background: var(--purple-soft); }
+.suggestion-cat.cat-usercontext { color: var(--amber); background: var(--amber-soft); }
+.suggestion-cat.cat-tools       { color: var(--accent-text); background: var(--accent-soft); }
+.suggestion-cat.cat-integration { color: var(--rose); background: var(--rose-soft); }
+.suggestion-cat.cat-workflow    { color: var(--amber); background: var(--amber-soft); }
+.suggestion-cat.cat-general     { color: var(--text-muted); background: var(--bg-warm); }
+
+.suggestion-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.suggestion-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.suggestion-body {
+  font-size: 13px;
+  color: var(--text-mid);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.suggestion-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.suggestion-status-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--accent-text);
+  padding: 2px 8px;
+  background: var(--accent-soft);
+  border-radius: 4px;
 }
 
 /* ── Tools View ────────────────────────────────────────────────────────── */

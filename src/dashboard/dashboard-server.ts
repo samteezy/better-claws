@@ -53,6 +53,8 @@ export interface DashboardContext {
   readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
   /** Long-term memory store instance for memory management. */
   readonly longTermStore?: import("../memory/long-term-store.js").LongTermStore;
+  /** Suggestion store for managing auto-suggestions. */
+  readonly suggestionStore?: import("../suggestions/suggestion-store.js").SuggestionStore;
 }
 
 export interface DashboardServerOptions {
@@ -347,6 +349,14 @@ export class DashboardServer {
         return await this.handleUpdateSchedule(req, res, path);
       case path.startsWith("/api/schedules/") && method === "DELETE":
         return await this.handleDeleteSchedule(res, path);
+
+      // Suggestions
+      case path === "/api/suggestions" && method === "GET":
+        return this.handleGetSuggestions(res);
+      case path.startsWith("/api/suggestions/") && method === "PUT":
+        return await this.handleUpdateSuggestion(req, res, path);
+      case path.startsWith("/api/suggestions/") && method === "DELETE":
+        return this.handleDeleteSuggestion(res, path);
 
       default:
         this.sendJson(res, 404, { error: "API endpoint not found" });
@@ -913,6 +923,78 @@ export class DashboardServer {
       return;
     }
 
+    this.sendJson(res, 200, { success: true });
+  }
+
+  // ── Suggestion endpoints ───────────────────────────────────────────────
+
+  private handleGetSuggestions(res: ServerResponse): void {
+    if (!this.context.suggestionStore) {
+      this.sendJson(res, 200, { suggestions: [] });
+      return;
+    }
+
+    const suggestions = this.context.suggestionStore.getAll()
+      .slice()
+      .sort((a, b) => b.createdAt - a.createdAt);
+
+    this.sendJson(res, 200, { suggestions });
+  }
+
+  private async handleUpdateSuggestion(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+    if (!this.context.suggestionStore) {
+      this.sendJson(res, 400, { error: "Suggestions not configured" });
+      return;
+    }
+
+    const id = path.split("/api/suggestions/")[1];
+    if (!id) {
+      this.sendJson(res, 400, { error: "Missing suggestion ID" });
+      return;
+    }
+
+    const body = await this.readRequestBody(req);
+    if (!body) {
+      this.sendJson(res, 400, { error: "Invalid request body" });
+      return;
+    }
+
+    const status = body["status"] as string | undefined;
+    const validStatuses = ["pending", "accepted", "dismissed"];
+    if (!status || !validStatuses.includes(status)) {
+      this.sendJson(res, 400, { error: `"status" must be one of: ${validStatuses.join(", ")}` });
+      return;
+    }
+
+    const updated = this.context.suggestionStore.updateStatus(id, status as "pending" | "accepted" | "dismissed");
+    if (!updated) {
+      this.sendJson(res, 404, { error: `Suggestion "${id}" not found` });
+      return;
+    }
+
+    await this.context.suggestionStore.persist();
+    this.sendJson(res, 200, { suggestion: updated });
+  }
+
+  private handleDeleteSuggestion(res: ServerResponse, path: string): void {
+    if (!this.context.suggestionStore) {
+      this.sendJson(res, 400, { error: "Suggestions not configured" });
+      return;
+    }
+
+    const id = path.split("/api/suggestions/")[1];
+    if (!id) {
+      this.sendJson(res, 400, { error: "Missing suggestion ID" });
+      return;
+    }
+
+    const deleted = this.context.suggestionStore.delete(id);
+    if (!deleted) {
+      this.sendJson(res, 404, { error: `Suggestion "${id}" not found` });
+      return;
+    }
+
+    void this.context.suggestionStore.persist();
     this.sendJson(res, 200, { success: true });
   }
 

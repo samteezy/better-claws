@@ -25,6 +25,8 @@ import { CliAdapter } from "./adapters/cli/cli-adapter.js";
 import { McpClient, McpToolBridge } from "./mcp/index.js";
 import { SkillLoader } from "./skills/index.js";
 import { Scheduler } from "./scheduler/scheduler.js";
+import { SuggestionStore } from "./suggestions/suggestion-store.js";
+import { SuggestionWorker } from "./suggestions/suggestion-worker.js";
 import { sage, stone, bold, dim } from "./utils/ansi.js";
 
 // ── App Factory ───────────────────────────────────────────────────────────────
@@ -277,6 +279,29 @@ export async function createApp(config: BetterClawsConfig, options?: {
 
   router.registerAdapter(scheduler);
 
+  // ── Suggestions ──────────────────────────────────────────────────────────
+  const suggestionsConfig = config.suggestions ?? { enabled: false, intervalMinutes: 120, maxLlmCallsPerCycle: 2 };
+
+
+  const suggestionStore = new SuggestionStore({
+    directory: "data/suggestions",
+    logger,
+  });
+  await suggestionStore.load();
+
+  // Use weak LLM if available, otherwise primary
+  const suggestionLlmClient = weakLlmClient ?? llmClient;
+  const suggestionWorker = new SuggestionWorker({
+    store: suggestionStore,
+    memoryStore: longTermStore,
+    llmClient: suggestionLlmClient,
+    config: suggestionsConfig,
+    appConfig: config,
+    logger,
+    logsDirectory: config.logging.directory,
+  });
+  await suggestionWorker.start();
+
   // ── Dashboard ────────────────────────────────────────────────────────────
   const dashboardEnabled = options?.dashboard ?? config.dashboard?.enabled ?? false;
   let dashboard: DashboardServer | null = null;
@@ -308,6 +333,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
         rawConfig: options?.rawConfig,
         scheduler,
         longTermStore,
+        suggestionStore,
       },
     });
 
@@ -320,6 +346,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
     adapterNames,
     stop: async () => {
       await dashboard?.stop();
+      await suggestionWorker.stop();
       await scheduler.stop();
       await router.stop();
       for (const client of mcpClients) {

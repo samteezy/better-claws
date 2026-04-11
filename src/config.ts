@@ -62,6 +62,11 @@ export const DEFAULT_CONFIG: BetterClawsConfig = {
   systemContext: {
     timezone: "UTC",
   },
+  suggestions: {
+    enabled: false,
+    intervalMinutes: 120,
+    maxLlmCallsPerCycle: 2,
+  },
 };
 
 export function resolveEnvSecrets(obj: unknown): unknown {
