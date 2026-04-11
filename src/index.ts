@@ -10,7 +10,7 @@ import { CapabilityGate } from "./tools/capability-gate.js";
 import { ToolExecutor } from "./tools/executor.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { SessionCompactor } from "./sessions/compactor.js";
-import { MessageRouter, SYSTEM_PROMPT } from "./router/message-router.js";
+import { MessageRouter, SYSTEM_PROMPT, SLASH_COMMANDS } from "./router/message-router.js";
 import { PromptBuilder } from "./prompt/prompt-builder.js";
 import { join } from "node:path";
 import { builtInTools } from "./tools/built-in/index.js";
@@ -51,10 +51,17 @@ class CliAdapter implements StreamableChannelAdapter {
   }
 
   async start(): Promise<void> {
+    const commandNames = SLASH_COMMANDS.map((c) => c.name);
+
     this.rl = createInterface({
       input: process.stdin,
       output: process.stdout,
       prompt: PROMPT_PLAIN,
+      completer: (line: string): [string[], string] => {
+        if (!line.startsWith("/")) return [[], line];
+        const hits = commandNames.filter((n) => n.startsWith(line));
+        return [hits, line];
+      },
     });
 
     this.showPrompt();

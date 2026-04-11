@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
+import { SLASH_COMMANDS } from "../../router/message-router.js";
 import {
   BetterClawsError,
   type InboundMessage,
@@ -218,6 +219,12 @@ export class WebChatAdapter implements StreamableChannelAdapter {
       html = html.replace("__MARKDOWN_JS__", () => this.markdownJs);
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(html);
+      return;
+    }
+
+    if (method === "GET" && path === "/commands") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(SLASH_COMMANDS));
       return;
     }
 
@@ -636,6 +643,54 @@ const CHAT_HTML = `<!DOCTYPE html>
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
   ::selection { background: rgba(var(--accent-rgb),0.2); }
+  .autocomplete-wrap { position: relative; flex: 1; }
+  .autocomplete-wrap #input { width: 100%; }
+  #ac-list {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0; right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    overflow: hidden;
+    z-index: 10;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  #ac-list.show { display: block; }
+  .ac-item {
+    padding: 9px 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    transition: background 0.1s;
+  }
+  .ac-item:hover, .ac-item.active {
+    background: var(--bg-warm);
+  }
+  .ac-item .ac-name {
+    font-family: "DM Mono", monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .ac-item .ac-args {
+    font-family: "DM Mono", monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .ac-item .ac-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .thinking {
     margin-bottom: 6px;
     padding: 8px 12px;
@@ -715,7 +770,10 @@ const CHAT_HTML = `<!DOCTYPE html>
   </header>
   <div id="messages"></div>
   <form id="chat-form">
-    <input id="input" type="text" placeholder="Type a message\u2026" autocomplete="off" />
+    <div class="autocomplete-wrap">
+      <div id="ac-list"></div>
+      <input id="input" type="text" placeholder="Type a message\u2026" autocomplete="off" />
+    </div>
     <button id="send-btn" type="submit">Send</button>
   </form>
 </div>
@@ -896,6 +954,93 @@ const CHAT_HTML = `<!DOCTYPE html>
     .finally(function() {
       setEnabled(true);
     });
+  });
+
+  // ── Slash-command autocomplete ──────────────────────────────────────────
+  var acList = document.getElementById("ac-list");
+  var slashCmds = [];
+
+  fetch("/commands")
+    .then(function(r) { return r.json(); })
+    .then(function(cmds) { slashCmds = cmds; })
+    .catch(function() {});
+
+  var acIdx = -1;
+
+  function acRender(items) {
+    acList.innerHTML = "";
+    if (items.length === 0) { acList.classList.remove("show"); return; }
+    for (var i = 0; i < items.length; i++) {
+      var c = items[i];
+      var div = document.createElement("div");
+      div.className = "ac-item";
+      div.dataset.name = c.name;
+      div.innerHTML =
+        '<span class="ac-name">' + c.name + '</span>' +
+        (c.args ? '<span class="ac-args">' + c.args + '</span>' : '') +
+        '<span class="ac-desc">' + c.description + '</span>';
+      div.addEventListener("mousedown", function(ev) {
+        ev.preventDefault();
+        acSelect(this.dataset.name);
+      });
+      acList.appendChild(div);
+    }
+    acList.classList.add("show");
+    acIdx = -1;
+  }
+
+  function acFilter() {
+    var val = input.value;
+    if (!val.startsWith("/") || val.includes(" ") || slashCmds.length === 0) {
+      acList.classList.remove("show");
+      return;
+    }
+    var q = val.toLowerCase();
+    var matches = slashCmds.filter(function(c) { return c.name.startsWith(q); });
+    acRender(matches);
+  }
+
+  function acSelect(name) {
+    input.value = name + " ";
+    acList.classList.remove("show");
+    acIdx = -1;
+    input.focus();
+  }
+
+  function acHighlight(idx) {
+    var items = acList.querySelectorAll(".ac-item");
+    for (var i = 0; i < items.length; i++) items[i].classList.remove("active");
+    if (idx >= 0 && idx < items.length) {
+      items[idx].classList.add("active");
+      items[idx].scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  input.addEventListener("input", acFilter);
+  input.addEventListener("blur", function() {
+    setTimeout(function() { acList.classList.remove("show"); }, 120);
+  });
+  input.addEventListener("focus", acFilter);
+
+  input.addEventListener("keydown", function(e) {
+    if (!acList.classList.contains("show")) return;
+    var items = acList.querySelectorAll(".ac-item");
+    if (items.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      acIdx = acIdx < items.length - 1 ? acIdx + 1 : 0;
+      acHighlight(acIdx);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      acIdx = acIdx > 0 ? acIdx - 1 : items.length - 1;
+      acHighlight(acIdx);
+    } else if ((e.key === "Enter" || e.key === "Tab") && acIdx >= 0) {
+      e.preventDefault();
+      acSelect(items[acIdx].dataset.name);
+    } else if (e.key === "Escape") {
+      acList.classList.remove("show");
+      acIdx = -1;
+    }
   });
 
   input.focus();
