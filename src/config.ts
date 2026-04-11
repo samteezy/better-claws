@@ -50,6 +50,7 @@ export const DEFAULT_CONFIG: BetterClawsConfig = {
     sandboxTimeout: 30000,
     stripEnvironment: true,
     allowPersistentGrants: false,
+    autoGrantCapabilities: ["fs:read", "memory:read", "memory:write"],
   },
   memory: {
     maxLongTermEntries: 2000,
