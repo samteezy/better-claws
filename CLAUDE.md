@@ -95,7 +95,7 @@ All user-facing surfaces share a cohesive warm, light aesthetic.
 
 **Typography**: Outfit (headings), DM Sans (body), DM Mono (code). In terminal contexts, use ANSI 24-bit RGB equivalents of the palette.
 
-**Principles**: Mobile-first, soft shadows over hard borders, generous radius (14px web / 20px bubbles), subtle animations. No dark mode — the warmth is the identity.
+**Principles**: Mobile-first, soft shadows over hard borders, generous radius (14px web / 20px bubbles), subtle animations. Dark mode available via sun/moon toggle in header; uses warm charcoal palette preserving earthy identity. Theme stored in localStorage key `bc_theme` (default: light).
 
 ## README
 

@@ -436,11 +436,51 @@ const CHAT_HTML = `<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Outfit:wght@500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --bg: #f6f4f0;
+    --bg-warm: #efece6;
+    --surface: #ffffff;
+    --surface-alt: #faf9f6;
+    --border: #e6e2db;
+    --text: #3a3632;
+    --text-muted: #9e9891;
+    --accent: #6b8f71;
+    --accent-dark: #5a7d60;
+    --accent-rgb: 107,143,113;
+    --rose-soft: #fae8e8;
+    --rose-text: #943e3e;
+    --code-bg: #f0ece6;
+    --thinking-bg: #f3f1ed;
+    --thinking-text: #7a756d;
+    --scrollbar: #ddd8d0;
+    --placeholder: #b5b0a8;
+    --app-shadow: rgba(0,0,0,0.04);
+  }
+  html[data-theme="dark"] {
+    --bg: #1e1b18;
+    --bg-warm: #262220;
+    --surface: #2a2622;
+    --surface-alt: #322e2a;
+    --border: #3e3a35;
+    --text: #e8e4df;
+    --text-muted: #7a756f;
+    --accent: #7fa386;
+    --accent-dark: #6b9172;
+    --accent-rgb: 42,58,44;
+    --rose-soft: #3a2828;
+    --rose-text: #d48282;
+    --code-bg: #322e2a;
+    --thinking-bg: #2a2622;
+    --thinking-text: #b0aaa3;
+    --scrollbar: #4a4540;
+    --placeholder: #7a756f;
+    --app-shadow: rgba(0,0,0,0.2);
+  }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
   body {
     font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #f6f4f0;
+    background: var(--bg);
     display: flex;
     justify-content: center;
     -webkit-font-smoothing: antialiased;
@@ -449,13 +489,13 @@ const CHAT_HTML = `<!DOCTYPE html>
     width: 100%; max-width: 640px;
     height: 100dvh;
     display: flex; flex-direction: column;
-    background: #faf9f6;
-    box-shadow: 0 0 40px rgba(0,0,0,0.04);
+    background: var(--surface-alt);
+    box-shadow: 0 0 40px var(--app-shadow);
   }
   header {
     padding: 16px 20px;
-    background: #ffffff;
-    border-bottom: 1px solid #e6e2db;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
     gap: 10px;
@@ -464,17 +504,33 @@ const CHAT_HTML = `<!DOCTYPE html>
     font-family: "Outfit", sans-serif;
     font-size: 16px;
     font-weight: 600;
-    color: #3a3632;
+    color: var(--text);
     letter-spacing: -0.2px;
   }
   header span.dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #6b8f71;
+    background: var(--accent);
     opacity: 0.8;
     animation: pulse-dot 3s ease-in-out infinite;
   }
+  .theme-toggle {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 5px 7px;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .theme-toggle:hover { color: var(--text); }
+  .theme-toggle svg { width: 16px; height: 16px; }
+  html[data-theme="dark"] .icon-sun { display: none; }
+  html:not([data-theme="dark"]) .icon-moon { display: none; }
   @keyframes pulse-dot {
     0%, 100% { opacity: 0.8; transform: scale(1); }
     50% { opacity: 0.4; transform: scale(0.85); }
@@ -504,33 +560,33 @@ const CHAT_HTML = `<!DOCTYPE html>
   }
   .msg.user {
     align-self: flex-end;
-    background: #6b8f71;
+    background: var(--accent);
     color: #fff;
     border-bottom-right-radius: 6px;
   }
   .msg.assistant {
     align-self: flex-start;
-    background: #ffffff;
-    color: #3a3632;
-    border: 1px solid #e6e2db;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
     border-bottom-left-radius: 6px;
   }
   .msg.error {
     align-self: flex-start;
-    background: #fae8e8;
-    color: #943e3e;
+    background: var(--rose-soft);
+    color: var(--rose-text);
     border-bottom-left-radius: 6px;
   }
   .typing {
     align-self: flex-start;
     padding: 12px 20px;
-    background: #ffffff;
-    border: 1px solid #e6e2db;
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 20px;
     border-bottom-left-radius: 6px;
     font-size: 16px;
     letter-spacing: 3px;
-    color: #9e9891;
+    color: var(--text-muted);
   }
   @keyframes blink { 50% { opacity: 0.25; } }
   .typing span { animation: blink 1.4s ease-in-out infinite; }
@@ -540,30 +596,30 @@ const CHAT_HTML = `<!DOCTYPE html>
     display: flex;
     gap: 8px;
     padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 12px);
-    border-top: 1px solid #e6e2db;
-    background: #ffffff;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
   }
   #input {
     flex: 1;
     padding: 11px 16px;
-    border: 1px solid #e6e2db;
+    border: 1px solid var(--border);
     border-radius: 14px;
     font-size: 14px;
     font-family: inherit;
-    color: #3a3632;
-    background: #faf9f6;
+    color: var(--text);
+    background: var(--surface-alt);
     outline: none;
     transition: border-color 0.2s, box-shadow 0.2s;
   }
-  #input::placeholder { color: #b5b0a8; }
+  #input::placeholder { color: var(--placeholder); }
   #input:focus {
-    border-color: #6b8f71;
-    box-shadow: 0 0 0 3px rgba(107,143,113,0.12);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.12);
   }
-  #input:disabled { background: #efece6; color: #9e9891; }
+  #input:disabled { background: var(--bg-warm); color: var(--text-muted); }
   #send-btn {
     padding: 11px 20px;
-    background: #6b8f71;
+    background: var(--accent);
     color: #fff;
     border: none;
     border-radius: 14px;
@@ -573,21 +629,21 @@ const CHAT_HTML = `<!DOCTYPE html>
     cursor: pointer;
     transition: background 0.15s, transform 0.1s;
   }
-  #send-btn:hover:not(:disabled) { background: #5a7d60; }
+  #send-btn:hover:not(:disabled) { background: var(--accent-dark); }
   #send-btn:active:not(:disabled) { transform: scale(0.96); }
   #send-btn:disabled { opacity: 0.4; cursor: default; }
   ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #ddd8d0; border-radius: 3px; }
-  ::selection { background: rgba(107,143,113,0.2); }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+  ::selection { background: rgba(var(--accent-rgb),0.2); }
   .thinking {
     margin-bottom: 6px;
     padding: 8px 12px;
-    background: #f3f1ed;
+    background: var(--thinking-bg);
     border-radius: 10px;
     font-size: 13px;
-    color: #7a756d;
-    border: 1px solid #e6e2db;
+    color: var(--thinking-text);
+    border: 1px solid var(--border);
   }
   .thinking summary {
     cursor: pointer;
@@ -595,7 +651,7 @@ const CHAT_HTML = `<!DOCTYPE html>
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #9e9891;
+    color: var(--text-muted);
   }
   .thinking-content {
     margin-top: 6px;
@@ -608,22 +664,22 @@ const CHAT_HTML = `<!DOCTYPE html>
   .md-content h4, .md-content h5, .md-content h6 {
     margin: 0.8em 0 0.3em;
     font-family: "Outfit", sans-serif;
-    color: #3a3632;
+    color: var(--text);
   }
   .md-content h4 { font-size: 1.1em; }
   .md-content h5 { font-size: 1em; }
-  .md-content h6 { font-size: 0.95em; color: #9e9891; }
+  .md-content h6 { font-size: 0.95em; color: var(--text-muted); }
   .md-content strong { font-weight: 600; }
   .md-content code {
     font-family: "DM Mono", "SF Mono", monospace;
     font-size: 0.88em;
-    background: #f0ece6;
+    background: var(--code-bg);
     padding: 0.15em 0.4em;
     border-radius: 5px;
   }
   .md-content pre {
-    background: #f0ece6;
-    border: 1px solid #e6e2db;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
     border-radius: 10px;
     padding: 12px 14px;
     overflow-x: auto;
@@ -642,7 +698,7 @@ const CHAT_HTML = `<!DOCTYPE html>
   .md-content li { margin: 0.15em 0; }
   .md-content hr {
     border: none;
-    border-top: 1px solid #e6e2db;
+    border-top: 1px solid var(--border);
     margin: 0.6em 0;
   }
 </style>
@@ -652,6 +708,10 @@ const CHAT_HTML = `<!DOCTYPE html>
   <header>
     <span class="title">betterClaws</span>
     <span class="dot"></span>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
   </header>
   <div id="messages"></div>
   <form id="chat-form">
@@ -662,6 +722,17 @@ const CHAT_HTML = `<!DOCTYPE html>
 <script>__MARKDOWN_JS__</script>
 <script>
 (function() {
+  var THEME_KEY = "bc_theme";
+  function applyTheme(t) {
+    document.documentElement.setAttribute("data-theme", t);
+    localStorage.setItem(THEME_KEY, t);
+  }
+  applyTheme(localStorage.getItem(THEME_KEY) || "light");
+  document.getElementById("theme-toggle").addEventListener("click", function() {
+    var c = document.documentElement.getAttribute("data-theme");
+    applyTheme(c === "dark" ? "light" : "dark");
+  });
+
   var messages = [];
   var messagesEl = document.getElementById("messages");
   var form = document.getElementById("chat-form");
