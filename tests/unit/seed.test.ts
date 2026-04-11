@@ -25,7 +25,7 @@ function createMinimalConfig(overrides?: Partial<BetterClawsConfig>): BetterClaw
     llm: { baseUrl: "http://localhost", apiKey: "", model: "gpt-4", maxTokens: 4096, temperature: 0.7 },
     adapters: {},
     security: { defaultCapabilityPolicy: "deny", sandboxTimeout: 5000, stripEnvironment: true, allowPersistentGrants: false },
-    memory: { maxLongTermEntries: 1000, confidenceDecayRate: 0.01, staleThreshold: 86400000, curationIntervalMinutes: 60, curationEnabled: true },
+    memory: { maxLongTermEntries: 1000, confidenceDecayRate: 0.01, staleThreshold: 86400000, curationIntervalMinutes: 60, curationEnabled: true, workingMemoryBudgetChars: 8192 },
     logging: { directory: "./logs", redactSensitive: true, retentionDays: 7 },
     ...overrides,
   };

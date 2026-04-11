@@ -1,9 +1,10 @@
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SessionManager, SessionError } from "../../src/sessions/session-manager.js";
+import { workingMemoryRegistry } from "../../src/tools/built-in/memory-update.js";
 import type {
   SessionLogEntry,
 } from "../../src/types.js";
@@ -52,7 +53,13 @@ describe("SessionManager", () => {
       sessionsDirectory: join(tempDir, `sessions-${testCounter}`),
       idleTimeoutMs: 5000,
       logger: logger as unknown as StructuredLogger,
+      workingMemoryBudgetChars: 8192,
     });
+  });
+
+  afterEach(() => {
+    // Clear the working memory registry to prevent cross-test pollution
+    workingMemoryRegistry.clear();
   });
 
   describe("getOrCreate()", () => {
@@ -121,6 +128,15 @@ describe("SessionManager", () => {
       assert.ok(
         session2.state.lastActivityAt >= originalTime,
         "lastActivityAt should be updated or unchanged"
+      );
+    });
+
+    it("populates workingMemoryRegistry with session id", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      assert.ok(
+        workingMemoryRegistry.has(session.id),
+        "session id should be in working memory registry"
       );
     });
   });
@@ -446,6 +462,7 @@ describe("SessionManager", () => {
         sessionsDirectory: join(tempDir, "sessions-short"),
         idleTimeoutMs: 100,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const session = await managerWithShortTimeout.getOrCreate(
@@ -572,6 +589,19 @@ describe("SessionManager", () => {
         "archivePath should contain session id",
       );
     });
+
+    it("removes session from workingMemoryRegistry", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      assert.ok(workingMemoryRegistry.has(session.id), "session should be in registry before close");
+
+      await sessionManager.close(session.id);
+
+      assert.ok(
+        !workingMemoryRegistry.has(session.id),
+        "session should be removed from registry after close"
+      );
+    });
   });
 
   describe("destroy()", () => {
@@ -688,6 +718,19 @@ describe("SessionManager", () => {
         `directory should be empty after destroy, but contains: ${files.join(", ")}`,
       );
     });
+
+    it("removes session from workingMemoryRegistry", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      assert.ok(workingMemoryRegistry.has(session.id), "session should be in registry before destroy");
+
+      await sessionManager.destroy(session.id);
+
+      assert.ok(
+        !workingMemoryRegistry.has(session.id),
+        "session should be removed from registry after destroy"
+      );
+    });
   });
 
   describe("recover()", () => {
@@ -713,6 +756,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const count = await recoveredManager.recover();
@@ -723,6 +767,42 @@ describe("SessionManager", () => {
       assert.equal(recovered.state.adapterId, "telegram");
       assert.equal(recovered.state.channelId, "chat-123");
       assert.equal(recovered.state.senderId, "user-456");
+    });
+
+    it("recovered sessions get entry in workingMemoryRegistry", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+
+      // Clear registry to simulate fresh recovery
+      workingMemoryRegistry.clear();
+
+      // Create a fresh SessionManager
+      const recoveredManager = new SessionManager({
+        sessionsDirectory: sessionManager["sessionsDirectory"],
+        idleTimeoutMs: 5000,
+        logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
+      });
+
+      await recoveredManager.recover();
+
+      assert.ok(
+        workingMemoryRegistry.has(session.id),
+        "recovered session should have entry in working memory registry"
+      );
     });
 
     it("extracted session has correct createdAt from first message timestamp", async () => {
@@ -760,6 +840,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       await recoveredManager.recover();
@@ -809,6 +890,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       await recoveredManager.recover();
@@ -858,6 +940,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const count = await recoveredManager.recover();
@@ -886,6 +969,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const count = await recoveredManager.recover();
@@ -911,6 +995,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: mockLoggerForRecovery as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       await recoveredManagerWithMockLogger2.recover();
@@ -934,6 +1019,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const count = await malformedRecoveryManager.recover();
@@ -951,6 +1037,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const count = await recoveredManager.recover();
@@ -963,6 +1050,7 @@ describe("SessionManager", () => {
         sessionsDirectory: join(tempDir, "empty-sessions"),
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const count = await emptyManager.recover();
@@ -975,6 +1063,7 @@ describe("SessionManager", () => {
         sessionsDirectory: join(tempDir, "nonexistent"),
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const count = await nonexistentManager.recover();
@@ -1030,6 +1119,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       await recoveredManager.recover();
@@ -1069,6 +1159,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       await recoveredManager.recover();
@@ -1103,6 +1194,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: mockLoggerForRecovery as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       await recoveredManager.recover();
@@ -1153,6 +1245,7 @@ describe("SessionManager", () => {
         sessionsDirectory: sessionManager["sessionsDirectory"],
         idleTimeoutMs: 5000,
         logger: logger as unknown as StructuredLogger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const count = await recoveredManager.recover();
@@ -1709,6 +1802,36 @@ describe("SessionManager", () => {
       assert.equal(forkLog.payload.adapterId, "discord");
       assert.equal(forkLog.payload.channelId, "channel-456");
       assert.equal(forkLog.payload.senderId, "user-789");
+    });
+
+    it("forked session gets entry in workingMemoryRegistry", async () => {
+      const sourceSession = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const msg: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Test",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(sourceSession.id, msg);
+
+      const forkedSession = await sessionManager.fork(
+        sourceSession.id,
+        "discord",
+        "channel-456",
+        "user-789"
+      );
+
+      assert.ok(
+        workingMemoryRegistry.has(forkedSession.id),
+        "forked session should have entry in working memory registry"
+      );
     });
   });
 

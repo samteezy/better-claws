@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { tokenize, TfIdfRetriever } from "../../src/memory/retrieval.js";
 import { LongTermStore } from "../../src/memory/long-term-store.js";
-import type { MemoryConfig } from "../../src/types.js";
+import { DEFAULT_MEMORY_CONFIG } from "../helpers/memory-config.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 
 function createMockLogger() {
@@ -16,14 +16,6 @@ function createMockLogger() {
     async close(): Promise<void> {},
   } as unknown as StructuredLogger;
 }
-
-const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
-  maxLongTermEntries: 1000,
-  confidenceDecayRate: 0.01,
-  staleThreshold: 0.2,
-  curationIntervalMinutes: 60,
-  curationEnabled: true,
-};
 
 describe("tokenize()", () => {
   it("lowercases and splits on non-alphanumeric", () => {
@@ -66,7 +58,7 @@ describe("TfIdfRetriever", () => {
     tempDir = await mkdtemp(join(tmpdir(), "bc-tfidf-"));
     store = new LongTermStore({
       directory: tempDir,
-      config: DEFAULT_MEMORY_CONFIG,
+      config: { ...DEFAULT_MEMORY_CONFIG, maxLongTermEntries: 1000 },
       logger: createMockLogger(),
     });
     retriever = new TfIdfRetriever({ store, minConfidence: 0 });

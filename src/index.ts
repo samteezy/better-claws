@@ -338,6 +338,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
     sessionsDirectory: "data/sessions",
     idleTimeoutMs: 30 * 60 * 1000, // 30 minutes
     logger,
+    workingMemoryBudgetChars: config.memory.workingMemoryBudgetChars,
   });
 
   const recoveredCount = await sessionManager.recover();

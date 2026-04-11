@@ -10,6 +10,8 @@ import {
   type SessionState,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
+import { WorkingMemory } from "../memory/working-memory.js";
+import { workingMemoryRegistry } from "../tools/built-in/memory-update.js";
 
 export class SessionError extends BetterClawsError {
   constructor(message: string, code: string = "SESSION_ERROR") {
@@ -28,6 +30,7 @@ export interface SessionManagerOptions {
   readonly sessionsDirectory: string;
   readonly idleTimeoutMs: number;
   readonly logger: StructuredLogger;
+  readonly workingMemoryBudgetChars: number;
 }
 
 export interface SessionListItem {
@@ -44,6 +47,7 @@ export class SessionManager {
   private readonly sessionsDirectory: string;
   private readonly idleTimeoutMs: number;
   private readonly logger: StructuredLogger;
+  private readonly workingMemoryBudgetChars: number;
   private readonly sessions = new Map<string, Session>();
   private dirCreated = false;
 
@@ -51,6 +55,7 @@ export class SessionManager {
     this.sessionsDirectory = options.sessionsDirectory;
     this.idleTimeoutMs = options.idleTimeoutMs;
     this.logger = options.logger;
+    this.workingMemoryBudgetChars = options.workingMemoryBudgetChars;
   }
 
   async getOrCreate(
@@ -84,6 +89,16 @@ export class SessionManager {
     };
 
     this.sessions.set(id, session);
+
+    if (!workingMemoryRegistry.has(id)) {
+      workingMemoryRegistry.set(
+        id,
+        new WorkingMemory(id, {
+          maxSizeChars: this.workingMemoryBudgetChars,
+          logger: this.logger,
+        }),
+      );
+    }
 
     this.logger.log({
       sessionId: id,
@@ -271,6 +286,7 @@ export class SessionManager {
     });
 
     this.sessions.delete(sessionId);
+    workingMemoryRegistry.delete(sessionId);
   }
 
   async destroy(sessionId: string): Promise<void> {
@@ -291,6 +307,7 @@ export class SessionManager {
     });
 
     this.sessions.delete(sessionId);
+    workingMemoryRegistry.delete(sessionId);
   }
 
   async listArchived(): Promise<
@@ -388,6 +405,13 @@ export class SessionManager {
       };
 
       this.sessions.set(id, session);
+      workingMemoryRegistry.set(
+        id,
+        new WorkingMemory(id, {
+          maxSizeChars: this.workingMemoryBudgetChars,
+          logger: this.logger,
+        }),
+      );
       recoveredCount++;
 
       this.logger.log({
@@ -459,6 +483,18 @@ export class SessionManager {
     };
 
     this.sessions.set(newId, session);
+
+    const sourceMemory = workingMemoryRegistry.get(sourceSessionId);
+    const wmOptions = {
+      maxSizeChars: this.workingMemoryBudgetChars,
+      logger: this.logger,
+    };
+    workingMemoryRegistry.set(
+      newId,
+      sourceMemory
+        ? sourceMemory.clone(newId, wmOptions)
+        : new WorkingMemory(newId, wmOptions),
+    );
 
     this.logger.log({
       sessionId: newId,

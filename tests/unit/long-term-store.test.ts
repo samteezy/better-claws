@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { LongTermStore, LongTermStoreError } from "../../src/memory/long-term-store.js";
-import type { MemoryConfig } from "../../src/types.js";
+import { DEFAULT_MEMORY_CONFIG } from "../helpers/memory-config.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 
 function createMockLogger() {
@@ -29,14 +29,6 @@ function createMockLogger() {
   } as unknown as StructuredLogger & { calls: typeof calls };
 }
 
-const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
-  maxLongTermEntries: 100,
-  confidenceDecayRate: 0.01,
-  staleThreshold: 0.2,
-  curationIntervalMinutes: 60,
-  curationEnabled: true,
-};
-
 describe("LongTermStore", () => {
   let tempDir: string;
   let logger: ReturnType<typeof createMockLogger>;
@@ -47,7 +39,7 @@ describe("LongTermStore", () => {
     logger = createMockLogger();
     store = new LongTermStore({
       directory: tempDir,
-      config: DEFAULT_MEMORY_CONFIG,
+      config: { ...DEFAULT_MEMORY_CONFIG, maxLongTermEntries: 100 },
       logger,
     });
   });

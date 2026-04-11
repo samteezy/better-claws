@@ -33,7 +33,7 @@ const TEST_CONFIG: BetterClawsConfig = {
   llm: { baseUrl: "http://localhost:11434/v1", apiKey: "env:TEST_KEY", model: "test", maxTokens: 1024, temperature: 0.7 },
   adapters: { telegram: { enabled: false, token: "env:BC_TELEGRAM_TOKEN" } },
   security: { defaultCapabilityPolicy: "deny", sandboxTimeout: 30000, stripEnvironment: true, allowPersistentGrants: false },
-  memory: { maxLongTermEntries: 2000, confidenceDecayRate: 0.01, staleThreshold: 0.2, curationIntervalMinutes: 60, curationEnabled: true },
+  memory: { maxLongTermEntries: 2000, confidenceDecayRate: 0.01, staleThreshold: 0.2, curationIntervalMinutes: 60, curationEnabled: true, workingMemoryBudgetChars: 8192 },
   logging: { directory: "data/logs", redactSensitive: true, retentionDays: 90 },
 };
 
@@ -85,6 +85,7 @@ describe("DashboardServer", () => {
       sessionsDirectory: sessionsDir,
       idleTimeoutMs: 60000,
       logger,
+      workingMemoryBudgetChars: 8192,
     });
 
     const context: DashboardContext = {
@@ -489,6 +490,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -530,6 +532,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -572,6 +575,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -608,6 +612,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -644,6 +649,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -931,6 +937,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       // Create context with rawConfig and configPath for persistence
@@ -980,6 +987,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -1027,6 +1035,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -1069,6 +1078,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -1113,6 +1123,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -1156,6 +1167,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -1202,6 +1214,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
@@ -1256,6 +1269,7 @@ describe("DashboardServer", () => {
         sessionsDirectory: path.join(tmpDir, "sessions"),
         idleTimeoutMs: 60000,
         logger,
+        workingMemoryBudgetChars: 8192,
       });
 
       const context: DashboardContext = {
