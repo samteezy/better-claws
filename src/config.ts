@@ -41,7 +41,7 @@ export const DEFAULT_CONFIG: BetterClawsConfig = {
     baseUrl: "http://localhost:11434/v1",
     apiKey: "",
     model: "qwen3:8b",
-    maxTokens: 4096,
+    maxTokens: 24000,
     temperature: 0.7,
   },
   adapters: {},

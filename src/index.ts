@@ -30,7 +30,7 @@ import { createAdapter } from "./adapters/adapter-factory.js";
 import { McpClient, McpToolBridge } from "./mcp/index.js";
 import { SkillLoader } from "./skills/index.js";
 import { Scheduler } from "./scheduler/scheduler.js";
-import { sage, clay, lavender, rose, stone, bold, dim } from "./utils/ansi.js";
+import { sage, clay, lavender, rose, stone, amber, bold, dim } from "./utils/ansi.js";
 import { renderMarkdown, StreamingMarkdownWriter } from "./utils/terminal-markdown.js";
 
 // ── CLI Adapter ───────────────────────────────────────────────────────────────
@@ -165,6 +165,12 @@ class CliAdapter implements StreamableChannelAdapter {
           } else {
             process.stdout.write(lavender(dim("  \u2713 " + event.toolName)) + "\n");
           }
+          wrotePrefix = false;
+          break;
+
+        case "warning":
+          md.flush();
+          process.stdout.write("\n" + amber("  \u26A0 " + event.message) + "\n");
           wrotePrefix = false;
           break;
 

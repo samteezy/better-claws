@@ -120,8 +120,11 @@ export class MessageRouter {
           });
         });
       } else {
-        void streamable.text.then((text) => {
-          void adapter.send(msg.channelId, { channelId: msg.channelId, text });
+        void Promise.all([streamable.text, streamable.warnings]).then(([text, warnings]) => {
+          const fullText = warnings.length > 0
+            ? warnings.map((w) => `\u26A0 ${w}`).join("\n") + "\n\n" + text
+            : text;
+          void adapter.send(msg.channelId, { channelId: msg.channelId, text: fullText });
         }).catch((err) => {
           const errorText = err instanceof Error
             ? `Sorry, something went wrong: ${err.message}`
@@ -313,6 +316,21 @@ export class MessageRouter {
         adapterPrompt: self.getAdapterPrompt(message.adapterId),
       });
       const messages = buildResult.messages;
+
+      // Context budget warnings
+      const budget = self.promptBuilder.budget;
+      if (buildResult.truncatedCount === history.length && history.length > 0) {
+        yield {
+          type: "warning",
+          message: "Context limit reached — conversation history was dropped. Consider increasing your token budget or using /compact.",
+        };
+      } else if (buildResult.estimatedTokens >= budget * 0.8) {
+        const pct = Math.round((buildResult.estimatedTokens / budget) * 100);
+        yield {
+          type: "warning",
+          message: `Context usage is at ${pct}% of the configured limit (${budget} tokens). Older messages may be trimmed soon.`,
+        };
+      }
 
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;

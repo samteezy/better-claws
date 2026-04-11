@@ -60,6 +60,10 @@ export class PromptBuilder {
   private readonly sanitizedUserContext: string | undefined;
   private readonly adapterPromptCache = new Map<string, string>();
 
+  get budget(): number {
+    return this.tokenBudget;
+  }
+
   constructor(options: PromptBuilderOptions) {
     this.systemPrompt = options.systemPrompt;
     this.tokenBudget = options.tokenBudget;

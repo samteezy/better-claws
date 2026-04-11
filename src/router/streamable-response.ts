@@ -15,6 +15,7 @@ export class StreamableResponse implements IStreamableResponse {
   readonly text: Promise<string>;
   readonly reasoning: Promise<string | undefined>;
   readonly usage: Promise<{ readonly promptTokens: number; readonly completionTokens: number }>;
+  readonly warnings: Promise<readonly string[]>;
 
   constructor(
     source: AsyncGenerator<StreamEvent> | AsyncIterable<StreamEvent>,
@@ -24,6 +25,7 @@ export class StreamableResponse implements IStreamableResponse {
     const buffer: StreamEvent[] = [];
     let finished = false;
     const signal = { notify: null as (() => void) | null };
+    const collectedWarnings: string[] = [];
 
     // Deferred promise wiring
     const deferred = {
@@ -33,6 +35,8 @@ export class StreamableResponse implements IStreamableResponse {
       rejectReasoning: (_e: unknown): void => {},
       resolveUsage: (_v: { readonly promptTokens: number; readonly completionTokens: number }): void => {},
       rejectUsage: (_e: unknown): void => {},
+      resolveWarnings: (_v: readonly string[]): void => {},
+      rejectWarnings: (_e: unknown): void => {},
     };
 
     const textPromise = new Promise<string>((res, rej) => {
@@ -47,14 +51,20 @@ export class StreamableResponse implements IStreamableResponse {
       deferred.resolveUsage = res;
       deferred.rejectUsage = rej;
     });
+    const warningsPromise = new Promise<readonly string[]>((res, rej) => {
+      deferred.resolveWarnings = res;
+      deferred.rejectWarnings = rej;
+    });
 
     // Prevent unhandled rejection warnings when only .text is consumed
     reasoningPromise.catch(() => {});
     usagePromise.catch(() => {});
+    warningsPromise.catch(() => {});
 
     this.text = textPromise;
     this.reasoning = reasoningPromise;
     this.usage = usagePromise;
+    this.warnings = warningsPromise;
 
     // Background reader: drains source into buffer, resolves promises on completion
     void (async () => {
@@ -63,6 +73,10 @@ export class StreamableResponse implements IStreamableResponse {
           buffer.push(event);
           signal.notify?.();
 
+          if (event.type === "warning") {
+            collectedWarnings.push(event.message);
+          }
+
           if (event.type === "done") {
             if (onComplete) {
               await onComplete(event);
@@ -70,6 +84,7 @@ export class StreamableResponse implements IStreamableResponse {
             deferred.resolveText(event.text);
             deferred.resolveReasoning(event.reasoning);
             deferred.resolveUsage(event.usage);
+            deferred.resolveWarnings(collectedWarnings);
           }
         }
       } catch (err) {
@@ -77,6 +92,7 @@ export class StreamableResponse implements IStreamableResponse {
         deferred.rejectText(err);
         deferred.rejectReasoning(err);
         deferred.rejectUsage(err);
+        deferred.rejectWarnings(err);
         buffer.push({ type: "error", message: msg });
       } finally {
         finished = true;

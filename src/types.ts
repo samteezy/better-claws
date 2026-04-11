@@ -102,6 +102,7 @@ export type StreamEvent =
   | { readonly type: "reasoning-delta"; readonly delta: string }
   | { readonly type: "tool-start"; readonly toolCall: ToolCall }
   | { readonly type: "tool-result"; readonly toolName: string; readonly output: unknown; readonly error?: string }
+  | { readonly type: "warning"; readonly message: string }
   | { readonly type: "error"; readonly message: string }
   | { readonly type: "done"; readonly text: string; readonly reasoning?: string; readonly usage: { readonly promptTokens: number; readonly completionTokens: number } };
 
@@ -120,6 +121,7 @@ export interface StreamableResponse {
   readonly text: Promise<string>;
   readonly reasoning: Promise<string | undefined>;
   readonly usage: Promise<{ readonly promptTokens: number; readonly completionTokens: number }>;
+  readonly warnings: Promise<readonly string[]>;
 }
 
 // ── Tools ─────────────────────────────────────────────────────────────────────

@@ -28,7 +28,10 @@ export const clay = rgb(196, 149, 106);
 /** Muted lavender — tool activity (#8b7ea8) */
 export const lavender = rgb(139, 126, 168);
 
-/** Soft rose — errors, warnings (#c27878) */
+/** Amber — context warnings, warm highlights (#c49a5c) */
+export const amber = rgb(196, 154, 92);
+
+/** Soft rose — errors (#c27878) */
 export const rose = rgb(194, 120, 120);
 
 /** Warm stone — dim/meta text (#9a9590) */
