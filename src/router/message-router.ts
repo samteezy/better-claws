@@ -41,6 +41,21 @@ const NEVER_AUTO_GRANT = new Set([
 
 export const SYSTEM_PROMPT = `You are betterClaws, a personal AI assistant. You can use tools when they are available. Be helpful, concise, and accurate. If you are unsure about something, say so.`;
 
+export interface SlashCommandDescriptor {
+  readonly name: string;
+  readonly description: string;
+  readonly args?: string;
+}
+
+export const SLASH_COMMANDS: readonly SlashCommandDescriptor[] = [
+  { name: "/new", description: "Archive the current session and start fresh" },
+  { name: "/reset", description: "Wipe the current session entirely" },
+  { name: "/fork", description: "Fork the current (or a specific) session", args: "[sessionId]" },
+  { name: "/sessions", description: "List all sessions for your account" },
+  { name: "/schedule", description: "Manage scheduled tasks", args: "<subcommand>" },
+  { name: "/compact", description: "Compact the current session history" },
+];
+
 export interface MessageRouterOptions {
   readonly sessionManager: SessionManager;
   readonly llmClient: LlmClient;
@@ -68,6 +83,10 @@ export class MessageRouter {
   private readonly promptBuilder: PromptBuilder;
   private readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
   private readonly adapters = new Map<string, ChannelAdapter>();
+
+  static getSlashCommands(): readonly SlashCommandDescriptor[] {
+    return SLASH_COMMANDS;
+  }
 
   constructor(options: MessageRouterOptions) {
     this.sessionManager = options.sessionManager;
