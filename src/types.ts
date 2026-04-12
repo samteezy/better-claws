@@ -221,6 +221,7 @@ export const EVENT_TYPES = [
   "secret:register",
   "secret:revoke",
   "session:stop",
+  "message:queue",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];

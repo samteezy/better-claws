@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   BetterClawsError,
   isCapability,
@@ -85,6 +86,10 @@ export class MessageRouter {
   private readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
   private readonly adapters = new Map<string, ChannelAdapter>();
   private readonly activeResponses = new Map<string, AbortController>();
+  private readonly channelQueues = new Map<string, {
+    activeCount: number;
+    pending: InboundMessage[];
+  }>();
 
   static getSlashCommands(): readonly SlashCommandDescriptor[] {
     return SLASH_COMMANDS;
@@ -114,34 +119,103 @@ export class MessageRouter {
   registerAdapter(adapter: ChannelAdapter): void {
     this.adapters.set(adapter.id, adapter);
     adapter.onMessage((msg) => {
-      const streamable = this.handleMessageStream(msg);
-      if (isStreamableAdapter(adapter)) {
-        void adapter.sendStream(msg.channelId, streamable).catch((err) => {
+      const key = `${msg.adapterId}:${msg.channelId}:${msg.senderId}`;
+      let queue = this.channelQueues.get(key);
+      if (!queue) {
+        queue = { activeCount: 0, pending: [] };
+        this.channelQueues.set(key, queue);
+      }
+
+      if (queue.activeCount > 0) {
+        if (msg.text.trim() === "/stop") {
+          const discarded = queue.pending.length;
+          queue.pending.length = 0;
           this.logger.log({
             sessionId: null,
-            eventType: "message:outbound",
+            eventType: "message:queue",
             component: "router",
-            payload: {
-              error: err instanceof Error ? err.message : String(err),
-              adapterId: adapter.id,
-              channelId: msg.channelId,
-            },
+            payload: { action: "stop_bypass", key, discardedCount: discarded },
           });
-        });
-      } else {
-        void Promise.all([streamable.text, streamable.warnings]).then(([text, warnings]) => {
-          const fullText = warnings.length > 0
-            ? warnings.map((w) => `\u26A0 ${w}`).join("\n") + "\n\n" + text
-            : text;
-          void adapter.send(msg.channelId, { channelId: msg.channelId, text: fullText });
-        }).catch((err) => {
-          const errorText = err instanceof Error
-            ? `Sorry, something went wrong: ${err.message}`
-            : "Sorry, an unexpected error occurred.";
-          void adapter.send(msg.channelId, { channelId: msg.channelId, text: errorText });
-        });
+          this.processAdapterMessage(adapter, msg, queue);
+        } else {
+          queue.pending.push(msg);
+          this.logger.log({
+            sessionId: null,
+            eventType: "message:queue",
+            component: "router",
+            payload: { action: "queued", key, pendingCount: queue.pending.length },
+          });
+        }
+        return;
       }
+
+      this.processAdapterMessage(adapter, msg, queue);
     });
+  }
+
+  private processAdapterMessage(
+    adapter: ChannelAdapter,
+    msg: InboundMessage,
+    queue: { activeCount: number; pending: InboundMessage[] },
+  ): void {
+    queue.activeCount++;
+    const streamable = this.handleMessageStream(msg);
+
+    const queueKey = `${msg.adapterId}:${msg.channelId}:${msg.senderId}`;
+    const onDone = (): void => {
+      queue.activeCount--;
+      if (queue.activeCount === 0 && queue.pending.length > 0) {
+        const count = queue.pending.length;
+        const first = queue.pending[0]!;
+        const merged: InboundMessage = {
+          id: randomUUID(),
+          adapterId: first.adapterId,
+          channelId: first.channelId,
+          senderId: first.senderId,
+          text: queue.pending.map((m) => m.text).join("\n"),
+          timestamp: Date.now(),
+        };
+        queue.pending.length = 0;
+        this.logger.log({
+          sessionId: null,
+          eventType: "message:queue",
+          component: "router",
+          payload: { action: "drain_merged", key: queueKey, mergedCount: count },
+        });
+        this.processAdapterMessage(adapter, merged, queue);
+      } else if (queue.activeCount === 0 && queue.pending.length === 0) {
+        this.channelQueues.delete(queueKey);
+      }
+    };
+
+    void streamable.text.then(() => onDone(), () => onDone());
+
+    if (isStreamableAdapter(adapter)) {
+      void adapter.sendStream(msg.channelId, streamable).catch((err) => {
+        this.logger.log({
+          sessionId: null,
+          eventType: "message:outbound",
+          component: "router",
+          payload: {
+            error: err instanceof Error ? err.message : String(err),
+            adapterId: adapter.id,
+            channelId: msg.channelId,
+          },
+        });
+      });
+    } else {
+      void Promise.all([streamable.text, streamable.warnings]).then(([text, warnings]) => {
+        const fullText = warnings.length > 0
+          ? warnings.map((w) => `\u26A0 ${w}`).join("\n") + "\n\n" + text
+          : text;
+        void adapter.send(msg.channelId, { channelId: msg.channelId, text: fullText });
+      }).catch((err) => {
+        const errorText = err instanceof Error
+          ? `Sorry, something went wrong: ${err.message}`
+          : "Sorry, an unexpected error occurred.";
+        void adapter.send(msg.channelId, { channelId: msg.channelId, text: errorText });
+      });
+    }
   }
 
   async start(): Promise<void> {
