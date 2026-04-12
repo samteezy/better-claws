@@ -164,7 +164,7 @@ export class LlmClient {
   async *chatStream(
     messages: readonly ChatMessage[],
     tools?: readonly ToolDescriptor[],
-    options?: { readonly model?: string },
+    options?: { readonly model?: string; readonly signal?: AbortSignal },
   ): AsyncGenerator<LlmStreamChunk> {
     const effectiveModel = options?.model ?? this.model;
     const body = this.buildRequestBody(messages, tools, true, effectiveModel);
@@ -186,6 +186,7 @@ export class LlmClient {
         method: "POST",
         headers: this.buildHeaders(),
         body: JSON.stringify(body),
+        signal: options?.signal,
       },
     );
 
@@ -258,6 +259,8 @@ export class LlmClient {
       RETRYABLE_STATUS_CODES.has(response.status) &&
       attempt < MAX_RETRIES - 1
     ) {
+      // Don't retry if the request was aborted
+      if (options.signal?.aborted) throw new LlmError("Request aborted", "ABORTED");
       const delay = BASE_DELAY_MS * Math.pow(2, attempt);
       await new Promise((resolve) => setTimeout(resolve, delay));
       return this.fetchWithRetry(url, options, attempt + 1);

@@ -54,6 +54,7 @@ export const SLASH_COMMANDS: readonly SlashCommandDescriptor[] = [
   { name: "/sessions", description: "List all sessions for your account" },
   { name: "/schedule", description: "Manage scheduled tasks", args: "<subcommand>" },
   { name: "/compact", description: "Compact the current session history" },
+  { name: "/stop", description: "Stop the current in-progress response" },
 ];
 
 export interface MessageRouterOptions {
@@ -83,9 +84,17 @@ export class MessageRouter {
   private readonly promptBuilder: PromptBuilder;
   private readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
   private readonly adapters = new Map<string, ChannelAdapter>();
+  private readonly activeResponses = new Map<string, AbortController>();
 
   static getSlashCommands(): readonly SlashCommandDescriptor[] {
     return SLASH_COMMANDS;
+  }
+
+  stopSession(sessionId: string): boolean {
+    const controller = this.activeResponses.get(sessionId);
+    if (!controller) return false;
+    controller.abort();
+    return true;
   }
 
   constructor(options: MessageRouterOptions) {
@@ -186,6 +195,20 @@ export class MessageRouter {
 
       const cmd = message.text.trim();
 
+      if (cmd === "/stop") {
+        const stopped = self.stopSession(session.id);
+        const text = stopped ? "Stopped." : "Nothing to stop.";
+        self.logger.log({
+          sessionId: session.id,
+          eventType: "session:stop",
+          component: "router",
+          payload: { stopped },
+        });
+        yield { type: "text-delta", delta: text };
+        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+        return;
+      }
+
       if (cmd === "/new") {
         await self.sessionManager.close(session.id);
         yield { type: "reset" };
@@ -283,6 +306,13 @@ export class MessageRouter {
         return;
       }
 
+      // Register an AbortController for this active response so /stop can cancel it
+      const abortController = new AbortController();
+      const signal = abortController.signal;
+      self.activeResponses.set(session.id, abortController);
+
+      try {
+
       let history = await self.sessionManager.getHistory(session.id);
 
       // Auto-compaction
@@ -341,7 +371,10 @@ export class MessageRouter {
       let iterations = 0;
 
       // Streaming LLM + tool call loop
+      try {
       while (iterations <= MAX_TOOL_ITERATIONS) {
+        if (signal.aborted) break;
+
         let iterationText = "";
         let iterationReasoning = "";
         const toolAccumulators = new Map<number, { id: string; name: string; args: string }>();
@@ -349,7 +382,10 @@ export class MessageRouter {
         for await (const chunk of self.llmClient.chatStream(
           messages,
           tools.length > 0 ? tools : undefined,
+          { signal },
         )) {
+          if (signal.aborted) break;
+
           // Accumulate reasoning deltas
           if (chunk.reasoningDelta) {
             iterationReasoning += chunk.reasoningDelta;
@@ -388,6 +424,8 @@ export class MessageRouter {
             }
           }
         }
+
+        if (signal.aborted) break;
 
         fullText += iterationText;
         fullReasoning += iterationReasoning;
@@ -439,9 +477,11 @@ export class MessageRouter {
 
         // Execute each tool call
         for (const toolCall of completedToolCalls) {
+          if (signal.aborted) break;
+
           yield { type: "tool-start", toolCall };
 
-          const toolResult = await self.processToolCall(toolCall, session.id);
+          const toolResult = await self.processToolCall(toolCall, session.id, signal);
 
           yield {
             type: "tool-result",
@@ -462,6 +502,29 @@ export class MessageRouter {
         // Reset text and reasoning for the next iteration — tool result follow-up may produce new text
         fullText = "";
         fullReasoning = "";
+      }
+      } catch (err) {
+        // AbortError from fetch or stream is expected when /stop fires
+        if (!signal.aborted) throw err;
+      }
+
+      // If aborted by /stop, yield partial result and exit
+      if (signal.aborted) {
+        self.logger.log({
+          sessionId: session.id,
+          eventType: "session:stop",
+          component: "router",
+          payload: { textLength: fullText.length, iterations },
+        });
+        yield {
+          type: "done",
+          text: fullText,
+          usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
+        };
+      }
+
+      } finally {
+        self.activeResponses.delete(session.id);
       }
     }
 
@@ -578,6 +641,7 @@ export class MessageRouter {
   private async processToolCall(
     toolCall: ToolCall,
     sessionId: string,
+    signal?: AbortSignal,
   ): Promise<{ output: unknown; error?: string }> {
     const toolName = toolCall.function.name;
 
@@ -684,6 +748,7 @@ export class MessageRouter {
       secrets,
       allowedFsRoots: this.config.security.allowedFsRoots ?? [],
       scheduler: this.scheduler,
+      signal,
     });
 
     if (!result.success) {

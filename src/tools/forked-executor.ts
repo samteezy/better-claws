@@ -175,6 +175,7 @@ export class ForkedExecutor {
     } catch (err) {
       const durationMs = Date.now() - startTime;
       const isTimeout = err instanceof ForkedExecutorError && err.code === "TIMEOUT";
+      const isAborted = err instanceof ForkedExecutorError && err.code === "ABORTED";
 
       this.logger.log({
         sessionId: context.sessionId,
@@ -182,6 +183,7 @@ export class ForkedExecutor {
         component: "forked-executor",
         payload: {
           success: false,
+          ...(isAborted ? { aborted: true } : {}),
           error: err instanceof Error ? err.message : String(err),
           durationMs,
           isolated: true,
@@ -191,7 +193,7 @@ export class ForkedExecutor {
       return {
         success: false,
         output: null,
-        error: err instanceof Error ? err.message : String(err),
+        error: isAborted ? "Execution stopped by user" : (err instanceof Error ? err.message : String(err)),
         durationMs,
       };
     } finally {
@@ -254,6 +256,34 @@ export class ForkedExecutor {
         }
       }, context.timeout);
 
+      // Abort support — kill child process when signal fires
+      const onAbort = context.signal ? (): void => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          child.kill("SIGTERM");
+          setTimeout(() => {
+            try { child.kill("SIGKILL"); } catch { /* already dead */ }
+          }, 3000);
+          reject(new ForkedExecutorError("Execution aborted", "ABORTED"));
+        }
+      } : null;
+
+      if (context.signal) {
+        if (context.signal.aborted) {
+          onAbort!();
+          return;
+        }
+        context.signal.addEventListener("abort", onAbort!, { once: true });
+      }
+
+      /** Remove the abort listener to avoid leaking references after resolution. */
+      const cleanupAbort = (): void => {
+        if (onAbort && context.signal) {
+          context.signal.removeEventListener("abort", onAbort);
+        }
+      };
+
       // Handle IPC messages
       child.on("message", (msg: WorkerResponse) => {
         if (msg.ready) {
@@ -277,6 +307,7 @@ export class ForkedExecutor {
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
+          cleanupAbort();
 
           // Log captured output with redaction
           const combinedStdout = sanitizeOutput((stdout + (msg.stdout || "")).slice(0, 10000));
@@ -312,6 +343,7 @@ export class ForkedExecutor {
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
+          cleanupAbort();
           if (timedOut) {
             reject(new ForkedExecutorError(
               `Execution timed out after ${context.timeout}ms`,
@@ -331,6 +363,7 @@ export class ForkedExecutor {
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
+          cleanupAbort();
           reject(new ForkedExecutorError(
             `Worker process error: ${err.message}`,
             "WORKER_ERROR",

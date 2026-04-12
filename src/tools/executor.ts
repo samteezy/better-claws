@@ -58,10 +58,14 @@ export class ToolExecutor {
     const startTime = Date.now();
 
     try {
-      const output = await Promise.race([
+      const raceEntries: Promise<ToolResult>[] = [
         handler.execute(params, executionContext),
         this.timeoutPromise(timeout),
-      ]);
+      ];
+      if (context.signal) {
+        raceEntries.push(this.abortPromise(context.signal));
+      }
+      const output = await Promise.race(raceEntries);
 
       this.logger.log({
         sessionId: context.sessionId,
@@ -85,6 +89,21 @@ export class ToolExecutor {
       return output;
     } catch (err) {
       const durationMs = Date.now() - startTime;
+
+      if (err instanceof ExecutorError && err.code === "ABORTED") {
+        this.logger.log({
+          sessionId: context.sessionId,
+          eventType: "executor:result",
+          component: "executor",
+          payload: { success: false, aborted: true, durationMs },
+        });
+        return {
+          success: false,
+          output: null,
+          error: "Execution stopped by user",
+          durationMs,
+        };
+      }
 
       if (err instanceof ExecutorError && err.code === "TIMEOUT") {
         this.logger.log({
@@ -143,6 +162,18 @@ export class ToolExecutor {
       setTimeout(() => {
         reject(new ExecutorError(`Execution timed out after ${ms}ms`, "TIMEOUT"));
       }, ms);
+    });
+  }
+
+  private abortPromise(signal: AbortSignal): Promise<never> {
+    return new Promise((_, reject) => {
+      if (signal.aborted) {
+        reject(new ExecutorError("Execution aborted", "ABORTED"));
+        return;
+      }
+      signal.addEventListener("abort", () => {
+        reject(new ExecutorError("Execution aborted", "ABORTED"));
+      }, { once: true });
     });
   }
 }

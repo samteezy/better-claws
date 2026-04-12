@@ -56,8 +56,8 @@ describe("SLASH_COMMANDS registry", () => {
     assert.strictEqual(cmd.args, undefined);
   });
 
-  it("has exactly 6 commands", () => {
-    assert.strictEqual(SLASH_COMMANDS.length, 6);
+  it("has exactly 7 commands", () => {
+    assert.strictEqual(SLASH_COMMANDS.length, 7);
   });
 
   it("all commands have a name starting with /", () => {
@@ -95,7 +95,7 @@ describe("SLASH_COMMANDS registry", () => {
     // SLASH_COMMANDS is declared as readonly in TypeScript
     // At runtime, we verify it's an array with the expected length
     assert(Array.isArray(SLASH_COMMANDS));
-    assert.strictEqual(SLASH_COMMANDS.length, 6);
+    assert.strictEqual(SLASH_COMMANDS.length, 7);
   });
 });
 
@@ -105,14 +105,14 @@ describe("MessageRouter.getSlashCommands()", () => {
     assert.strictEqual(commands, SLASH_COMMANDS, "getSlashCommands should return SLASH_COMMANDS");
   });
 
-  it("returns an array with 6 commands", () => {
+  it("returns an array with 7 commands", () => {
     const commands = MessageRouter.getSlashCommands();
-    assert.strictEqual(commands.length, 6);
+    assert.strictEqual(commands.length, 7);
   });
 
   it("returns commands in the expected order", () => {
     const commands = MessageRouter.getSlashCommands();
-    const expectedOrder = ["/new", "/reset", "/fork", "/sessions", "/schedule", "/compact"];
+    const expectedOrder = ["/new", "/reset", "/fork", "/sessions", "/schedule", "/compact", "/stop"];
     const actualOrder = commands.map((c) => c.name);
     assert.deepStrictEqual(actualOrder, expectedOrder);
   });

@@ -211,6 +211,7 @@ During a conversation, you can use these commands:
 | `/new` | Start a fresh session |
 | `/reset` | Clear the current session's working memory |
 | `/compact` | Compact the conversation history to reclaim context |
+| `/stop` | Immediately stop whatever the agent is doing — works mid-response, mid-tool-call, anytime |
 | `/schedule` | List all scheduled tasks |
 | `/schedule enable\|disable <id>` | Enable or disable a scheduled task |
 | `/schedule enable\|disable all` | Enable or disable all scheduled tasks |

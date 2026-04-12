@@ -160,6 +160,7 @@ export interface ExecutionContext {
   readonly secrets: ReadonlyMap<string, string>;
   readonly allowedFsRoots?: readonly string[];
   readonly scheduler?: import("./scheduler/scheduler.js").Scheduler;
+  readonly signal?: AbortSignal;
 }
 
 export interface BuiltInToolModule {
@@ -219,6 +220,7 @@ export const EVENT_TYPES = [
   "secret:access",
   "secret:register",
   "secret:revoke",
+  "session:stop",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
