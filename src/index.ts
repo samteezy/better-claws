@@ -77,6 +77,7 @@ class CliAdapter implements StreamableChannelAdapter {
   /** Reset scroll region to full terminal. */
   private exitScrollRegion(): void {
     if (!this.scrollRegionActive) return;
+    process.stdout.write("\x1b[?25h"); // ensure cursor visible
     // Reset scroll region to full terminal
     process.stdout.write("\x1b[r");
     // Move to bottom
@@ -159,6 +160,7 @@ class CliAdapter implements StreamableChannelAdapter {
   /** Start an animated spinner. Returns a function that stops and clears it. */
   private startSpinner(label: string): () => void {
     let frame = 0;
+    if (this.scrollRegionActive) process.stdout.write("\x1b[?25l"); // hide cursor
     const id = setInterval(() => {
       const char = SPINNER_FRAMES[frame % SPINNER_FRAMES.length] ?? "⠋";
       process.stdout.write(`\r\x1b[2K  ${stone(char)} ${stone(dim(label))}`);
@@ -169,6 +171,7 @@ class CliAdapter implements StreamableChannelAdapter {
     return () => {
       clearInterval(id);
       process.stdout.write("\r\x1b[2K");
+      if (this.scrollRegionActive) process.stdout.write("\x1b[?25h"); // show cursor
     };
   }
 
