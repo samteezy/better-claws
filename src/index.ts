@@ -11,6 +11,7 @@ import { ToolExecutor } from "./tools/executor.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { SessionCompactor } from "./sessions/compactor.js";
 import { MessageRouter, SYSTEM_PROMPT, SLASH_COMMANDS } from "./router/message-router.js";
+import { ConfirmationBroker } from "./router/confirmation-broker.js";
 import { PromptBuilder } from "./prompt/prompt-builder.js";
 import { join } from "node:path";
 import { builtInTools } from "./tools/built-in/index.js";
@@ -562,6 +563,11 @@ export async function createApp(config: BetterClawsConfig, options?: {
     saveConfig,
   });
 
+  const confirmationBroker = new ConfirmationBroker(
+    logger,
+    config.security.confirmationTimeoutMs ?? 120_000,
+  );
+
   const router = new MessageRouter({
     sessionManager,
     llmClient,
@@ -573,6 +579,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
     config,
     compactor,
     promptBuilder,
+    confirmationBroker,
     scheduler,
   });
 

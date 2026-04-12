@@ -189,6 +189,16 @@ export interface SessionState {
   readonly createdAt: number;
   lastActivityAt: number;
   readonly capabilityGrants: Map<string, GrantScope>;
+  readonly toolPolicyOverrides: Map<string, ToolPolicy>;
+}
+
+// ── Confirmation ─────────────────────────────────────────────────────────────
+
+export type ConfirmationVerdict = "allow" | "allow-session" | "deny";
+
+export interface ConfirmationResult {
+  readonly verdict: ConfirmationVerdict;
+  readonly reason: string;
 }
 
 // ── Logging ───────────────────────────────────────────────────────────────────
@@ -222,6 +232,8 @@ export const EVENT_TYPES = [
   "secret:revoke",
   "session:stop",
   "message:queue",
+  "confirmation:request",
+  "confirmation:result",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -293,6 +305,7 @@ export interface SecurityConfig {
   readonly maxMemoryMb?: number;
   readonly autoGrantCapabilities?: readonly string[];
   readonly allowedFsRoots?: readonly string[];
+  readonly confirmationTimeoutMs?: number;
 }
 
 export interface MemoryConfig {

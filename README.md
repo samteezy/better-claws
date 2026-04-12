@@ -240,6 +240,33 @@ export async function execute(params, context) {
 
 Tools must declare their capabilities. The capability gate blocks execution unless the session has matching grants.
 
+## Tool policies
+
+Each tool can be assigned a policy that controls how it executes:
+
+| Policy | Behavior |
+|---|---|
+| `auto` | Executes immediately if capabilities are granted (default) |
+| `confirm` | Pauses and asks the user for explicit approval before executing |
+| `disabled` | Blocked entirely — the LLM is told the tool is unavailable |
+
+Configure policies in `config/betterclaws.json`:
+
+```json
+"tools": {
+  "toolPolicies": {
+    "shell": "confirm",
+    "file-write": "confirm",
+    "web-fetch": "auto",
+    "file-read": "auto"
+  }
+}
+```
+
+When a `confirm`-policy tool is invoked, betterClaws sends a confirmation prompt directly to you — the LLM never sees it. Reply **YES** to allow once, **YES ALWAYS** to allow for the rest of the session, or **NO** to deny. If you don't respond within the timeout (default: 120 seconds), the tool is automatically denied.
+
+The confirmation exchange is handled entirely outside the LLM conversation. The LLM only sees whether the tool was allowed or denied — it cannot read, influence, or bypass the confirmation flow.
+
 ## Capability taxonomy
 
 | Capability | Description |
@@ -261,10 +288,11 @@ Tools must declare their capabilities. The capability gate blocks execution unle
 betterClaws assumes the LLM is adversarial. The key invariants:
 
 1. **LLM output never executes without passing through the capability gate.** Every tool call requires a matching grant.
-2. **Secrets never appear in LLM prompts.** Tool handlers receive credentials via the execution context, not prompt injection.
-3. **Tools run sandboxed.** Each execution is forked into a child process with stripped environment variables, a locked working directory, and a configurable timeout (default: 30s).
-4. **All state changes are logged.** No code path mutates state without emitting a structured log event.
-5. **Memory writes are tool calls.** The LLM cannot silently modify what the system believes about you.
+2. **User confirmation is enforced outside the LLM loop.** Tools with `confirm` policy require explicit user approval. The confirmation exchange is handled by the router, not the LLM — the LLM cannot see, influence, or bypass it.
+3. **Secrets never appear in LLM prompts.** Tool handlers receive credentials via the execution context, not prompt injection.
+4. **Tools run sandboxed.** Each execution is forked into a child process with stripped environment variables, a locked working directory, and a configurable timeout (default: 30s).
+5. **All state changes are logged.** No code path mutates state without emitting a structured log event.
+6. **Memory writes are tool calls.** The LLM cannot silently modify what the system believes about you.
 
 ### Limitations
 

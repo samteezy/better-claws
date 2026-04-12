@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { MessageRouter } from "../../src/router/message-router.js";
+import { ConfirmationBroker } from "../../src/router/confirmation-broker.js";
 import type {
   InboundMessage,
   LlmResponse,
@@ -65,7 +66,7 @@ function createMockSessionManager() {
       return {
         id: `${adapterId}:${channelId}:${senderId}`,
         logPath: "/tmp/test.jsonl",
-        state: { lastActivityAt: Date.now(), capabilityGrants: new Map() },
+        state: { lastActivityAt: Date.now(), capabilityGrants: new Map(), toolPolicyOverrides: new Map() },
       };
     },
     async appendToLog(_sessionId: string, entry: unknown) {
@@ -73,6 +74,8 @@ function createMockSessionManager() {
     },
     async getHistory() { return [] as ChatMessage[]; },
     getGrants() { return new Map<string, GrantScope>(); },
+    getToolPolicyOverride() { return undefined; },
+    setToolPolicyOverride() {},
     async close() {},
   } as unknown as SessionManager & { appendedEntries: unknown[] };
 }
@@ -263,6 +266,7 @@ describe("MessageRouter", () => {
       config: TEST_CONFIG,
       compactor: compactor as unknown as SessionCompactor,
       promptBuilder: promptBuilder as unknown as PromptBuilder,
+      confirmationBroker: new ConfirmationBroker(logger as unknown as StructuredLogger),
     });
 
     return { router, logger, sessionManager, llmClient, toolRegistry, capabilityGate, executor, compactor, promptBuilder };
@@ -645,7 +649,7 @@ describe("MessageRouter", () => {
         return {
           id: "forked-session-id",
           logPath: "/tmp/forked.jsonl",
-          state: { lastActivityAt: Date.now(), capabilityGrants: new Map() },
+          state: { lastActivityAt: Date.now(), capabilityGrants: new Map(), toolPolicyOverrides: new Map() },
         };
       };
 
@@ -675,7 +679,7 @@ describe("MessageRouter", () => {
         return {
           id: "new-forked-id",
           logPath: "/tmp/new-forked.jsonl",
-          state: { lastActivityAt: Date.now(), capabilityGrants: new Map() },
+          state: { lastActivityAt: Date.now(), capabilityGrants: new Map(), toolPolicyOverrides: new Map() },
         };
       };
 
@@ -708,7 +712,7 @@ describe("MessageRouter", () => {
       (sessionManager as unknown as Record<string, unknown>)["fork"] = async () => ({
         id: "forked-id",
         logPath: "/tmp/forked.jsonl",
-        state: { lastActivityAt: Date.now(), capabilityGrants: new Map() },
+        state: { lastActivityAt: Date.now(), capabilityGrants: new Map(), toolPolicyOverrides: new Map() },
       });
 
       const llmClient = createMockLlmClient();

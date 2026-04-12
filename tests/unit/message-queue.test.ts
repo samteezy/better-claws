@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { MessageRouter } from "../../src/router/message-router.js";
+import { ConfirmationBroker } from "../../src/router/confirmation-broker.js";
 import type {
   InboundMessage,
   LlmResponse,
@@ -111,7 +112,7 @@ function createMockSessionManager() {
       return {
         id: `${adapterId}:${channelId}:${senderId}`,
         logPath: "/tmp/test.jsonl",
-        state: { lastActivityAt: Date.now(), capabilityGrants: new Map() },
+        state: { lastActivityAt: Date.now(), capabilityGrants: new Map(), toolPolicyOverrides: new Map() },
       };
     },
     async appendToLog(_sessionId: string, entry: unknown) {
@@ -123,6 +124,8 @@ function createMockSessionManager() {
     getGrants() {
       return new Map<string, GrantScope>();
     },
+    getToolPolicyOverride() { return undefined; },
+    setToolPolicyOverride() {},
     async close() {},
   } as unknown as SessionManager & { appendedEntries: unknown[] };
 }
@@ -349,6 +352,7 @@ describe("MessageRouter message queueing", () => {
       config: TEST_CONFIG,
       compactor,
       promptBuilder,
+      confirmationBroker: new ConfirmationBroker(logger as unknown as StructuredLogger),
     });
   }
 

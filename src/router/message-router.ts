@@ -22,6 +22,7 @@ import type { CapabilityGate } from "../tools/capability-gate.js";
 import type { ToolExecutor } from "../tools/executor.js";
 import type { SecretManager } from "../secrets/secret-manager.js";
 import type { PromptBuilder } from "../prompt/prompt-builder.js";
+import { ConfirmationBroker } from "./confirmation-broker.js";
 
 export class RouterError extends BetterClawsError {
   constructor(message: string, code: string = "ROUTER_ERROR") {
@@ -69,6 +70,7 @@ export interface MessageRouterOptions {
   readonly config: BetterClawsConfig;
   readonly compactor?: SessionCompactor;
   readonly promptBuilder: PromptBuilder;
+  readonly confirmationBroker?: ConfirmationBroker;
   readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
 }
 
@@ -83,6 +85,7 @@ export class MessageRouter {
   private readonly config: BetterClawsConfig;
   private readonly compactor: SessionCompactor | undefined;
   private readonly promptBuilder: PromptBuilder;
+  private readonly confirmationBroker: ConfirmationBroker;
   private readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
   private readonly adapters = new Map<string, ChannelAdapter>();
   private readonly activeResponses = new Map<string, AbortController>();
@@ -113,6 +116,8 @@ export class MessageRouter {
     this.config = options.config;
     this.compactor = options.compactor;
     this.promptBuilder = options.promptBuilder;
+    this.confirmationBroker = options.confirmationBroker
+      ?? new ConfirmationBroker(this.logger, this.config.security.confirmationTimeoutMs ?? 120_000);
     this.scheduler = options.scheduler;
   }
 
@@ -120,6 +125,12 @@ export class MessageRouter {
     this.adapters.set(adapter.id, adapter);
     adapter.onMessage((msg) => {
       const key = `${msg.adapterId}:${msg.channelId}:${msg.senderId}`;
+
+      // Intercept confirmation replies before they enter the queue or LLM context.
+      // /stop must pass through to the normal handler so it fires the abort signal,
+      // which the broker's signal listener will resolve as deny.
+      if (msg.text.trim() !== "/stop" && this.confirmationBroker.resolve(key, msg.text)) return;
+
       let queue = this.channelQueues.get(key);
       if (!queue) {
         queue = { activeCount: 0, pending: [] };
@@ -555,7 +566,12 @@ export class MessageRouter {
 
           yield { type: "tool-start", toolCall };
 
-          const toolResult = await self.processToolCall(toolCall, session.id, signal);
+          const toolResult = await self.processToolCall(
+            toolCall,
+            session.id,
+            { adapterId: message.adapterId, channelId: message.channelId, senderId: message.senderId },
+            signal,
+          );
 
           yield {
             type: "tool-result",
@@ -715,6 +731,7 @@ export class MessageRouter {
   private async processToolCall(
     toolCall: ToolCall,
     sessionId: string,
+    confirmationCtx: { adapterId: string; channelId: string; senderId: string },
     signal?: AbortSignal,
   ): Promise<{ output: unknown; error?: string }> {
     const toolName = toolCall.function.name;
@@ -727,16 +744,42 @@ export class MessageRouter {
     });
 
     // Check tool policy before proceeding
-    const policy = this.toolRegistry.getPolicy(toolName);
+    let policy = this.toolRegistry.getPolicy(toolName);
+
+    // Session-level overrides (e.g. user granted "yes always" earlier)
+    const override = this.sessionManager.getToolPolicyOverride(sessionId, toolName);
+    if (override) policy = override;
+
     if (policy === "disabled") {
       const error = `Tool "${toolName}" is disabled`;
       this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
       return { output: null, error };
     }
     if (policy === "confirm") {
-      const error = `Tool "${toolName}" requires user confirmation (not yet supported in this adapter)`;
-      this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
-      return { output: null, error };
+      const adapter = this.adapters.get(confirmationCtx.adapterId);
+      if (!adapter) {
+        const error = `Tool "${toolName}" requires confirmation but adapter not found`;
+        this.logger.log({ sessionId, eventType: "tool:error", component: "router", payload: { tool: toolName, error } });
+        return { output: null, error };
+      }
+
+      const result = await this.confirmationBroker.requestAndWait(
+        adapter,
+        confirmationCtx.channelId,
+        confirmationCtx.senderId,
+        confirmationCtx.adapterId,
+        toolName,
+        toolCall,
+        signal,
+      );
+
+      if (result.verdict === "deny") {
+        return { output: null, error: "User denied tool execution" };
+      }
+
+      if (result.verdict === "allow-session") {
+        this.sessionManager.setToolPolicyOverride(sessionId, toolName, "auto");
+      }
     }
 
     const descriptor = this.toolRegistry.getDescriptor(toolName);

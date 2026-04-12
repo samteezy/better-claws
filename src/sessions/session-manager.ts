@@ -8,6 +8,7 @@ import {
   type GrantScope,
   type SessionLogEntry,
   type SessionState,
+  type ToolPolicy,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import { WorkingMemory } from "../memory/working-memory.js";
@@ -84,6 +85,7 @@ export class SessionManager {
         createdAt: now,
         lastActivityAt: now,
         capabilityGrants: new Map(),
+        toolPolicyOverrides: new Map(),
       },
       logPath,
     };
@@ -316,6 +318,30 @@ export class SessionManager {
     return session.state.capabilityGrants;
   }
 
+  getToolPolicyOverride(
+    sessionId: string,
+    toolName: string,
+  ): ToolPolicy | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session) return undefined;
+    return session.state.toolPolicyOverrides.get(toolName);
+  }
+
+  setToolPolicyOverride(
+    sessionId: string,
+    toolName: string,
+    policy: ToolPolicy,
+  ): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new SessionError(
+        `Session "${sessionId}" not found`,
+        "NOT_FOUND",
+      );
+    }
+    session.state.toolPolicyOverrides.set(toolName, policy);
+  }
+
   markActive(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session) {
@@ -476,6 +502,7 @@ export class SessionManager {
           createdAt: timestamps.first,
           lastActivityAt: timestamps.last,
           capabilityGrants: new Map(),
+          toolPolicyOverrides: new Map(),
         },
         logPath,
       };
@@ -554,6 +581,7 @@ export class SessionManager {
         createdAt: now,
         lastActivityAt: now,
         capabilityGrants: new Map(),
+        toolPolicyOverrides: new Map(),
       },
       logPath,
     };

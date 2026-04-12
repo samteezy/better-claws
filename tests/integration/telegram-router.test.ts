@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { TelegramAdapter } from "../../src/adapters/telegram/telegram-adapter.js";
 import { MessageRouter } from "../../src/router/message-router.js";
+import { ConfirmationBroker } from "../../src/router/confirmation-broker.js";
 import { SessionManager } from "../../src/sessions/session-manager.js";
 import { LlmClient } from "../../src/llm/llm-client.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
@@ -234,6 +235,7 @@ describe("Telegram → Router integration", () => {
       logger,
       config: TEST_CONFIG,
       promptBuilder: new PromptBuilder({ systemPrompt: "test", tokenBudget: 1024 }),
+      confirmationBroker: new ConfirmationBroker(logger),
     });
 
     const adapter = new TelegramAdapter({
@@ -403,6 +405,7 @@ describe("Telegram → Router integration", () => {
       logger,
       config: TEST_CONFIG,
       promptBuilder: new PromptBuilder({ systemPrompt: "test", tokenBudget: 1024 }),
+      confirmationBroker: new ConfirmationBroker(logger),
     });
 
     const adapter = new TelegramAdapter({
@@ -557,6 +560,7 @@ describe("Telegram → Router integration", () => {
       logger,
       config: TEST_CONFIG,
       promptBuilder: new PromptBuilder({ systemPrompt: "test", tokenBudget: 1024 }),
+      confirmationBroker: new ConfirmationBroker(logger),
     });
 
     const adapter = new TelegramAdapter({
