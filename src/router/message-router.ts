@@ -188,6 +188,7 @@ export class MessageRouter {
 
       if (cmd === "/new") {
         await self.sessionManager.close(session.id);
+        yield { type: "reset" };
         yield { type: "text-delta", delta: "Session archived. Starting fresh." };
         yield { type: "done", text: "Session archived. Starting fresh.", usage: { promptTokens: 0, completionTokens: 0 } };
         return;
@@ -195,6 +196,7 @@ export class MessageRouter {
 
       if (cmd === "/reset") {
         await self.sessionManager.destroy(session.id);
+        yield { type: "reset" };
         yield { type: "text-delta", delta: "Session wiped. Starting fresh." };
         yield { type: "done", text: "Session wiped. Starting fresh.", usage: { promptTokens: 0, completionTokens: 0 } };
         return;
@@ -360,6 +362,12 @@ export class MessageRouter {
             yield { type: "text-delta", delta: chunk.delta };
           }
 
+          // Accumulate token usage from final streaming chunk
+          if (chunk.usage) {
+            totalPromptTokens = chunk.usage.promptTokens;
+            totalCompletionTokens = chunk.usage.completionTokens;
+          }
+
           // Accumulate tool call deltas
           if (chunk.toolCallDeltas) {
             for (const delta of chunk.toolCallDeltas) {
@@ -404,11 +412,17 @@ export class MessageRouter {
             payload: { textLength: fullText.length },
           });
 
+          const actualTotal = totalPromptTokens + totalCompletionTokens;
           yield {
             type: "done",
             text: fullText,
             ...(fullReasoning ? { reasoning: fullReasoning } : {}),
             usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
+            context: {
+              estimatedTokens: buildResult.estimatedTokens,
+              ...(actualTotal > 0 ? { actualTokens: totalPromptTokens } : {}),
+              budget,
+            },
           };
           return;
         }

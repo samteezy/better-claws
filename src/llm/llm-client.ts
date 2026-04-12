@@ -216,6 +216,7 @@ export class LlmClient {
       max_tokens: this.maxTokens,
       temperature: this.temperature,
       stream,
+      ...(stream ? { stream_options: { include_usage: true } } : {}),
     };
 
     if (tools && tools.length > 0) {
@@ -304,8 +305,20 @@ export async function* parseSSEStream(
           continue;
         }
 
+        // Extract usage if present (may appear on the final content chunk or a
+        // separate empty-choices chunk, depending on the provider).
+        const chunkUsage = parsed.usage
+          ? { promptTokens: parsed.usage.prompt_tokens ?? 0, completionTokens: parsed.usage.completion_tokens ?? 0 }
+          : undefined;
+
         const choice = parsed.choices?.[0];
-        if (!choice?.delta) continue;
+        if (!choice?.delta) {
+          // Usage-only chunk with no content (OpenAI style)
+          if (chunkUsage) {
+            yield { delta: "", done: true, usage: chunkUsage };
+          }
+          continue;
+        }
 
         const rawDeltas = choice.delta.tool_calls;
         let toolCallDeltas: readonly ToolCallStreamDelta[] | undefined;
@@ -331,6 +344,7 @@ export async function* parseSSEStream(
           delta: choice.delta.content ?? "",
           ...(reasoningDelta ? { reasoningDelta } : {}),
           ...(toolCallDeltas ? { toolCallDeltas } : {}),
+          ...(chunkUsage ? { usage: chunkUsage } : {}),
           done: choice.finish_reason !== null && choice.finish_reason !== undefined,
         };
       }

@@ -40,6 +40,8 @@ const PROMPT_PLAIN = "you \u203A ";
 const PROMPT_COLOR = clay(bold("you")) + clay(" \u203A ") ;
 const BOT_PREFIX = sage(bold("bot")) + sage(" \u203A ");
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 class CliAdapter implements StreamableChannelAdapter {
   readonly id = "cli";
   readonly name = "CLI";
@@ -53,13 +55,20 @@ class CliAdapter implements StreamableChannelAdapter {
     process.stdout.write("\r" + PROMPT_COLOR);
   }
 
-  private hintVisible = false;
+  /** Re-apply colored prompt after readline redraws (e.g. on backspace). */
+  private recolorPrompt(): void {
+    process.stdout.write("\x1b[s\x1b[0G" + PROMPT_COLOR + "\x1b[u");
+  }
+
+  private hintLines = 0;
 
   private clearHint(): void {
-    if (!this.hintVisible) return;
-    // Move down one line, clear it, move back up
-    process.stdout.write("\x1b[1B\x1b[2K\x1b[1A");
-    this.hintVisible = false;
+    if (this.hintLines === 0) return;
+    let seq = "";
+    for (let i = 0; i < this.hintLines; i++) seq += "\x1b[1B\x1b[2K";
+    for (let i = 0; i < this.hintLines; i++) seq += "\x1b[1A";
+    process.stdout.write(seq);
+    this.hintLines = 0;
   }
 
   private showHint(): void {
@@ -71,13 +80,29 @@ class CliAdapter implements StreamableChannelAdapter {
     const matches = SLASH_COMMANDS.filter((c) => c.name.startsWith(q));
     if (matches.length === 0) return;
 
+    const hintItems = matches.slice(0, 4);
     // Save cursor, move down, write hints, restore cursor
-    const hint = matches
-      .slice(0, 4)
+    const hint = hintItems
       .map((c) => stone(`  ${c.name}`) + (c.args ? stone(dim(` ${c.args}`)) : "") + stone(dim(` — ${c.description}`)))
       .join("\n");
     process.stdout.write("\x1b[s\n" + hint + "\x1b[u");
-    this.hintVisible = true;
+    this.hintLines = hintItems.length;
+  }
+
+  /** Start an animated spinner. Returns a function that stops and clears it. */
+  private startSpinner(label: string): () => void {
+    let frame = 0;
+    const id = setInterval(() => {
+      const char = SPINNER_FRAMES[frame % SPINNER_FRAMES.length] ?? "⠋";
+      process.stdout.write(`\r\x1b[2K  ${stone(char)} ${stone(dim(label))}`);
+      frame++;
+    }, 80);
+    // Write first frame immediately
+    process.stdout.write(`\r\x1b[2K  ${stone("⠋")} ${stone(dim(label))}`);
+    return () => {
+      clearInterval(id);
+      process.stdout.write("\r\x1b[2K");
+    };
   }
 
   async start(): Promise<void> {
@@ -94,10 +119,13 @@ class CliAdapter implements StreamableChannelAdapter {
       },
     });
 
-    // Show command hints as user types
+    // Re-apply prompt color and show command hints as user types
     if (process.stdin.isTTY) {
       process.stdin.on("data", () => {
-        setImmediate(() => this.showHint());
+        setImmediate(() => {
+          this.recolorPrompt();
+          this.showHint();
+        });
       });
     }
 
@@ -148,50 +176,84 @@ class CliAdapter implements StreamableChannelAdapter {
       process.stdout.write(text);
     });
 
-    for await (const event of response.stream) {
-      switch (event.type) {
-        case "text-delta":
-          md.push(event.delta);
-          break;
+    let stopProcessing: (() => void) | null = this.startSpinner("Processing...");
+    let stopThinking: (() => void) | null = null;
 
-        case "tool-start":
-          md.flush();
-          process.stdout.write("\n" + lavender(dim("  \u27E1 " + event.toolCall.function.name + "...")) + "\n");
-          wrotePrefix = false;
-          break;
+    const clearSpinners = (): void => {
+      if (stopProcessing) { stopProcessing(); stopProcessing = null; }
+      if (stopThinking) { stopThinking(); stopThinking = null; }
+    };
 
-        case "tool-result":
-          if (event.error) {
-            process.stdout.write(rose("  \u2717 " + event.toolName + " failed") + "\n");
-          } else {
-            process.stdout.write(lavender(dim("  \u2713 " + event.toolName)) + "\n");
+    try {
+      for await (const event of response.stream) {
+        switch (event.type) {
+          case "text-delta":
+            clearSpinners();
+            md.push(event.delta);
+            break;
+
+          case "reasoning-delta":
+            if (stopProcessing) { stopProcessing(); stopProcessing = null; }
+            if (!stopThinking) {
+              stopThinking = this.startSpinner("Thinking...");
+            }
+            break;
+
+          case "tool-start":
+            clearSpinners();
+            md.flush();
+            process.stdout.write("\n" + lavender(dim("  \u27E1 " + event.toolCall.function.name + "...")) + "\n");
+            wrotePrefix = false;
+            // Restart processing spinner while tool executes
+            stopProcessing = this.startSpinner("Processing...");
+            break;
+
+          case "tool-result":
+            if (stopProcessing) { stopProcessing(); stopProcessing = null; }
+            if (event.error) {
+              process.stdout.write(rose("  \u2717 " + event.toolName + " failed") + "\n");
+            } else {
+              process.stdout.write(lavender(dim("  \u2713 " + event.toolName)) + "\n");
+            }
+            wrotePrefix = false;
+            break;
+
+          case "warning":
+            clearSpinners();
+            md.flush();
+            process.stdout.write("\n" + amber("  \u26A0 " + event.message) + "\n");
+            wrotePrefix = false;
+            break;
+
+          case "error":
+            clearSpinners();
+            md.flush();
+            process.stdout.write("\n" + rose(bold("  error ")) + rose(event.message) + "\n");
+            break;
+
+          case "reset":
+            clearSpinners();
+            md.flush();
+            // Clear terminal and move cursor home
+            process.stdout.write("\x1b[2J\x1b[H");
+            wrotePrefix = false;
+            break;
+
+          case "done": {
+            clearSpinners();
+            md.flush();
+            if (event.context) {
+              const used = event.context.actualTokens ?? event.context.estimatedTokens;
+              const usedK = (used / 1000).toFixed(1);
+              const maxK = (event.context.budget / 1000).toFixed(1);
+              process.stdout.write(stone(dim(`  ${usedK}k / ${maxK}k context`)) + "\n");
+            }
+            break;
           }
-          wrotePrefix = false;
-          break;
-
-        case "warning":
-          md.flush();
-          process.stdout.write("\n" + amber("  \u26A0 " + event.message) + "\n");
-          wrotePrefix = false;
-          break;
-
-        case "error":
-          md.flush();
-          process.stdout.write("\n" + rose(bold("  error ")) + rose(event.message) + "\n");
-          break;
-
-        case "done": {
-          const total = event.usage.promptTokens + event.usage.completionTokens;
-          if (total > 0) {
-            process.stdout.write(stone(dim("  " + total + " tokens")) + "\n");
-          }
-          break;
         }
-
-        case "reasoning-delta":
-          // Not displayed in CLI
-          break;
       }
+    } finally {
+      clearSpinners();
     }
 
     md.flush();

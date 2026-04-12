@@ -94,6 +94,7 @@ export interface LlmStreamChunk {
   readonly reasoningDelta?: string;
   readonly toolCallDeltas?: readonly ToolCallStreamDelta[];
   readonly done: boolean;
+  readonly usage?: { readonly promptTokens: number; readonly completionTokens: number };
 }
 
 // ── Streaming ────────────────────────────────────────────────────────────────
@@ -105,7 +106,8 @@ export type StreamEvent =
   | { readonly type: "tool-result"; readonly toolName: string; readonly output: unknown; readonly error?: string }
   | { readonly type: "warning"; readonly message: string }
   | { readonly type: "error"; readonly message: string }
-  | { readonly type: "done"; readonly text: string; readonly reasoning?: string; readonly usage: { readonly promptTokens: number; readonly completionTokens: number } };
+  | { readonly type: "reset" }
+  | { readonly type: "done"; readonly text: string; readonly reasoning?: string; readonly usage: { readonly promptTokens: number; readonly completionTokens: number }; readonly context?: { readonly estimatedTokens: number; readonly actualTokens?: number; readonly budget: number } };
 
 export interface StreamableChannelAdapter extends ChannelAdapter {
   sendStream(channelId: string, response: StreamableResponse): Promise<void>;
