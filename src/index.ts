@@ -14,7 +14,8 @@ import { MessageRouter, SYSTEM_PROMPT, SLASH_COMMANDS } from "./router/message-r
 import { PromptBuilder } from "./prompt/prompt-builder.js";
 import { join } from "node:path";
 import { builtInTools } from "./tools/built-in/index.js";
-import { setLongTermStore } from "./tools/built-in/memory-update.js";
+import { setLongTermStore, setRetriever } from "./tools/built-in/memory.js";
+import { TfIdfRetriever } from "./memory/retrieval.js";
 import { LongTermStore } from "./memory/long-term-store.js";
 import { SecretManager } from "./secrets/secret-manager.js";
 import { seedFromConfig } from "./secrets/seed.js";
@@ -367,6 +368,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
   });
   await longTermStore.load();
   setLongTermStore(longTermStore);
+  setRetriever(new TfIdfRetriever({ store: longTermStore }));
 
   const compactionCfg = config.compaction;
   const compactor = compactionCfg?.enabled

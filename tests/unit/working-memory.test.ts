@@ -247,7 +247,7 @@ describe("WorkingMemory", () => {
   describe("capability gate flow", () => {
     it("memory:write capability is declared in tool descriptor", async () => {
       const { descriptor } = await import(
-        "../../src/tools/built-in/memory-update.js"
+        "../../src/tools/built-in/memory.js"
       );
 
       assert.ok(

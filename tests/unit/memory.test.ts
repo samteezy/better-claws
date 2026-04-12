@@ -9,7 +9,9 @@ import {
   handler,
   workingMemoryRegistry,
   setLongTermStore,
-} from "../../src/tools/built-in/memory-update.js";
+  setRetriever,
+} from "../../src/tools/built-in/memory.js";
+import { TfIdfRetriever } from "../../src/memory/retrieval.js";
 import { WorkingMemory } from "../../src/memory/working-memory.js";
 import { LongTermStore } from "../../src/memory/long-term-store.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
@@ -53,14 +55,14 @@ async function withTempDir(
 function makeContext(sessionId: string = "test-session"): ExecutionContext {
   return {
     sessionId,
-    capabilities: ["memory:write"],
+    capabilities: ["memory:read", "memory:write"],
     scratchDir: "/tmp",
     timeout: 5000,
     secrets: new Map<string, string>(),
   };
 }
 
-describe("memory-update tool", () => {
+describe("memory tool", () => {
   let logger: ReturnType<typeof createMockLogger>;
   let sessionId: string;
 
@@ -78,7 +80,8 @@ describe("memory-update tool", () => {
 
   afterEach(() => {
     workingMemoryRegistry.clear();
-    setLongTermStore(null as any);
+    setLongTermStore(null as unknown as any);
+    setRetriever(null as unknown as any);
   });
 
   describe("set action", () => {
@@ -780,6 +783,229 @@ describe("memory-update tool", () => {
 
         assert.ok(entry1?.sourceSessions.includes(session1));
         assert.ok(entry2?.sourceSessions.includes(session2));
+      });
+    });
+  });
+
+  describe("search action", () => {
+    it("returns results for matching query", async () => {
+      await withTempDir(async (tempDir) => {
+        const store = new LongTermStore({
+          directory: tempDir,
+          config: DEFAULT_CONFIG.memory,
+          logger,
+        });
+        await store.load();
+        setLongTermStore(store);
+
+        await store.create({
+          category: "fact",
+          content: "The deployment pipeline uses GitHub Actions",
+          sourceSessions: ["s1"],
+          confidence: 1.0,
+          tags: ["infrastructure"],
+        });
+        await store.create({
+          category: "preference",
+          content: "User prefers dark mode in all editors",
+          sourceSessions: ["s1"],
+          confidence: 1.0,
+          tags: ["ui"],
+        });
+
+        const retriever = new TfIdfRetriever({ store });
+        setRetriever(retriever);
+
+        const result = await handler.execute(
+          { action: "search", query: "deployment pipeline" },
+          makeContext(sessionId),
+        );
+
+        assert.strictEqual(result.success, true);
+        const output = result.output as Record<string, unknown>;
+        assert.strictEqual(output["action"], "search");
+        assert.strictEqual(output["query"], "deployment pipeline");
+        assert.ok((output["resultCount"] as number) > 0);
+
+        const results = output["results"] as Array<Record<string, unknown>>;
+        assert.ok(results.length > 0);
+        assert.ok(
+          (results[0]!["content"] as string).includes("deployment"),
+          "top result should match query",
+        );
+      });
+    });
+
+    it("returns empty results for non-matching query", async () => {
+      await withTempDir(async (tempDir) => {
+        const store = new LongTermStore({
+          directory: tempDir,
+          config: DEFAULT_CONFIG.memory,
+          logger,
+        });
+        await store.load();
+        setLongTermStore(store);
+
+        await store.create({
+          category: "fact",
+          content: "The sky is blue",
+          sourceSessions: ["s1"],
+          confidence: 1.0,
+          tags: [],
+        });
+
+        const retriever = new TfIdfRetriever({ store });
+        setRetriever(retriever);
+
+        const result = await handler.execute(
+          { action: "search", query: "xyznonexistent" },
+          makeContext(sessionId),
+        );
+
+        assert.strictEqual(result.success, true);
+        const output = result.output as Record<string, unknown>;
+        assert.strictEqual(output["resultCount"], 0);
+        assert.deepStrictEqual(output["results"], []);
+      });
+    });
+
+    it("respects topK parameter", async () => {
+      await withTempDir(async (tempDir) => {
+        const store = new LongTermStore({
+          directory: tempDir,
+          config: DEFAULT_CONFIG.memory,
+          logger,
+        });
+        await store.load();
+        setLongTermStore(store);
+
+        // Create several entries with the same term so they all match
+        for (let i = 0; i < 5; i++) {
+          await store.create({
+            category: "fact",
+            content: `Deployment fact number ${i} about infrastructure`,
+            sourceSessions: ["s1"],
+            confidence: 1.0,
+            tags: ["infra"],
+          });
+        }
+
+        const retriever = new TfIdfRetriever({ store });
+        setRetriever(retriever);
+
+        const result = await handler.execute(
+          { action: "search", query: "deployment infrastructure", topK: 2 },
+          makeContext(sessionId),
+        );
+
+        assert.strictEqual(result.success, true);
+        const output = result.output as Record<string, unknown>;
+        const results = output["results"] as Array<Record<string, unknown>>;
+        assert.ok(results.length <= 2, `expected at most 2 results, got ${results.length}`);
+      });
+    });
+
+    it("returns error when query is missing", async () => {
+      await withTempDir(async (tempDir) => {
+        const store = new LongTermStore({
+          directory: tempDir,
+          config: DEFAULT_CONFIG.memory,
+          logger,
+        });
+        await store.load();
+        const retriever = new TfIdfRetriever({ store });
+        setRetriever(retriever);
+
+        const result = await handler.execute(
+          { action: "search" },
+          makeContext(sessionId),
+        );
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.error);
+        assert.match(result.error, /query/);
+      });
+    });
+
+    it("returns error when retriever is not initialized", async () => {
+      setRetriever(null as unknown as any);
+
+      const result = await handler.execute(
+        { action: "search", query: "test" },
+        makeContext(sessionId),
+      );
+
+      assert.strictEqual(result.success, false);
+      assert.ok(result.error);
+      assert.match(result.error, /retriever not initialized/);
+    });
+
+    it("succeeds without working memory registered", async () => {
+      await withTempDir(async (tempDir) => {
+        workingMemoryRegistry.clear();
+
+        const store = new LongTermStore({
+          directory: tempDir,
+          config: DEFAULT_CONFIG.memory,
+          logger,
+        });
+        await store.load();
+        setLongTermStore(store);
+
+        const retriever = new TfIdfRetriever({ store });
+        setRetriever(retriever);
+
+        const result = await handler.execute(
+          { action: "search", query: "anything" },
+          makeContext("no-wm-session"),
+        );
+
+        assert.strictEqual(
+          result.success,
+          true,
+          "search should not require working memory",
+        );
+      });
+    });
+
+    it("result shape includes expected fields", async () => {
+      await withTempDir(async (tempDir) => {
+        const store = new LongTermStore({
+          directory: tempDir,
+          config: DEFAULT_CONFIG.memory,
+          logger,
+        });
+        await store.load();
+        setLongTermStore(store);
+
+        await store.create({
+          category: "procedure",
+          content: "Run npm test before committing code changes",
+          sourceSessions: ["s1"],
+          confidence: 0.9,
+          tags: ["workflow", "testing"],
+        });
+
+        const retriever = new TfIdfRetriever({ store });
+        setRetriever(retriever);
+
+        const result = await handler.execute(
+          { action: "search", query: "npm test committing" },
+          makeContext(sessionId),
+        );
+
+        assert.strictEqual(result.success, true);
+        const output = result.output as Record<string, unknown>;
+        const results = output["results"] as Array<Record<string, unknown>>;
+        assert.ok(results.length > 0);
+
+        const first = results[0]!;
+        assert.strictEqual(typeof first["id"], "string");
+        assert.strictEqual(typeof first["category"], "string");
+        assert.strictEqual(typeof first["content"], "string");
+        assert.ok(Array.isArray(first["tags"]));
+        assert.strictEqual(typeof first["confidence"], "number");
+        assert.strictEqual(typeof first["score"], "number");
       });
     });
   });

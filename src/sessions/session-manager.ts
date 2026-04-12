@@ -11,7 +11,7 @@ import {
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import { WorkingMemory } from "../memory/working-memory.js";
-import { workingMemoryRegistry } from "../tools/built-in/memory-update.js";
+import { workingMemoryRegistry } from "../tools/built-in/memory.js";
 
 export class SessionError extends BetterClawsError {
   constructor(message: string, code: string = "SESSION_ERROR") {

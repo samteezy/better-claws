@@ -155,7 +155,7 @@ Each adapter can include a `systemPrompt` field to tailor behavior per channel. 
 | `file-read` | `fs:read` | Read file contents with optional line ranges |
 | `file-write` | `fs:write` | Write files with automatic directory creation |
 | `web-fetch` | `net:outbound` | HTTP requests with configurable response size limits |
-| `memory-update` | `memory:write` | Update session working memory |
+| `memory` | `memory:read`, `memory:write` | Manage working memory and search long-term memory |
 | `schedule-list` | — | List all scheduled tasks |
 | `schedule-add` | — | Create a new scheduled task |
 | `schedule-edit` | — | Update an existing scheduled task |

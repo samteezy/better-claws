@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SessionManager, SessionError } from "../../src/sessions/session-manager.js";
-import { workingMemoryRegistry } from "../../src/tools/built-in/memory-update.js";
+import { workingMemoryRegistry } from "../../src/tools/built-in/memory.js";
 import type {
   SessionLogEntry,
 } from "../../src/types.js";
