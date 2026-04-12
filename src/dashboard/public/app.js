@@ -22,18 +22,30 @@
 
   const navBtns = document.querySelectorAll(".nav-btn");
   const views = document.querySelectorAll(".view");
+  var validViews = [];
+  navBtns.forEach(function (btn) { validViews.push(btn.dataset.view); });
+
+  function navigateToView(viewName) {
+    if (validViews.indexOf(viewName) === -1) viewName = "status";
+    navBtns.forEach(function (b) { b.classList.remove("active"); });
+    views.forEach(function (v) { v.classList.remove("active"); });
+    var btn = document.querySelector('.nav-btn[data-view="' + viewName + '"]');
+    if (btn) btn.classList.add("active");
+    document.getElementById("view-" + viewName).classList.add("active");
+    stopLogAutoRefresh();
+    loadView(viewName);
+    if (viewName === "logs") startLogAutoRefresh();
+  }
 
   navBtns.forEach(function (btn) {
     btn.addEventListener("click", function () {
-      var viewName = btn.dataset.view;
-      navBtns.forEach(function (b) { b.classList.remove("active"); });
-      views.forEach(function (v) { v.classList.remove("active"); });
-      btn.classList.add("active");
-      document.getElementById("view-" + viewName).classList.add("active");
-      stopLogAutoRefresh();
-      loadView(viewName);
-      if (viewName === "logs") startLogAutoRefresh();
+      location.hash = btn.dataset.view;
     });
+  });
+
+  window.addEventListener("hashchange", function () {
+    var hash = location.hash.replace(/^#/, "");
+    navigateToView(hash);
   });
 
   function loadView(name) {
@@ -131,6 +143,9 @@
   // ── Sessions View ───────────────────────────────────────────────────────
 
   function loadSessions() {
+    document.getElementById("sessions-list-container").style.display = "";
+    document.getElementById("session-detail").style.display = "none";
+
     api("/api/sessions").then(function (data) {
       var html = "";
       if (data.sessions.length === 0) {
@@ -142,7 +157,6 @@
         });
       }
       document.getElementById("sessions-list").innerHTML = html;
-      document.getElementById("session-detail").style.display = "none";
 
       document.querySelectorAll("#sessions-list .session-item").forEach(function (el) {
         el.addEventListener("click", function () {
@@ -166,14 +180,26 @@
     });
   }
 
+  document.getElementById("breadcrumb-back").addEventListener("click", function (e) {
+    e.preventDefault();
+    document.getElementById("session-detail").style.display = "none";
+    document.getElementById("sessions-list-container").style.display = "";
+  });
+
   function loadSessionDetail(id) {
+    document.getElementById("sessions-list-container").style.display = "none";
     document.getElementById("session-detail").style.display = "block";
+    document.getElementById("breadcrumb-current").textContent = "Session " + id;
 
     api("/api/sessions/" + id + "/history").then(function (data) {
       var html = "";
       data.history.forEach(function (msg) {
         html += '<div class="chat-msg">';
-        html += '<div class="chat-role ' + esc(msg.role) + '">' + esc(msg.role) + "</div>";
+        html += '<div class="chat-role ' + esc(msg.role) + '">' + esc(msg.role);
+        if (msg.timestamp) {
+          html += '<span class="chat-time">' + new Date(msg.timestamp).toLocaleString() + '</span>';
+        }
+        html += "</div>";
         if (msg.role === "assistant") {
           html += '<div class="chat-content md-content">' + BcMarkdown.render(msg.content) + "</div>";
         } else {
@@ -364,8 +390,8 @@
             } else {
               html += '<select class="policy-select" data-tool="' + esc(t.name) + '">';
             }
-            html += '<option value="auto"' + (policy === "auto" ? " selected" : "") + '>Auto</option>';
-            html += '<option value="confirm"' + (policy === "confirm" ? " selected" : "") + '>Confirm</option>';
+            html += '<option value="auto"' + (policy === "auto" ? " selected" : "") + '>Execute automatically</option>';
+            html += '<option value="confirm"' + (policy === "confirm" ? " selected" : "") + '>Require confirmation</option>';
             html += '<option value="disabled"' + (policy === "disabled" ? " selected" : "") + '>Disabled</option>';
             html += "</select>";
             html += "</div>";
@@ -484,12 +510,13 @@
       } else {
         var inputType = field.type === "password" ? "password" : field.type === "number" ? "number" : "text";
         var displayValue = value != null ? String(value) : "";
-        // Show env: references as-is for password fields
-        if (field.type === "password" && typeof value === "string" && value === "[REDACTED]") {
-          displayValue = "";
+        var isRedacted = field.type === "password" && typeof value === "string" && value === "[REDACTED]";
+        if (isRedacted) {
+          displayValue = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
         }
         html += '<input type="' + inputType + '" id="cfg-' + esc(field.key) + '" data-field="' + esc(field.key) + '" value="' + esc(displayValue) + '" placeholder="' + esc(field.placeholder || "") + '"';
         if (field.type === "number") html += ' step="any"';
+        if (isRedacted) html += ' data-redacted="true" readonly';
         html += ">";
       }
       html += "</div>";
@@ -502,6 +529,17 @@
       cb.addEventListener("change", function () {
         var label = cb.parentElement.parentElement.querySelector(".toggle-label");
         if (label) label.textContent = cb.checked ? "Enabled" : "Disabled";
+      });
+    });
+
+    // Bind redacted field click-to-edit
+    document.querySelectorAll('#config-section-content input[data-redacted="true"]').forEach(function (input) {
+      input.addEventListener("focus", function () {
+        if (input.dataset.redacted !== "true") return;
+        input.value = "";
+        input.removeAttribute("readonly");
+        input.removeAttribute("data-redacted");
+        input.placeholder = "Enter new value";
       });
     });
   }
@@ -524,6 +562,8 @@
         var num = parseFloat(el.value);
         if (!isNaN(num)) values[field.key] = num;
       } else if (field.type === "password") {
+        // Skip if still showing redacted placeholder
+        if (el.dataset.redacted === "true") return;
         // Only include if user actually typed something
         if (el.value.trim() !== "") values[field.key] = el.value.trim();
       } else {
@@ -534,15 +574,26 @@
   }
 
   document.getElementById("config-save").addEventListener("click", function () {
-    if (!activeConfigSection) return;
+    saveConfigSection().then(function (result) {
+      var statusEl = document.getElementById("config-status");
+      statusEl.textContent = "Saved. " + (result.note || "");
+      statusEl.className = "config-success";
+      setTimeout(function () { statusEl.textContent = ""; }, 4000);
+    }).catch(function () {
+      // error already displayed by saveConfigSection
+    });
+  });
+
+  function saveConfigSection() {
+    if (!activeConfigSection) return Promise.reject(new Error("No section"));
     var statusEl = document.getElementById("config-status");
     var values = collectSectionValues(activeConfigSection);
-    if (!values) return;
+    if (!values) return Promise.reject(new Error("No values"));
 
     statusEl.textContent = "Saving...";
     statusEl.className = "";
 
-    fetch("/api/config/section/" + activeConfigSection, {
+    return fetch("/api/config/section/" + activeConfigSection, {
       method: "PUT",
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(values),
@@ -550,15 +601,27 @@
       if (result.error) {
         statusEl.textContent = result.error;
         statusEl.className = "config-error";
-      } else {
-        statusEl.textContent = "Saved. " + (result.note || "");
-        statusEl.className = "config-success";
-        // Update local data
-        if (!configData[activeConfigSection]) configData[activeConfigSection] = {};
-        Object.assign(configData[activeConfigSection], values);
-        document.getElementById("config-editor").value = JSON.stringify(configData, null, 2);
-        setTimeout(function () { statusEl.textContent = ""; }, 4000);
+        return Promise.reject(new Error(result.error));
       }
+      // Update local data
+      if (!configData[activeConfigSection]) configData[activeConfigSection] = {};
+      Object.assign(configData[activeConfigSection], values);
+      document.getElementById("config-editor").value = JSON.stringify(configData, null, 2);
+      return result;
+    });
+  }
+
+  document.getElementById("config-save-restart").addEventListener("click", function () {
+    saveConfigSection().then(function () {
+      var statusEl = document.getElementById("config-status");
+      statusEl.textContent = "Restarting...";
+      statusEl.className = "config-success";
+      return fetch("/api/restart", {
+        method: "POST",
+        headers: authHeaders(),
+      });
+    }).catch(function () {
+      // save failed — status already set by saveConfigSection
     });
   });
 
@@ -771,5 +834,6 @@
 
   // ── Initial load ────────────────────────────────────────────────────────
 
-  loadStatus();
+  var initialHash = location.hash.replace(/^#/, "");
+  navigateToView(initialHash || "status");
 })();

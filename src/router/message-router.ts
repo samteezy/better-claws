@@ -274,7 +274,7 @@ export class MessageRouter {
         }
         await self.sessionManager.appendToLog(session.id, {
           type: "outbound",
-          message: { channelId: message.channelId, text },
+          message: { channelId: message.channelId, text, timestamp: Date.now() },
         });
         yield { type: "text-delta", delta: text };
         yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
@@ -395,7 +395,7 @@ export class MessageRouter {
 
         if (completedToolCalls.length === 0 || iterations >= MAX_TOOL_ITERATIONS) {
           // Log the final outbound message
-          const outbound: OutboundMessage = { channelId: message.channelId, text: fullText };
+          const outbound: OutboundMessage = { channelId: message.channelId, text: fullText, timestamp: Date.now() };
           await self.sessionManager.appendToLog(session.id, { type: "outbound", message: outbound });
           self.logger.log({
             sessionId: session.id,

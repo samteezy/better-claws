@@ -982,8 +982,8 @@ describe("DashboardServer", () => {
       const data = body as Record<string, unknown>;
       const sections = data["sections"] as Array<Record<string, unknown>>;
 
-      // Should have at least 8 sections as documented
-      assert.ok(sections.length >= 8, `Expected at least 8 sections, got ${sections.length}`);
+      // Should have at least 7 sections (dashboard section removed per #49)
+      assert.ok(sections.length >= 7, `Expected at least 7 sections, got ${sections.length}`);
     });
 
     it("includes required section keys", async () => {
@@ -1000,7 +1000,7 @@ describe("DashboardServer", () => {
       const sectionKeys = new Set(sections.map(s => s["key"]));
 
       // Verify required sections exist
-      const requiredSections = ["gateway", "llm", "systemContext", "security", "memory", "logging", "dashboard", "compaction"];
+      const requiredSections = ["gateway", "llm", "systemContext", "security", "memory", "logging", "compaction"];
       for (const required of requiredSections) {
         assert.ok(sectionKeys.has(required), `Missing required section: ${required}`);
       }

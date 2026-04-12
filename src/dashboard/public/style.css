@@ -367,6 +367,23 @@ h3 {
 .session-item:hover { color: var(--accent-text); }
 .session-item:last-child { border-bottom: none; }
 
+/* ── Breadcrumb ────────────────────────────────────────────────────────── */
+
+.breadcrumb {
+  font-size: 14px;
+  margin-bottom: 16px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+.breadcrumb a {
+  color: var(--accent-text);
+  text-decoration: none;
+  font-weight: 500;
+}
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb-sep { margin: 0 6px; }
+
 /* ── Chat messages (session detail) ────────────────────────────────────── */
 
 .chat-msg {
@@ -381,6 +398,16 @@ h3 {
   text-transform: uppercase;
   letter-spacing: 0.6px;
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-time {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: normal;
 }
 .chat-role.user      { color: var(--accent-text); }
 .chat-role.assistant  { color: var(--purple); }
@@ -899,6 +926,11 @@ h3 {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.config-field input[data-redacted="true"] {
+  color: var(--text-muted);
+  cursor: pointer;
+  letter-spacing: 2px;
 }
 
 .config-field .toggle-row {

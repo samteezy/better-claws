@@ -37,6 +37,7 @@ export interface InboundMessage {
 export interface OutboundMessage {
   readonly channelId: string;
   readonly text: string;
+  readonly timestamp?: number;
   readonly metadata?: Record<string, unknown>;
 }
 

@@ -67,16 +67,23 @@
 
     <!-- Sessions View -->
     <section id="view-sessions" class="view">
-      <h2>Sessions</h2>
-      <h3>Active</h3>
-      <div id="sessions-list" class="content-area">
-        <div class="loading-placeholder">Loading...</div>
+      <div id="sessions-list-container">
+        <h2>Sessions</h2>
+        <h3>Active</h3>
+        <div id="sessions-list" class="content-area">
+          <div class="loading-placeholder">Loading...</div>
+        </div>
+        <h3>Archived</h3>
+        <div id="sessions-archived" class="content-area">
+          <div class="loading-placeholder">Loading...</div>
+        </div>
       </div>
-      <h3>Archived</h3>
-      <div id="sessions-archived" class="content-area">
-        <div class="loading-placeholder">Loading...</div>
-      </div>
-      <div id="session-detail" class="content-area" style="display:none">
+      <div id="session-detail" style="display:none">
+        <nav class="breadcrumb">
+          <a href="#" id="breadcrumb-back">Sessions</a>
+          <span class="breadcrumb-sep">&rsaquo;</span>
+          <span id="breadcrumb-current"></span>
+        </nav>
         <h3>Session History</h3>
         <div id="session-history"></div>
         <h3>Capability Grants</h3>
@@ -173,7 +180,7 @@
     <!-- Tools View -->
     <section id="view-tools" class="view">
       <h2>Tool Management</h2>
-      <p class="view-desc">Set access policies for each tool: auto-execute, require confirmation, or disable entirely.</p>
+      <p class="view-desc">Control how each tool executes. <strong>Execute automatically</strong> runs without asking. <strong>Require confirmation</strong> prompts before running. <strong>Disabled</strong> prevents the tool from being used.</p>
       <div id="tools-content" class="content-area">
         <div class="loading-placeholder">Loading...</div>
       </div>
@@ -192,6 +199,7 @@
         <div class="config-actions-right">
           <button id="config-toggle-json" class="btn">View JSON</button>
           <button id="config-save" class="btn btn-primary">Save Section</button>
+          <button id="config-save-restart" class="btn btn-danger">Save &amp; Restart</button>
         </div>
       </div>
       <div id="config-json-area" style="display:none">

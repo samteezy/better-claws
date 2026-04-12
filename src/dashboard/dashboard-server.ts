@@ -154,17 +154,6 @@ const CONFIG_SCHEMA_SECTIONS: readonly ConfigSectionSchema[] = [
     ],
   },
   {
-    key: "dashboard",
-    label: "Dashboard",
-    description: "This dashboard\u2019s server settings. Changes require a restart.",
-    fields: [
-      { key: "enabled", label: "Enabled", type: "boolean", description: "Enable or disable the dashboard server.", restart: true },
-      { key: "host", label: "Host", type: "text", description: "IP address to bind the dashboard to.", placeholder: "127.0.0.1", restart: true },
-      { key: "port", label: "Port", type: "number", description: "Port for the dashboard server.", placeholder: "18701", restart: true },
-      { key: "authToken", label: "Auth Token", type: "password", description: "Bearer token for dashboard authentication. Use env:VAR_NAME to reference environment variables.", restart: true },
-    ],
-  },
-  {
     key: "compaction",
     label: "Compaction",
     description: "Context window compaction to manage long conversations.",
@@ -341,6 +330,10 @@ export class DashboardServer {
       case path.startsWith("/api/config/section/") && method === "PUT":
         return await this.handleUpdateConfigSection(req, res, path);
 
+      // Restart
+      case path === "/api/restart" && method === "POST":
+        return this.handleRestart(res);
+
       // Schedules
       case path === "/api/schedules" && method === "GET":
         return this.handleGetSchedules(res);
@@ -384,7 +377,7 @@ export class DashboardServer {
       return;
     }
 
-    const history = await this.context.sessionManager.getHistory(sessionId);
+    const history = await this.context.sessionManager.getDetailedHistory(sessionId);
     this.sendJson(res, 200, { sessionId, history, count: history.length });
   }
 
@@ -677,6 +670,22 @@ export class DashboardServer {
     }
 
     await saveConfig(this.context.rawConfig, this.context.configPath);
+  }
+
+  // ── Restart endpoint ─────────────────────────────────────────────────
+
+  private handleRestart(res: ServerResponse): void {
+    this.logger.log({
+      sessionId: null,
+      eventType: "config:change",
+      component: "dashboard",
+      payload: { action: "restart_requested" },
+    });
+
+    this.sendJson(res, 200, { restarting: true });
+
+    // Give the response time to flush before exiting
+    setTimeout(() => process.exit(0), 500);
   }
 
   // ── Schedule endpoints ────────────────────────────────────────────────

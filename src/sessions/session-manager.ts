@@ -219,6 +219,82 @@ export class SessionManager {
     return messages;
   }
 
+  async getDetailedHistory(
+    sessionId: string,
+  ): Promise<Array<{ role: string; content: string; timestamp?: number }>> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return [];
+
+    let content: string;
+    try {
+      content = await readFile(session.logPath, "utf-8");
+    } catch {
+      return [];
+    }
+
+    const lines = content.trim().split("\n").filter(Boolean);
+    const parsed: SessionLogEntry[] = [];
+    for (const line of lines) {
+      try {
+        parsed.push(JSON.parse(line) as SessionLogEntry);
+      } catch {
+        // skip malformed lines
+      }
+    }
+
+    let lastCompactionIdx = -1;
+    let compactionSummary = "";
+    for (let i = 0; i < parsed.length; i++) {
+      const entry = parsed[i]!;
+      if (entry.type === "compaction") {
+        lastCompactionIdx = i;
+        compactionSummary = entry.summary;
+      }
+    }
+
+    const messages: Array<{ role: string; content: string; timestamp?: number }> = [];
+
+    if (lastCompactionIdx !== -1) {
+      messages.push({
+        role: "user",
+        content: `[Conversation summary: ${compactionSummary}]`,
+      });
+    }
+
+    const startIdx = lastCompactionIdx + 1;
+    for (let i = startIdx; i < parsed.length; i++) {
+      const entry = parsed[i]!;
+      switch (entry.type) {
+        case "inbound":
+          messages.push({
+            role: "user",
+            content: entry.message.text,
+            timestamp: entry.message.timestamp,
+          });
+          break;
+        case "outbound":
+          messages.push({
+            role: "assistant",
+            content: entry.message.text,
+            timestamp: entry.message.timestamp,
+          });
+          break;
+        case "toolResult":
+          messages.push({
+            role: "tool",
+            content: JSON.stringify(entry.result.output),
+          });
+          break;
+        case "toolCall":
+        case "compaction":
+        case "fork":
+          break;
+      }
+    }
+
+    return messages;
+  }
+
   grantCapability(
     sessionId: string,
     capability: Capability,
