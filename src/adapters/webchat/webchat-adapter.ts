@@ -640,7 +640,6 @@ const CHAT_HTML = `<!DOCTYPE html>
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.12);
   }
-  #input:disabled { background: var(--bg-warm); color: var(--text-muted); }
   #send-btn {
     padding: 11px 20px;
     background: var(--accent);
@@ -653,9 +652,9 @@ const CHAT_HTML = `<!DOCTYPE html>
     cursor: pointer;
     transition: background 0.15s, transform 0.1s;
   }
-  #send-btn:hover:not(:disabled) { background: var(--accent-dark); }
-  #send-btn:active:not(:disabled) { transform: scale(0.96); }
-  #send-btn:disabled { opacity: 0.4; cursor: default; }
+  #send-btn:hover:not(.busy) { background: var(--accent-dark); }
+  #send-btn:active:not(.busy) { transform: scale(0.96); }
+  #send-btn.busy { opacity: 0.6; }
   ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
@@ -850,19 +849,34 @@ const CHAT_HTML = `<!DOCTYPE html>
 
   function setEnabled(enabled) {
     busy = !enabled;
-    input.disabled = !enabled;
-    btn.disabled = !enabled;
+    btn.classList.toggle("busy", !enabled);
     if (enabled) input.focus();
   }
 
   form.addEventListener("submit", function(e) {
     e.preventDefault();
     var text = input.value.trim();
-    if (!text || busy) return;
+    if (!text) return;
 
     messages.push({ role: "user", text: text });
     input.value = "";
     render();
+
+    // If already streaming, fire-and-forget — router queues the message
+    if (busy) {
+      var qHdrs = { "Content-Type": "application/json" };
+      if (authToken) qHdrs["Authorization"] = "Bearer " + authToken;
+      fetch("/chat/stream", {
+        method: "POST",
+        headers: qHdrs,
+        body: JSON.stringify({ text: text })
+      }).catch(function(err) {
+        messages.push({ role: "error", text: err.message || "Failed to queue message" });
+        render();
+      });
+      return;
+    }
+
     setEnabled(false);
 
     var hdrs = { "Content-Type": "application/json" };
