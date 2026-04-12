@@ -41,7 +41,9 @@ const NEVER_AUTO_GRANT = new Set([
   "net:outbound",
 ]);
 
-export const SYSTEM_PROMPT = `You are betterClaws, a personal AI assistant. You can use tools when they are available. Be helpful, concise, and accurate. If you are unsure about something, say so.`;
+export const SYSTEM_PROMPT = `You are betterClaws, a personal AI assistant. You can use tools when they are available. Be helpful, concise, and accurate. If you are unsure about something, say so.
+
+When a tool call is denied by the user, do NOT retry the same tool. Acknowledge the denial and continue without that tool. Suggest alternatives if appropriate, but never re-invoke a denied tool unless the user explicitly asks you to try again.`;
 
 export interface SlashCommandDescriptor {
   readonly name: string;
@@ -774,7 +776,7 @@ export class MessageRouter {
       );
 
       if (result.verdict === "deny") {
-        return { output: null, error: "User denied tool execution" };
+        return { output: null, error: `User denied execution of tool "${toolName}". Do not retry this action.` };
       }
 
       if (result.verdict === "allow-session") {
