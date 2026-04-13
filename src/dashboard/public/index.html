@@ -45,6 +45,7 @@
     <button class="nav-btn" data-view="adapters">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
       <span>Adapters</span>
+    </button>
     <button class="nav-btn" data-view="suggestions">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
       <span>Suggestions</span>
@@ -191,6 +192,10 @@
       <h2>Adapters & Channels</h2>
       <p class="view-desc">Connected chat platforms and their status. Adapters bridge betterClaws to messaging services.</p>
       <div id="adapters-content" class="content-area">
+        <div class="loading-placeholder">Loading...</div>
+      </div>
+    </section>
+
     <!-- Suggestions View -->
     <section id="view-suggestions" class="view">
       <h2>Suggestions</h2>
