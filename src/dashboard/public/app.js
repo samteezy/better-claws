@@ -543,7 +543,7 @@
           groups[src].forEach(function (t) {
             var policy = t.policy || "auto";
             var isBuiltIn = src === "built-in";
-            html += '<div class="tool-item tool-item-managed">';
+            html += '<div class="tool-item tool-item-managed" data-policy="' + esc(policy) + '">';
             html += '<div class="tool-info">';
             html += '<div class="tool-name">' + esc(t.name);
             html += '<span class="tool-source-badge source-' + esc(src) + '">' + esc(src) + "</span>";
@@ -582,6 +582,7 @@
               sel.style.borderColor = "#c77272";
             } else {
               sel.style.borderColor = "#6b8f71";
+              sel.closest(".tool-item").setAttribute("data-policy", newPolicy);
               setTimeout(function () { sel.style.borderColor = ""; }, 1500);
             }
           });
