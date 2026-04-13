@@ -193,7 +193,7 @@ export class SkillLoader {
       payload: { action: "loaded", skill: qualifiedName, tool: namespacedDescriptor.name },
     });
 
-    return { descriptor: namespacedDescriptor, handler };
+    return { descriptor: namespacedDescriptor, handler, handlerPath };
   }
 
   private validateDescriptor(raw: unknown, skillName: string): ToolDescriptor {

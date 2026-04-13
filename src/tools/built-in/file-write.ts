@@ -1,4 +1,5 @@
 import { writeFile, mkdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { toErrorMessage } from "../../utils/errors.js";
 import { dirname } from "node:path";
 import type {
@@ -8,6 +9,8 @@ import type {
   ToolResult,
 } from "../../types.js";
 import { checkPath } from "../../utils/path-policy.js";
+
+export const handlerPath = fileURLToPath(import.meta.url);
 import { missingParamResult } from "./tool-helpers.js";
 
 export const descriptor: ToolDescriptor = {

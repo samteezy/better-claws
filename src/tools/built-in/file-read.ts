@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { toErrorMessage } from "../../utils/errors.js";
 import type {
   ToolDescriptor,
@@ -8,6 +9,8 @@ import type {
 } from "../../types.js";
 import { checkPath } from "../../utils/path-policy.js";
 import { missingParamResult } from "./tool-helpers.js";
+
+export const handlerPath = fileURLToPath(import.meta.url);
 
 export const descriptor: ToolDescriptor = {
   name: "file-read",

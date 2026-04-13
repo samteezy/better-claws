@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { toErrorMessage } from "../../utils/errors.js";
 import type {
   ToolDescriptor,
@@ -5,6 +6,8 @@ import type {
   ExecutionContext,
   ToolResult,
 } from "../../types.js";
+
+export const handlerPath = fileURLToPath(import.meta.url);
 
 const DEFAULT_MAX_BYTES = 102400; // 100KB
 

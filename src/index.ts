@@ -5,7 +5,7 @@ import { StructuredLogger } from "./logger/structured-logger.js";
 import { LlmClient } from "./llm/llm-client.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { CapabilityGate } from "./tools/capability-gate.js";
-import { ToolExecutor } from "./tools/executor.js";
+import { CompositeExecutor } from "./tools/composite-executor.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { SessionCompactor } from "./sessions/compactor.js";
 import { MessageRouter, SYSTEM_PROMPT } from "./router/message-router.js";
@@ -167,10 +167,12 @@ export async function createApp(config: BetterClawsConfig, options?: {
     logger,
   });
 
-  const executor = new ToolExecutor({
+  const executor = new CompositeExecutor({
     scratchBaseDir: "data/scratch",
     defaultTimeout: config.security.sandboxTimeout,
     stripEnvironment: config.security.stripEnvironment,
+    maxMemoryMb: config.security.maxMemoryMb,
+    useForkedExecution: config.security.useForkedExecution,
     logger,
   });
 

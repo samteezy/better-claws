@@ -23,7 +23,7 @@ import type { SessionManager } from "../../src/sessions/session-manager.js";
 import type { LlmClient } from "../../src/llm/llm-client.js";
 import type { ToolRegistry } from "../../src/tools/registry.js";
 import type { CapabilityGate } from "../../src/tools/capability-gate.js";
-import type { ToolExecutor } from "../../src/tools/executor.js";
+import type { CompositeExecutor } from "../../src/tools/composite-executor.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { SecretManager } from "../../src/secrets/secret-manager.js";
 import type { BetterClawsConfig } from "../../src/types.js";
@@ -204,6 +204,9 @@ function createMockToolRegistry() {
     getHandler(name: string) {
       return handlers.get(name);
     },
+    getHandlerPath() {
+      return undefined;
+    },
     getPolicy() {
       return "auto" as const;
     },
@@ -234,7 +237,7 @@ function createMockExecutor() {
     async execute(_handler: ToolHandler, _params: Record<string, unknown>, _ctx: ExecutionContext): Promise<ToolResult> {
       return { success: true, output: { result: "test output" }, durationMs: 100 };
     },
-  } as unknown as ToolExecutor;
+  } as unknown as CompositeExecutor;
 }
 
 function createMockCompactor() {

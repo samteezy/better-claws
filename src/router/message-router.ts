@@ -20,7 +20,7 @@ import type { SessionCompactor } from "../sessions/compactor.js";
 import type { LlmClient } from "../llm/llm-client.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { CapabilityGate } from "../tools/capability-gate.js";
-import type { ToolExecutor } from "../tools/executor.js";
+import type { CompositeExecutor } from "../tools/composite-executor.js";
 import type { SecretManager } from "../secrets/secret-manager.js";
 import type { BuildResult, PromptBuilder } from "../prompt/prompt-builder.js";
 import { ConfirmationBroker } from "./confirmation-broker.js";
@@ -62,7 +62,7 @@ export interface MessageRouterOptions {
   readonly llmClient: LlmClient;
   readonly toolRegistry: ToolRegistry;
   readonly capabilityGate: CapabilityGate;
-  readonly executor: ToolExecutor;
+  readonly executor: CompositeExecutor;
   readonly secretManager: SecretManager;
   readonly logger: StructuredLogger;
   readonly config: BetterClawsConfig;
@@ -77,7 +77,7 @@ export class MessageRouter {
   private readonly llmClient: LlmClient;
   private readonly toolRegistry: ToolRegistry;
   private readonly capabilityGate: CapabilityGate;
-  private readonly executor: ToolExecutor;
+  private readonly executor: CompositeExecutor;
   private readonly secretManager: SecretManager;
   private readonly logger: StructuredLogger;
   private readonly config: BetterClawsConfig;
@@ -898,7 +898,8 @@ export class MessageRouter {
       toolName,
     );
 
-    const result = await this.executor.execute(handler, params, {
+    const handlerPath = this.toolRegistry.getHandlerPath(toolName) ?? null;
+    const result = await this.executor.execute(handler, handlerPath, params, {
       sessionId,
       capabilities: [...descriptor.capabilities],
       scratchDir: "",

@@ -46,6 +46,7 @@ export const DEFAULT_CONFIG: BetterClawsConfig = {
     stripEnvironment: true,
     allowPersistentGrants: false,
     autoGrantCapabilities: ["fs:read", "memory:read", "memory:write"],
+    useForkedExecution: true,
   },
   memory: {
     maxLongTermEntries: 2000,

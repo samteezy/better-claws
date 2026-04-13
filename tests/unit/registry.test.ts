@@ -1386,4 +1386,241 @@ export const notExecute = async () => {};
       assert.equal(found, undefined);
     });
   });
+
+  describe("getHandlerPath()", () => {
+    it("returns handlerPath for a tool registered with a file-backed handler", async () => {
+      const toolsDir = await mkdtemp(join(tmpdir(), "registry-handler-path-"));
+      try {
+        const toolDir = join(toolsDir, "file-backed-tool");
+        await mkdir(toolDir);
+
+        const descriptor = {
+          name: "file-backed-tool",
+          description: "Tool with file-backed handler",
+          parameters: { type: "object" },
+          capabilities: [],
+        };
+
+        await writeFile(join(toolDir, "descriptor.json"), JSON.stringify(descriptor));
+        await writeFile(join(toolDir, "handler.js"), "export const execute = async () => {};");
+
+        const registry = new ToolRegistry({
+          toolsDirectory: toolsDir,
+          logger: mockLogger,
+        });
+
+        await registry.loadTools();
+
+        const handlerPath = registry.getHandlerPath("file-backed-tool");
+
+        assert.ok(handlerPath !== undefined);
+        assert.ok(handlerPath!.includes("file-backed-tool"));
+        assert.ok(handlerPath!.includes("handler.js"));
+      } finally {
+        await rm(toolsDir, { recursive: true, force: true });
+      }
+    });
+
+    it("returns undefined for a tool registered without a handlerPath", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+        builtInTools: [
+          {
+            descriptor: {
+              name: "inline-tool",
+              description: "Built-in tool without file path",
+              parameters: { type: "object" as const },
+              capabilities: [] as const,
+            },
+            handler: {
+              execute: async () => ({
+                success: true,
+                output: null,
+                durationMs: 0,
+              }),
+            },
+            // Note: no handlerPath provided
+          },
+        ],
+      });
+
+      await registry.loadTools();
+
+      const handlerPath = registry.getHandlerPath("inline-tool");
+
+      assert.equal(handlerPath, undefined);
+    });
+
+    it("returns undefined for a non-existent tool", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      const handlerPath = registry.getHandlerPath("nonexistent-tool");
+
+      assert.equal(handlerPath, undefined);
+    });
+
+    it("returns handlerPath for dynamically registered tool with handlerPath", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      registry.register({
+        descriptor: {
+          name: "dynamic-tool-with-path",
+          description: "Dynamically registered with handler path",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+        handlerPath: "/path/to/dynamic/handler.js",
+      });
+
+      const handlerPath = registry.getHandlerPath("dynamic-tool-with-path");
+
+      assert.equal(handlerPath, "/path/to/dynamic/handler.js");
+    });
+
+    it("returns undefined for dynamically registered tool without handlerPath", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      registry.register({
+        descriptor: {
+          name: "dynamic-tool-no-path",
+          description: "Dynamically registered without handler path",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+        // No handlerPath
+      });
+
+      const handlerPath = registry.getHandlerPath("dynamic-tool-no-path");
+
+      assert.equal(handlerPath, undefined);
+    });
+
+    it("distinguishes between tools with and without handlerPath", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+        builtInTools: [
+          {
+            descriptor: {
+              name: "inline",
+              description: "Without path",
+              parameters: { type: "object" as const },
+              capabilities: [] as const,
+            },
+            handler: {
+              execute: async () => ({
+                success: true,
+                output: null,
+                durationMs: 0,
+              }),
+            },
+          },
+          {
+            descriptor: {
+              name: "with-path",
+              description: "With path",
+              parameters: { type: "object" as const },
+              capabilities: [] as const,
+            },
+            handler: {
+              execute: async () => ({
+                success: true,
+                output: null,
+                durationMs: 0,
+              }),
+            },
+            handlerPath: "/path/to/handler.js",
+          },
+        ],
+      });
+
+      await registry.loadTools();
+
+      const inlinePath = registry.getHandlerPath("inline");
+      const withPath = registry.getHandlerPath("with-path");
+
+      assert.equal(inlinePath, undefined);
+      assert.equal(withPath, "/path/to/handler.js");
+    });
+
+    it("returns correct handlerPath after tool is removed and re-registered", async () => {
+      const registry = new ToolRegistry({
+        logger: mockLogger,
+      });
+
+      await registry.loadTools();
+
+      // Register a tool with a path
+      registry.register({
+        descriptor: {
+          name: "reregister-test",
+          description: "Test re-registration",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+        handlerPath: "/original/path.js",
+      });
+
+      assert.equal(registry.getHandlerPath("reregister-test"), "/original/path.js");
+
+      // Remove the tool
+      registry.remove("reregister-test");
+
+      // Path should now be undefined
+      assert.equal(registry.getHandlerPath("reregister-test"), undefined);
+
+      // Re-register with a different path
+      registry.register({
+        descriptor: {
+          name: "reregister-test",
+          description: "Test re-registration",
+          parameters: { type: "object" as const },
+          capabilities: [] as const,
+        },
+        handler: {
+          execute: async () => ({
+            success: true,
+            output: null,
+            durationMs: 0,
+          }),
+        },
+        handlerPath: "/new/path.js",
+      });
+
+      // Should now return the new path
+      assert.equal(registry.getHandlerPath("reregister-test"), "/new/path.js");
+    });
+  });
 });

@@ -166,6 +166,8 @@ export interface ExecutionContext {
 export interface BuiltInToolModule {
   readonly descriptor: ToolDescriptor;
   readonly handler: ToolHandler;
+  /** Absolute path to the compiled handler file. When set, ForkedExecutor can run this tool in a child process. */
+  readonly handlerPath?: string;
 }
 
 // ── Capability Gate ───────────────────────────────────────────────────────────
@@ -308,6 +310,8 @@ export interface SecurityConfig {
   readonly autoGrantCapabilities?: readonly string[];
   readonly allowedFsRoots?: readonly string[];
   readonly confirmationTimeoutMs?: number;
+  /** Run file-backed tools in isolated child processes via ForkedExecutor. Default: true. */
+  readonly useForkedExecution?: boolean;
 }
 
 export interface MemoryConfig {

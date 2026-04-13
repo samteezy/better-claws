@@ -7,7 +7,7 @@ import { SessionManager } from "../../src/sessions/session-manager.js";
 import { LlmClient } from "../../src/llm/llm-client.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 import { CapabilityGate } from "../../src/tools/capability-gate.js";
-import { ToolExecutor } from "../../src/tools/executor.js";
+import { CompositeExecutor } from "../../src/tools/composite-executor.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { SecretManager } from "../../src/secrets/secret-manager.js";
 import type { BetterClawsConfig, LlmStreamChunk } from "../../src/types.js";
@@ -218,7 +218,7 @@ describe("Telegram → Router integration", () => {
       defaultPolicy: "deny",
       logger,
     });
-    const executor = new ToolExecutor({
+    const executor = new CompositeExecutor({
       scratchBaseDir: path.join(tmpDir, "scratch"),
       defaultTimeout: 5000,
       stripEnvironment: true,
@@ -388,7 +388,7 @@ describe("Telegram → Router integration", () => {
 
     const toolRegistry = new ToolRegistry({ toolsDirectory: path.join(tmpDir, "tools"), logger });
     const capabilityGate = new CapabilityGate({ defaultPolicy: "deny", logger });
-    const executor = new ToolExecutor({
+    const executor = new CompositeExecutor({
       scratchBaseDir: path.join(tmpDir, "scratch"),
       defaultTimeout: 5000,
       stripEnvironment: true,
@@ -543,7 +543,7 @@ describe("Telegram → Router integration", () => {
 
     const toolRegistry = new ToolRegistry({ toolsDirectory: path.join(tmpDir, "tools"), logger });
     const capabilityGate = new CapabilityGate({ defaultPolicy: "deny", logger });
-    const executor = new ToolExecutor({
+    const executor = new CompositeExecutor({
       scratchBaseDir: path.join(tmpDir, "scratch"),
       defaultTimeout: 5000,
       stripEnvironment: true,

@@ -17,6 +17,8 @@ export const RegistryError = createErrorClass("RegistryError", "registry", "REGI
 export interface RegisteredTool {
   readonly descriptor: ToolDescriptor;
   readonly handler: ToolHandler;
+  /** Absolute path to the handler file on disk. Enables ForkedExecutor isolation. */
+  readonly handlerPath?: string;
 }
 
 export interface ToolRegistryOptions {
@@ -56,6 +58,7 @@ export class ToolRegistry {
       this.tools.set(tool.descriptor.name, {
         descriptor: tool.descriptor,
         handler: tool.handler,
+        handlerPath: tool.handlerPath,
       });
       this.logger.log({
         sessionId: null,
@@ -102,6 +105,11 @@ export class ToolRegistry {
 
   getHandler(toolName: string): ToolHandler | undefined {
     return this.tools.get(toolName)?.handler;
+  }
+
+  /** Get the file path for a tool's handler (if file-backed). */
+  getHandlerPath(toolName: string): string | undefined {
+    return this.tools.get(toolName)?.handlerPath;
   }
 
   /** Dynamically register a tool (e.g., from MCP or skills). */
@@ -177,7 +185,7 @@ export class ToolRegistry {
 
     const handler = this.extractHandler(handlerModule, dirName);
 
-    this.tools.set(descriptor.name, { descriptor, handler });
+    this.tools.set(descriptor.name, { descriptor, handler, handlerPath });
 
     this.logger.log({
       sessionId: null,
