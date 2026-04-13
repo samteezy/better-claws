@@ -339,7 +339,7 @@ export class Scheduler implements ChannelAdapter {
   }
 
   private fireSchedule(schedule: StoredSchedule, now: Date): void {
-    const channelId = `cron:${schedule.id}`;
+    const channelId = `cron:${schedule.id}:${now.getTime()}`;
 
     const message: InboundMessage = {
       id: `${schedule.id}-${now.getTime()}`,
