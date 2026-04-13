@@ -347,6 +347,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
         scheduler,
         longTermStore,
         suggestionStore,
+        curationWorker,
       },
     });
 

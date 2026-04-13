@@ -681,6 +681,11 @@ h3 {
   border-color: var(--rose);
 }
 .btn-danger:hover { background: var(--rose); color: white; }
+.btn-curation {
+  color: var(--purple);
+  border-color: var(--purple);
+}
+.btn-curation:hover { background: var(--purple); color: white; }
 
 .empty-state {
   text-align: center;

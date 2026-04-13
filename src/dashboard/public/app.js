@@ -1035,6 +1035,40 @@
 
   document.getElementById("mem-refresh").addEventListener("click", loadMemory);
 
+  document.getElementById("curation-run").addEventListener("click", function () {
+    var btn = document.getElementById("curation-run");
+    var original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Running\u2026";
+
+    fetch("/api/curation/run", {
+      method: "POST",
+      headers: authHeaders(),
+    }).then(function (r) { return r.json(); }).then(function (result) {
+      btn.disabled = false;
+      btn.textContent = original;
+      if (result.error) {
+        alert("Curation error: " + result.error);
+        return;
+      }
+      var parts = [];
+      if (result.distilledSessions) parts.push(result.distilledSessions + " sessions distilled");
+      if (result.entriesCreated) parts.push(result.entriesCreated + " entries created");
+      if (result.consolidated) parts.push(result.consolidated + " consolidated");
+      if (result.decayed) parts.push(result.decayed + " decayed");
+      if (result.stale) parts.push(result.stale + " stale");
+      if (result.pruned) parts.push(result.pruned + " pruned");
+      var summary = parts.length ? parts.join(", ") : "No changes";
+      btn.textContent = summary;
+      setTimeout(function () { btn.textContent = original; }, 4000);
+      loadMemory();
+    }).catch(function () {
+      btn.disabled = false;
+      btn.textContent = original;
+      alert("Failed to run curation cycle");
+    });
+  });
+
   document.getElementById("mem-cancel").addEventListener("click", function () {
     document.getElementById("memory-form").style.display = "none";
   });

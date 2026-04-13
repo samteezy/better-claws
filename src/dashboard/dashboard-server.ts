@@ -56,6 +56,8 @@ export interface DashboardContext {
   readonly longTermStore?: import("../memory/long-term-store.js").LongTermStore;
   /** Suggestion store for managing auto-suggestions. */
   readonly suggestionStore?: import("../suggestions/suggestion-store.js").SuggestionStore;
+  /** Curation worker for on-demand memory curation cycles. */
+  readonly curationWorker?: import("../memory/curation-worker.js").CurationWorker;
 }
 
 export interface DashboardServerOptions {
@@ -189,6 +191,7 @@ export class DashboardServer {
   private readonly staticDir: string;
   private readonly authToken: string | undefined;
   private server: Server | null = null;
+  private curationInProgress = false;
 
   constructor(options: DashboardServerOptions) {
     this.host = options.host ?? "127.0.0.1";
@@ -314,6 +317,10 @@ export class DashboardServer {
         return await this.handleUpdateMemory(req, res, path);
       case path.startsWith("/api/memory/") && method === "DELETE":
         return await this.handleDeleteMemory(res, path);
+
+      // Curation
+      case path === "/api/curation/run" && method === "POST":
+        return await this.handleRunCuration(res);
 
       // System
       case path === "/api/status" && method === "GET":
@@ -604,6 +611,29 @@ export class DashboardServer {
     }
 
     this.sendJson(res, 200, { success: true });
+  }
+
+  // ── Curation endpoints ────────────────────────────────────────────────
+
+  private async handleRunCuration(res: ServerResponse): Promise<void> {
+    if (!this.context.curationWorker) {
+      this.sendJson(res, 400, { error: "Curation worker is not configured" });
+      return;
+    }
+    if (this.curationInProgress) {
+      this.sendJson(res, 409, { error: "A curation cycle is already running" });
+      return;
+    }
+
+    this.curationInProgress = true;
+    try {
+      const result = await this.context.curationWorker.runCycle();
+      this.sendJson(res, 200, result);
+    } catch (err) {
+      this.sendJson(res, 500, { error: toErrorMessage(err) });
+    } finally {
+      this.curationInProgress = false;
+    }
   }
 
   // ── System endpoints ──────────────────────────────────────────────────
