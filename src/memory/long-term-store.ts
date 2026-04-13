@@ -149,6 +149,7 @@ export class LongTermStore {
     };
 
     this.entries.set(id, updated);
+    await this.persist();
 
     this.logger.log({
       sessionId: null,
