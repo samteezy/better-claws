@@ -112,7 +112,7 @@ describe("Scheduler", () => {
       assert.equal(received.length, 1);
       assert.equal(received[0]!.text, "ping");
       assert.equal(received[0]!.adapterId, "cron");
-      assert.equal(received[0]!.channelId, "cron:test-1");
+      assert.ok(received[0]!.channelId.startsWith("cron:test-1:"));
       assert.equal(received[0]!.senderId, "scheduler");
 
       await scheduler.stop();
@@ -188,6 +188,48 @@ describe("Scheduler", () => {
       const texts = received.map((m) => m.text);
       assert.ok(texts.includes("one"));
       assert.ok(texts.includes("two"));
+
+      await scheduler.stop();
+    });
+
+    it("fireSchedule produces a channelId that includes a timestamp component", async () => {
+      const { scheduler } = makeScheduler([
+        { id: "ts-test", name: "Timestamp test", cron: "* * * * *", prompt: "ping" },
+      ]);
+
+      const received: InboundMessage[] = [];
+      scheduler.onMessage((msg) => received.push(msg));
+
+      await scheduler.start();
+
+      const fireTime = new Date(2024, 0, 1, 12, 30, 0);
+      scheduler.tick(fireTime);
+
+      assert.equal(received.length, 1);
+      // channelId should be cron:<id>:<timestamp>
+      const parts = received[0]!.channelId.split(":");
+      assert.equal(parts[0], "cron");
+      assert.equal(parts[1], "ts-test");
+      assert.equal(parts[2], String(fireTime.getTime()));
+
+      await scheduler.stop();
+    });
+
+    it("two consecutive fires for the same schedule produce different channelIds", async () => {
+      const { scheduler } = makeScheduler([
+        { id: "unique-test", name: "Unique channels", cron: "* * * * *", prompt: "go" },
+      ]);
+
+      const received: InboundMessage[] = [];
+      scheduler.onMessage((msg) => received.push(msg));
+
+      await scheduler.start();
+
+      scheduler.tick(new Date(2024, 0, 1, 12, 0, 0));
+      scheduler.tick(new Date(2024, 0, 1, 12, 1, 0));
+
+      assert.equal(received.length, 2);
+      assert.notEqual(received[0]!.channelId, received[1]!.channelId);
 
       await scheduler.stop();
     });
