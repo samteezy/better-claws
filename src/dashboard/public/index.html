@@ -144,6 +144,19 @@
         <input id="mem-confidence" type="number" placeholder="Min confidence" min="0" max="1" step="0.1">
         <button id="mem-refresh" class="btn">Refresh</button>
       </div>
+      <div id="memory-form" class="schedule-form" style="display:none">
+        <input id="mem-edit-id" type="hidden">
+        <label class="form-label" for="mem-edit-content">Content</label>
+        <textarea id="mem-edit-content" placeholder="Memory content" rows="3"></textarea>
+        <label class="form-label" for="mem-edit-confidence">Confidence</label>
+        <input id="mem-edit-confidence" type="number" placeholder="0-1" min="0" max="1" step="0.05">
+        <label class="form-label" for="mem-edit-tags">Tags</label>
+        <input id="mem-edit-tags" type="text" placeholder="Comma-separated tags">
+        <div class="schedule-form-actions">
+          <button id="mem-save" class="btn btn-primary">Save</button>
+          <button id="mem-cancel" class="btn">Cancel</button>
+        </div>
+      </div>
       <div id="memory-content" class="content-area">
         <div class="loading-placeholder">Loading...</div>
       </div>

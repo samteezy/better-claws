@@ -450,6 +450,7 @@ h3 {
   line-height: 1.5;
 }
 
+.mem-actions { margin-top: 8px; display: flex; gap: 6px; }
 .mem-tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
 .mem-tag {
   display: inline-block;
@@ -613,6 +614,15 @@ h3 {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .btn-sm {

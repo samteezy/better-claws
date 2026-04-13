@@ -807,7 +807,7 @@
         html = "<p>No memory entries</p>";
       } else {
         data.entries.forEach(function (entry) {
-          html += '<div class="memory-entry">';
+          html += '<div class="memory-entry" data-id="' + esc(entry.id || "") + '">';
           html += '<div class="mem-meta">';
           html += '<strong>' + esc(entry.category || "unknown") + "</strong>";
           html += " | confidence: " + (entry.confidence !== undefined ? entry.confidence.toFixed(2) : "?");
@@ -822,15 +822,79 @@
             });
             html += "</div>";
           }
+          html += '<div class="mem-actions">';
+          html += '<button class="btn btn-sm mem-edit-btn" '
+            + 'data-id="' + esc(entry.id || "") + '" '
+            + 'data-content="' + esc(entry.content || "") + '" '
+            + 'data-confidence="' + (entry.confidence !== undefined ? entry.confidence : "") + '" '
+            + 'data-tags="' + esc((entry.tags || []).join(", ")) + '"'
+            + ">Edit</button>";
+          html += '<button class="btn btn-sm btn-danger mem-delete-btn" '
+            + 'data-id="' + esc(entry.id || "") + '"'
+            + ">Delete</button>";
+          html += "</div>";
           html += "</div>";
         });
       }
       html += '<p style="margin-top:12px;font-size:12px;color:#9e9891">Total: ' + data.total + " entries</p>";
       document.getElementById("memory-content").innerHTML = html;
+
+      // Bind edit buttons
+      document.querySelectorAll(".mem-edit-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          document.getElementById("mem-edit-id").value = btn.dataset.id;
+          document.getElementById("mem-edit-content").value = btn.dataset.content;
+          document.getElementById("mem-edit-confidence").value = btn.dataset.confidence;
+          document.getElementById("mem-edit-tags").value = btn.dataset.tags;
+          document.getElementById("memory-form").style.display = "block";
+        });
+      });
+
+      // Bind delete buttons
+      document.querySelectorAll(".mem-delete-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (!confirm("Delete this memory entry?")) return;
+          fetch("/api/memory/" + btn.dataset.id, {
+            method: "DELETE",
+            headers: authHeaders(),
+          }).then(function (r) { return r.json(); }).then(function () {
+            loadMemory();
+          });
+        });
+      });
     });
   }
 
   document.getElementById("mem-refresh").addEventListener("click", loadMemory);
+
+  document.getElementById("mem-cancel").addEventListener("click", function () {
+    document.getElementById("memory-form").style.display = "none";
+  });
+
+  document.getElementById("mem-save").addEventListener("click", function () {
+    var id = document.getElementById("mem-edit-id").value;
+    var content = document.getElementById("mem-edit-content").value.trim();
+    var confidence = document.getElementById("mem-edit-confidence").value;
+    var tagsStr = document.getElementById("mem-edit-tags").value.trim();
+
+    var body = {};
+    if (content) body.content = content;
+    if (confidence !== "") body.confidence = parseFloat(confidence);
+    if (tagsStr) body.tags = tagsStr.split(",").map(function (t) { return t.trim(); }).filter(Boolean);
+
+    fetch("/api/memory/" + id, {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body),
+    }).then(function (r) { return r.json(); }).then(function (result) {
+      if (result.error) {
+        alert("Error: " + result.error);
+        return;
+      }
+      document.getElementById("memory-form").style.display = "none";
+      loadMemory();
+    });
+  });
 
   // ── Initial load ────────────────────────────────────────────────────────
 

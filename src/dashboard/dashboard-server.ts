@@ -50,6 +50,8 @@ export interface DashboardContext {
   rawConfig?: Record<string, unknown>;
   /** Scheduler instance for schedule management. */
   readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
+  /** Long-term memory store instance for memory management. */
+  readonly longTermStore?: import("../memory/long-term-store.js").LongTermStore;
 }
 
 export interface DashboardServerOptions {
@@ -302,6 +304,10 @@ export class DashboardServer {
       // Memory
       case path === "/api/memory" && method === "GET":
         return await this.handleGetMemory(res, url);
+      case path.startsWith("/api/memory/") && method === "PUT":
+        return await this.handleUpdateMemory(req, res, path);
+      case path.startsWith("/api/memory/") && method === "DELETE":
+        return await this.handleDeleteMemory(res, path);
 
       // System
       case path === "/api/status" && method === "GET":
@@ -444,14 +450,29 @@ export class DashboardServer {
   // ── Memory endpoints ──────────────────────────────────────────────────
 
   private async handleGetMemory(res: ServerResponse, url: URL): Promise<void> {
+    const category = url.searchParams.get("category");
+    const minConfidence = parseFloat(url.searchParams.get("minConfidence") ?? "0");
+    const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
+
+    // Prefer live store when available so mutations are immediately visible
+    if (this.context.longTermStore) {
+      const searchOpts: { category?: string; minConfidence?: number } = {};
+      if (category) searchOpts.category = category;
+      if (minConfidence > 0) searchOpts.minConfidence = minConfidence;
+
+      const all = this.context.longTermStore.search(
+        searchOpts as Parameters<typeof this.context.longTermStore.search>[0],
+      );
+      const entries = all.slice(0, limit);
+      this.sendJson(res, 200, { entries, total: all.length, limit });
+      return;
+    }
+
+    // Fallback: read from JSONL file on disk
     if (!this.context.memoryDirectory) {
       this.sendJson(res, 200, { entries: [], total: 0 });
       return;
     }
-
-    const category = url.searchParams.get("category");
-    const minConfidence = parseFloat(url.searchParams.get("minConfidence") ?? "0");
-    const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
 
     const memoryPath = join(this.context.memoryDirectory, "entries.jsonl");
 
@@ -479,6 +500,71 @@ export class DashboardServer {
     entries = entries.slice(0, limit);
 
     this.sendJson(res, 200, { entries, total, limit });
+  }
+
+  private async handleUpdateMemory(
+    req: IncomingMessage,
+    res: ServerResponse,
+    path: string,
+  ): Promise<void> {
+    if (!this.context.longTermStore) {
+      this.sendJson(res, 400, { error: "Memory store is not configured" });
+      return;
+    }
+
+    const id = path.split("/api/memory/")[1];
+    if (!id) {
+      this.sendJson(res, 400, { error: "Missing memory entry ID" });
+      return;
+    }
+
+    const body = await this.readRequestBody(req);
+    if (!body) {
+      this.sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    try {
+      const patch: Record<string, unknown> = {};
+      if (body["content"] !== undefined) patch["content"] = String(body["content"]);
+      if (body["confidence"] !== undefined) patch["confidence"] = Number(body["confidence"]);
+      if (body["tags"] !== undefined) patch["tags"] = body["tags"];
+
+      const updated = await this.context.longTermStore.update(
+        id,
+        patch as Partial<Pick<import("../types.js").MemoryEntry, "content" | "confidence" | "tags">>,
+      );
+
+      this.sendJson(res, 200, updated);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = msg.includes("not found") ? 404 : 400;
+      this.sendJson(res, status, { error: msg });
+    }
+  }
+
+  private async handleDeleteMemory(
+    res: ServerResponse,
+    path: string,
+  ): Promise<void> {
+    if (!this.context.longTermStore) {
+      this.sendJson(res, 400, { error: "Memory store is not configured" });
+      return;
+    }
+
+    const id = path.split("/api/memory/")[1];
+    if (!id) {
+      this.sendJson(res, 400, { error: "Missing memory entry ID" });
+      return;
+    }
+
+    const removed = await this.context.longTermStore.delete(id);
+    if (!removed) {
+      this.sendJson(res, 404, { error: `Memory entry "${id}" not found` });
+      return;
+    }
+
+    this.sendJson(res, 200, { success: true });
   }
 
   // ── System endpoints ──────────────────────────────────────────────────

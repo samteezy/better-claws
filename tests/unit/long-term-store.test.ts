@@ -230,13 +230,13 @@ describe("LongTermStore", () => {
         tags: [],
       });
 
-      assert.equal(store.delete(id), true);
+      assert.equal(await store.delete(id), true);
       assert.equal(store.get(id), undefined);
       assert.equal(store.count, 0);
     });
 
-    it("returns false for missing entry", () => {
-      assert.equal(store.delete("nope"), false);
+    it("returns false for missing entry", async () => {
+      assert.equal(await store.delete("nope"), false);
     });
   });
 

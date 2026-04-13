@@ -80,7 +80,7 @@ export class LongTermStore {
       sourceSessions: [...input.sourceSessions],
       created: now,
       lastAccessed: now,
-      confidence: input.confidence,
+      confidence: Math.max(0, Math.min(1, input.confidence)),
       supersedes: input.supersedes,
       tags: [...input.tags],
     };
@@ -143,7 +143,7 @@ export class LongTermStore {
     const updated: MemoryEntry = {
       ...existing,
       content: patch.content ?? existing.content,
-      confidence: patch.confidence ?? existing.confidence,
+      confidence: Math.max(0, Math.min(1, patch.confidence ?? existing.confidence)),
       tags: patch.tags ? [...patch.tags] : [...existing.tags],
       lastAccessed: Date.now(),
     };
@@ -161,8 +161,18 @@ export class LongTermStore {
   }
 
   /** Delete an entry by id. Returns true if it existed. */
-  delete(id: string): boolean {
-    return this.entries.delete(id);
+  async delete(id: string): Promise<boolean> {
+    const existed = this.entries.delete(id);
+    if (existed) {
+      await this.persist();
+      this.logger.log({
+        sessionId: null,
+        eventType: "memory:write",
+        component: "long-term-store",
+        payload: { action: "delete", id },
+      });
+    }
+    return existed;
   }
 
   /**

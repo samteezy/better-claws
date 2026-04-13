@@ -307,6 +307,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
         configPath: options?.configPath,
         rawConfig: options?.rawConfig,
         scheduler,
+        longTermStore,
       },
     });
 
