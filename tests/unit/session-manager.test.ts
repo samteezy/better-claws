@@ -2174,4 +2174,268 @@ describe("SessionManager", () => {
       assert.equal(parsed2.type, "outbound");
     });
   });
+
+  describe("working memory snapshot", () => {
+    it("close() writes memorySnapshot to log when working memory has entries", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      // Create a WorkingMemory instance and add entries
+      const { WorkingMemory } = await import("../../src/memory/working-memory.js");
+      const wm = new WorkingMemory(session.id, {
+        maxSizeChars: 4096,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      wm.set("goal-1", "goal", "Understand user requirements");
+      wm.set("fact-1", "fact", "User prefers detailed responses");
+      wm.set("decision-1", "decision", "Will ask clarifying questions");
+
+      workingMemoryRegistry.set(session.id, wm);
+
+      // Close the session, which should write the memorySnapshot
+      await sessionManager.close(session.id);
+
+      // Read the archived log file to verify the snapshot was written
+      const { readdir } = await import("node:fs/promises");
+      const { readFile } = await import("node:fs/promises");
+
+      const files = await readdir(sessionManager["sessionsDirectory"]);
+      const archivePattern = new RegExp(`^${session.id}\\.\\d+\\.jsonl$`);
+      const archiveFiles = files.filter((f) => archivePattern.test(f));
+
+      assert.equal(archiveFiles.length, 1, "should have exactly one archived file");
+
+      const archivePath = join(sessionManager["sessionsDirectory"], archiveFiles[0]!);
+      const content = await readFile(archivePath, "utf-8");
+      const lines = content.trim().split("\n").filter(Boolean);
+
+      // The last entry before the close should be the memorySnapshot
+      const lastEntry = JSON.parse(lines[lines.length - 1]!);
+
+      assert.equal(lastEntry.type, "memorySnapshot", "last entry should be memorySnapshot");
+      assert.ok(Array.isArray(lastEntry.entries), "entries should be an array");
+      assert.equal(lastEntry.entries.length, 3, "should have 3 entries");
+
+      const entryKeys = lastEntry.entries.map((e: Record<string, unknown>) => e.key);
+      assert.ok(entryKeys.includes("goal-1"));
+      assert.ok(entryKeys.includes("fact-1"));
+      assert.ok(entryKeys.includes("decision-1"));
+
+      // Verify entry structure
+      const goalEntry = lastEntry.entries.find((e: Record<string, unknown>) => e.key === "goal-1");
+      assert.equal(goalEntry.category, "goal");
+      assert.equal(goalEntry.content, "Understand user requirements");
+      assert.ok(typeof goalEntry.createdAt === "number");
+      assert.ok(typeof goalEntry.updatedAt === "number");
+    });
+
+    it("close() skips memorySnapshot when working memory is empty", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      // Create an empty WorkingMemory instance (no entries added)
+      const { WorkingMemory } = await import("../../src/memory/working-memory.js");
+      const wm = new WorkingMemory(session.id, {
+        maxSizeChars: 4096,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      workingMemoryRegistry.set(session.id, wm);
+
+      // Close the session
+      await sessionManager.close(session.id);
+
+      // Read the archived log file to verify no memorySnapshot was written
+      const { readdir, readFile } = await import("node:fs/promises");
+
+      const files = await readdir(sessionManager["sessionsDirectory"]);
+      const archivePattern = new RegExp(`^${session.id}\\.\\d+\\.jsonl$`);
+      const archiveFiles = files.filter((f) => archivePattern.test(f));
+
+      // If there's an archive file, it should not contain a memorySnapshot
+      if (archiveFiles.length > 0) {
+        const archivePath = join(sessionManager["sessionsDirectory"], archiveFiles[0]!);
+        const content = await readFile(archivePath, "utf-8");
+        const lines = content.trim().split("\n").filter(Boolean);
+
+        for (const line of lines) {
+          const entry = JSON.parse(line);
+          assert.notEqual(entry.type, "memorySnapshot", "should not have memorySnapshot entry");
+        }
+      }
+
+      assert.ok(true, "should complete without error");
+    });
+
+    it("close() skips memorySnapshot when no working memory in registry", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      // Don't add anything to the registry
+      // Verify it's not there
+      assert.ok(!workingMemoryRegistry.has(session.id) || workingMemoryRegistry.get(session.id)?.count === 0);
+
+      // Add a message so there's something to close
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello",
+          timestamp: Date.now(),
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+
+      // Close the session
+      await sessionManager.close(session.id);
+
+      // Read the archived log file to verify no memorySnapshot was written
+      const { readdir, readFile } = await import("node:fs/promises");
+
+      const files = await readdir(sessionManager["sessionsDirectory"]);
+      const archivePattern = new RegExp(`^${session.id}\\.\\d+\\.jsonl$`);
+      const archiveFiles = files.filter((f) => archivePattern.test(f));
+
+      if (archiveFiles.length > 0) {
+        const archivePath = join(sessionManager["sessionsDirectory"], archiveFiles[0]!);
+        const content = await readFile(archivePath, "utf-8");
+        const lines = content.trim().split("\n").filter(Boolean);
+
+        for (const line of lines) {
+          const entry = JSON.parse(line);
+          assert.notEqual(entry.type, "memorySnapshot", "should not have memorySnapshot entry");
+        }
+      }
+
+      assert.ok(true, "should complete without error");
+    });
+
+    it("getMemorySnapshot() returns entries from archived session", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      // Add working memory entries
+      const { WorkingMemory } = await import("../../src/memory/working-memory.js");
+      const wm = new WorkingMemory(session.id, {
+        maxSizeChars: 4096,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      wm.set("task-key", "goal", "Complete the documentation");
+      wm.set("note-key", "correction", "API endpoint changed");
+
+      workingMemoryRegistry.set(session.id, wm);
+
+      // Close the session, which writes the snapshot
+      await sessionManager.close(session.id);
+
+      // Now retrieve the snapshot using getMemorySnapshot
+      const snapshot = await sessionManager.getMemorySnapshot(session.id);
+
+      assert.ok(snapshot !== null, "snapshot should not be null");
+      assert.ok(Array.isArray(snapshot), "snapshot should be an array");
+      assert.equal(snapshot!.length, 2, "snapshot should have 2 entries");
+
+      const taskEntry = snapshot!.find((e) => e.key === "task-key");
+      assert.ok(taskEntry, "should find task-key entry");
+      assert.equal(taskEntry!.category, "goal");
+      assert.equal(taskEntry!.content, "Complete the documentation");
+
+      const noteEntry = snapshot!.find((e) => e.key === "note-key");
+      assert.ok(noteEntry, "should find note-key entry");
+      assert.equal(noteEntry!.category, "correction");
+      assert.equal(noteEntry!.content, "API endpoint changed");
+    });
+
+    it("getMemorySnapshot() returns null for session with no snapshot", async () => {
+      // Use a session ID that doesn't exist or has no snapshot
+      const snapshot = await sessionManager.getMemorySnapshot("nonexistent-session-id-12345");
+
+      assert.equal(snapshot, null, "should return null for nonexistent session");
+    });
+
+    it("getMemorySnapshot() returns null when session has no memory entries", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      // Add an empty working memory
+      const { WorkingMemory } = await import("../../src/memory/working-memory.js");
+      const wm = new WorkingMemory(session.id, {
+        maxSizeChars: 4096,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      workingMemoryRegistry.set(session.id, wm);
+
+      // Close without snapshot (because wm is empty)
+      await sessionManager.close(session.id);
+
+      // Try to retrieve snapshot
+      const snapshot = await sessionManager.getMemorySnapshot(session.id);
+
+      assert.equal(snapshot, null, "should return null when no memorySnapshot in log");
+    });
+
+    it("getDetailedHistory() excludes memorySnapshot entries", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      // Add some messages
+      const inboundEntry: SessionLogEntry = {
+        type: "inbound",
+        message: {
+          id: "msg-1",
+          adapterId: "telegram",
+          channelId: "chat-123",
+          senderId: "user-456",
+          text: "Hello from user",
+          timestamp: Date.now(),
+        },
+      };
+
+      const outboundEntry: SessionLogEntry = {
+        type: "outbound",
+        message: {
+          channelId: "chat-123",
+          text: "Hello from assistant",
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, inboundEntry);
+      await sessionManager.appendToLog(session.id, outboundEntry);
+
+      // Add working memory
+      const { WorkingMemory } = await import("../../src/memory/working-memory.js");
+      const wm = new WorkingMemory(session.id, {
+        maxSizeChars: 4096,
+        logger: logger as unknown as StructuredLogger,
+      });
+
+      wm.set("key-1", "fact", "Some fact");
+      workingMemoryRegistry.set(session.id, wm);
+
+      // Manually write the memorySnapshot to the log (simulating what close() would do)
+      const now = Date.now();
+      const snapshotEntry: SessionLogEntry = {
+        type: "memorySnapshot",
+        entries: wm.getAll(),
+        snapshotAt: now,
+      };
+      await sessionManager.appendToLog(session.id, snapshotEntry);
+
+      // Retrieve detailed history (while session is still active)
+      const history = await sessionManager.getDetailedHistory(session.id);
+
+      // History should contain only the 2 messages, not the memorySnapshot
+      assert.equal(history.length, 2, "history should contain only 2 messages");
+      assert.equal(history[0]!.role, "user");
+      assert.equal(history[0]!.content, "Hello from user");
+      assert.equal(history[1]!.role, "assistant");
+      assert.equal(history[1]!.content, "Hello from assistant");
+
+      // Verify no memorySnapshot-related content
+      for (const msg of history) {
+        assert.notEqual(msg.role, "memorySnapshot", "history should not contain memorySnapshot role");
+      }
+    });
+  });
 });

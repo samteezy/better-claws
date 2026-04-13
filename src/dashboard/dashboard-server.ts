@@ -11,6 +11,7 @@ import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 import { saveConfig } from "../config.js";
 import { authenticateBearer, readBody } from "../utils/http.js";
+import { workingMemoryRegistry } from "../tools/built-in/memory.js";
 
 export const DashboardError = createErrorClass("DashboardError", "dashboard", "DASHBOARD_ERROR");
 
@@ -296,6 +297,8 @@ export class DashboardServer {
         return await this.handleGetSessionHistory(res, path);
       case path.startsWith("/api/sessions/") && path.endsWith("/grants") && method === "GET":
         return this.handleGetSessionGrants(res, path);
+      case path.startsWith("/api/sessions/") && path.endsWith("/memory") && method === "GET":
+        return await this.handleGetSessionMemory(res, path);
 
       // Logs
       case path === "/api/logs" && method === "GET":
@@ -396,6 +399,31 @@ export class DashboardServer {
       grantsObj[cap] = scope;
     }
     this.sendJson(res, 200, { sessionId, grants: grantsObj });
+  }
+
+  private async handleGetSessionMemory(
+    res: ServerResponse,
+    path: string,
+  ): Promise<void> {
+    const parts = path.split("/");
+    const sessionId = parts[3];
+    if (!sessionId) {
+      this.sendJson(res, 400, { error: "Missing session ID" });
+      return;
+    }
+
+    const wm = workingMemoryRegistry.get(sessionId);
+    if (wm) {
+      this.sendJson(res, 200, { sessionId, entries: wm.getAll(), live: true });
+      return;
+    }
+
+    const snapshot = await this.context.sessionManager.getMemorySnapshot(sessionId);
+    this.sendJson(res, 200, {
+      sessionId,
+      entries: snapshot ?? [],
+      live: false,
+    });
   }
 
   // ── Log endpoints ───────────────────────────────────────────────────────

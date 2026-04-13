@@ -462,4 +462,15 @@ export type SessionLogEntry =
       readonly sourceSessionId: string;
       readonly forkTimestamp: number;
       readonly sourceLineCount: number;
+    }
+  | {
+      readonly type: "memorySnapshot";
+      readonly entries: readonly {
+        readonly key: string;
+        readonly category: "fact" | "goal" | "correction" | "decision";
+        readonly content: string;
+        readonly createdAt: number;
+        readonly updatedAt: number;
+      }[];
+      readonly snapshotAt: number;
     };

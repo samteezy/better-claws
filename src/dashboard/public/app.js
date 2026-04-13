@@ -33,6 +33,7 @@
     if (btn) btn.classList.add("active");
     document.getElementById("view-" + viewName).classList.add("active");
     stopLogAutoRefresh();
+    stopMemoryAutoRefresh();
     loadView(viewName);
     if (viewName === "logs") startLogAutoRefresh();
   }
@@ -113,7 +114,7 @@
   function esc(str) {
     var div = document.createElement("div");
     div.textContent = str;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   // ── Status View ─────────────────────────────────────────────────────────
@@ -180,8 +181,65 @@
     });
   }
 
+  var memoryAutoRefreshTimer = null;
+  var memoryRefreshSessionId = null;
+
+  function startMemoryAutoRefresh(id) {
+    stopMemoryAutoRefresh();
+    memoryRefreshSessionId = id;
+    memoryAutoRefreshTimer = setInterval(function () {
+      api("/api/sessions/" + id + "/memory").then(renderWorkingMemory);
+    }, 3000);
+  }
+
+  function stopMemoryAutoRefresh() {
+    if (memoryAutoRefreshTimer !== null) {
+      clearInterval(memoryAutoRefreshTimer);
+      memoryAutoRefreshTimer = null;
+      memoryRefreshSessionId = null;
+    }
+  }
+
+  function renderWorkingMemory(data) {
+    var container = document.getElementById("session-memory");
+    if (!data.entries || data.entries.length === 0) {
+      container.innerHTML = "<p>No working memory entries</p>";
+      return;
+    }
+
+    var categoryOrder = ["goal", "fact", "decision", "correction"];
+    var categoryLabels = { goal: "Goals", fact: "Facts", decision: "Decisions", correction: "Corrections" };
+    var grouped = {};
+    categoryOrder.forEach(function (c) { grouped[c] = []; });
+
+    data.entries.forEach(function (entry) {
+      if (grouped[entry.category]) {
+        grouped[entry.category].push(entry);
+      }
+    });
+
+    var html = "";
+    categoryOrder.forEach(function (cat) {
+      if (grouped[cat].length === 0) return;
+      html += '<div class="wm-category">';
+      html += '<div class="wm-category-label">' + esc(categoryLabels[cat]) + "</div>";
+      grouped[cat].forEach(function (entry) {
+        var updated = new Date(entry.updatedAt).toLocaleString();
+        html += '<div class="wm-entry">';
+        html += '<span class="wm-key">' + esc(entry.key) + "</span>";
+        html += '<span class="wm-content">' + esc(entry.content) + "</span>";
+        html += '<span class="wm-time">' + esc(updated) + "</span>";
+        html += "</div>";
+      });
+      html += "</div>";
+    });
+
+    container.innerHTML = html;
+  }
+
   document.getElementById("breadcrumb-back").addEventListener("click", function (e) {
     e.preventDefault();
+    stopMemoryAutoRefresh();
     document.getElementById("session-detail").style.display = "none";
     document.getElementById("sessions-list-container").style.display = "";
   });
@@ -208,6 +266,13 @@
         html += "</div>";
       });
       document.getElementById("session-history").innerHTML = html || "<p>No messages</p>";
+    });
+
+    api("/api/sessions/" + id + "/memory").then(function (data) {
+      renderWorkingMemory(data);
+      if (data.live) {
+        startMemoryAutoRefresh(id);
+      }
     });
 
     api("/api/sessions/" + id + "/grants").then(function (data) {

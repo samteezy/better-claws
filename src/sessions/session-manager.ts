@@ -210,6 +210,7 @@ export class SessionManager {
         case "toolCall":
         case "compaction":
         case "fork":
+        case "memorySnapshot":
           break;
       }
     }
@@ -259,6 +260,7 @@ export class SessionManager {
         case "toolCall":
         case "compaction":
         case "fork":
+        case "memorySnapshot":
           break;
       }
     }
@@ -338,6 +340,16 @@ export class SessionManager {
     if (!session) return;
 
     const now = Date.now();
+
+    const wm = workingMemoryRegistry.get(sessionId);
+    if (wm && wm.count > 0) {
+      await this.appendToLog(sessionId, {
+        type: "memorySnapshot",
+        entries: wm.getAll(),
+        snapshotAt: now,
+      });
+    }
+
     const archivePath = join(
       this.sessionsDirectory,
       `${sessionId}.${now}.jsonl`,
@@ -685,6 +697,44 @@ export class SessionManager {
     }
 
     return null;
+  }
+
+  async getMemorySnapshot(
+    sessionId: string,
+  ): Promise<
+    readonly {
+      readonly key: string;
+      readonly category: "fact" | "goal" | "correction" | "decision";
+      readonly content: string;
+      readonly createdAt: number;
+      readonly updatedAt: number;
+    }[] | null
+  > {
+    const raw = await this.readRawLog(sessionId);
+    if (!raw) return null;
+
+    let snapshot: readonly Record<string, unknown>[] | null = null;
+    for (const line of raw.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        if (entry["type"] === "memorySnapshot") {
+          snapshot = entry["entries"] as readonly Record<string, unknown>[];
+        }
+      } catch {
+        // Malformed line — skip
+      }
+    }
+
+    if (!snapshot) return null;
+
+    return snapshot.map((e) => ({
+      key: String(e["key"] ?? ""),
+      category: String(e["category"] ?? "fact") as "fact" | "goal" | "correction" | "decision",
+      content: String(e["content"] ?? ""),
+      createdAt: Number(e["createdAt"] ?? 0),
+      updatedAt: Number(e["updatedAt"] ?? 0),
+    }));
   }
 
   private extractFirstMessageText(content: string): string {
