@@ -426,6 +426,24 @@ export class BetterClawsError extends Error {
   }
 }
 
+/**
+ * Factory for creating standard BetterClawsError subclasses.
+ * Each produced class has a fixed component name and default error code.
+ */
+export function createErrorClass(
+  name: string,
+  component: string,
+  defaultCode: string,
+): new (message: string, code?: string) => BetterClawsError {
+  const cls = class extends BetterClawsError {
+    constructor(message: string, code: string = defaultCode) {
+      super(message, component, code);
+      this.name = name;
+    }
+  };
+  return cls;
+}
+
 // ── Session Log Entries ───────────────────────────────────────────────────────
 
 export type SessionLogEntry =

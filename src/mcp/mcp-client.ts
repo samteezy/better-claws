@@ -7,19 +7,14 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { BetterClawsError, type McpServerConfig, type McpServerStdioConfig, type McpServerHttpConfig, type JsonSchema } from "../types.js";
+import { createErrorClass, type McpServerConfig, type McpServerStdioConfig, type McpServerHttpConfig, type JsonSchema } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { McpTransport } from "./transport.js";
 import { JsonRpcTransport } from "./json-rpc.js";
 import { SseTransport } from "./sse-transport.js";
 import { HttpTransport } from "./http-transport.js";
 
-export class McpClientError extends BetterClawsError {
-  constructor(message: string, code: string = "MCP_CLIENT_ERROR") {
-    super(message, "mcp-client", code);
-    this.name = "McpClientError";
-  }
-}
+export const McpClientError = createErrorClass("McpClientError", "mcp-client", "MCP_CLIENT_ERROR");
 
 // ── MCP protocol types ───────────────────────────────────────────────────────
 

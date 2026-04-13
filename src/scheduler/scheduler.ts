@@ -1,18 +1,12 @@
 import {
-  BetterClawsError,
+  createErrorClass,
   type ChannelAdapter,
   type InboundMessage,
-  type OutboundMessage,
-} from "../types.js";
+  type OutboundMessage } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import { parseCron, cronMatches, nextMatch, type CronExpression } from "./cron-parser.js";
 
-export class SchedulerError extends BetterClawsError {
-  constructor(message: string, code: string = "SCHEDULER_ERROR") {
-    super(message, "scheduler", code);
-    this.name = "SchedulerError";
-  }
-}
+export const SchedulerError = createErrorClass("SchedulerError", "scheduler", "SCHEDULER_ERROR");
 
 // ── Schedule definition ─────────────────────────────────────────────────────
 

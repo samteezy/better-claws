@@ -1,11 +1,6 @@
-import { BetterClawsError } from "../types.js";
+import { createErrorClass } from "../types.js";
 
-export class SanitizerError extends BetterClawsError {
-  constructor(message: string, code: string) {
-    super(message, "sanitizer", code);
-    this.name = "SanitizerError";
-  }
-}
+export const SanitizerError = createErrorClass("SanitizerError", "sanitizer", "SANITIZER_ERROR");
 
 const DEFAULT_MAX_LENGTH = 2000;
 

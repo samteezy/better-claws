@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
-  BetterClawsError,
+  createErrorClass,
   isCapability,
   isStreamableAdapter,
   type BetterClawsConfig,
@@ -14,22 +14,17 @@ import { StreamableResponse } from "./streamable-response.js";
 import { validateSchema } from "../utils/schema-validator.js";
 import { sanitizeOutput } from "../utils/output-sanitizer.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
-import type { SessionManager } from "../sessions/session-manager.js";
+import type { Session, SessionManager } from "../sessions/session-manager.js";
 import type { SessionCompactor } from "../sessions/compactor.js";
 import type { LlmClient } from "../llm/llm-client.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { CapabilityGate } from "../tools/capability-gate.js";
 import type { ToolExecutor } from "../tools/executor.js";
 import type { SecretManager } from "../secrets/secret-manager.js";
-import type { PromptBuilder } from "../prompt/prompt-builder.js";
+import type { BuildResult, PromptBuilder } from "../prompt/prompt-builder.js";
 import { ConfirmationBroker } from "./confirmation-broker.js";
 
-export class RouterError extends BetterClawsError {
-  constructor(message: string, code: string = "ROUTER_ERROR") {
-    super(message, "router", code);
-    this.name = "RouterError";
-  }
-}
+export const RouterError = createErrorClass("RouterError", "router", "ROUTER_ERROR");
 
 const MAX_TOOL_ITERATIONS = 10;
 
@@ -282,90 +277,10 @@ export class MessageRouter {
 
       const cmd = message.text.trim();
 
-      if (cmd === "/stop") {
-        const stopped = self.stopSession(session.id);
-        const text = stopped ? "Stopped." : "Nothing to stop.";
-        self.logger.log({
-          sessionId: session.id,
-          eventType: "session:stop",
-          component: "router",
-          payload: { stopped },
-        });
-        yield { type: "text-delta", delta: text };
-        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
-        return;
-      }
-
-      if (cmd === "/new") {
-        await self.sessionManager.close(session.id);
-        yield { type: "reset" };
-        yield { type: "text-delta", delta: "Session archived. Starting fresh." };
-        yield { type: "done", text: "Session archived. Starting fresh.", usage: { promptTokens: 0, completionTokens: 0 } };
-        return;
-      }
-
-      if (cmd === "/reset") {
-        await self.sessionManager.destroy(session.id);
-        yield { type: "reset" };
-        yield { type: "text-delta", delta: "Session wiped. Starting fresh." };
-        yield { type: "done", text: "Session wiped. Starting fresh.", usage: { promptTokens: 0, completionTokens: 0 } };
-        return;
-      }
-
-      if (cmd === "/fork" || cmd.startsWith("/fork ")) {
-        const arg = cmd.slice("/fork".length).trim();
-        const sourceId = arg || session.id;
-
-        // Validate source exists
-        const sourceContent = await self.sessionManager.readRawLog(sourceId);
-        if (sourceContent === null) {
-          const text = `Session "${sourceId}" not found.`;
-          yield { type: "text-delta", delta: text };
-          yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
-          return;
-        }
-
-        // Close current session, then fork source into this channel
-        await self.sessionManager.close(session.id);
-        const forked = await self.sessionManager.fork(
-          sourceId,
-          message.adapterId,
-          message.channelId,
-          message.senderId,
-        );
-
-        const text = `Forked session ${sourceId.slice(0, 8)}… into ${forked.id.slice(0, 8)}…. History preserved, capabilities reset.`;
-        yield { type: "text-delta", delta: text };
-        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
-        return;
-      }
-
-      if (cmd === "/sessions") {
-        const items = await self.sessionManager.listForSender(message.senderId);
-
-        let text: string;
-        if (items.length === 0) {
-          text = "No sessions found.";
-        } else {
-          const lines = items.map((item) => {
-            const id = item.sessionId.slice(0, 8);
-            const status = item.archived ? "archived" : "active";
-            const date = new Date(item.createdAt).toISOString().slice(0, 10);
-            const preview = item.preview ? ` — ${item.preview}` : "";
-            return `${id}  ${item.adapterId.padEnd(10)} ${status.padEnd(9)} ${date}${preview}`;
-          });
-          text = `Sessions:\n${lines.join("\n")}`;
-        }
-
-        yield { type: "text-delta", delta: text };
-        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
-        return;
-      }
-
-      if (cmd === "/schedule" || cmd.startsWith("/schedule ")) {
-        const text = await self.handleScheduleCommand(cmd);
-        yield { type: "text-delta", delta: text };
-        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+      // Handle slash commands
+      const slashResult = self.handleSlashCommand(cmd, session, message);
+      if (slashResult) {
+        yield* slashResult;
         return;
       }
 
@@ -375,90 +290,231 @@ export class MessageRouter {
       });
 
       if (cmd === "/compact") {
-        let text: string;
-        if (!self.compactor) {
-          text = "Compaction is not configured.";
-        } else {
-          const result = await self.compactor.compact(session.id);
-          text = result.compressedTurnCount === 0
-            ? "Nothing to compact yet."
-            : `Compaction complete. Summarised ${result.compressedTurnCount} turns (${result.summaryLength} chars).`;
-        }
-        await self.sessionManager.appendToLog(session.id, {
-          type: "outbound",
-          message: { channelId: message.channelId, text, timestamp: Date.now() },
-        });
-        yield { type: "text-delta", delta: text };
-        yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+        yield* self.handleCompactCommand(session, message);
         return;
       }
 
-      // Register an AbortController for this active response so /stop can cancel it
+      // Register an AbortController so /stop can cancel this response
       const abortController = new AbortController();
       const signal = abortController.signal;
       self.activeResponses.set(session.id, abortController);
 
       try {
+        const history = await self.sessionManager.getHistory(session.id);
+        const tools = self.toolRegistry.getDescriptors();
 
-      let history = await self.sessionManager.getHistory(session.id);
-
-      // Auto-compaction
-      if (self.compactor && self.config.compaction?.enabled) {
-        const compCfg = self.config.compaction;
-        const { estimatedTokens } = self.promptBuilder.build({
+        // Build prompt (single build), then auto-compact if needed
+        let buildResult = self.promptBuilder.build({
           history,
-          tools: self.toolRegistry.getDescriptors(),
+          tools,
+          currentDateTime: self.getCurrentDateTime(),
+          adapterPrompt: self.getAdapterPrompt(message.adapterId),
         });
-        if (estimatedTokens > compCfg.tokenBudget - compCfg.reserveTokens) {
-          try {
-            await self.compactor.compact(session.id);
-            history = await self.sessionManager.getHistory(session.id);
-          } catch (err) {
-            self.logger.log({
-              sessionId: session.id,
-              eventType: "session:compaction",
-              component: "router",
-              payload: {
-                success: false,
-                error: err instanceof Error ? err.message : String(err),
-              },
-            });
-          }
+        buildResult = await self.autoCompactIfNeeded(session.id, buildResult);
+
+        // Context budget warnings
+        const budget = self.promptBuilder.budget;
+        if (buildResult.truncatedCount === history.length && history.length > 0) {
+          yield {
+            type: "warning",
+            message: "Context limit reached — conversation history was dropped. Consider increasing your token budget or using /compact.",
+          };
+        } else if (buildResult.estimatedTokens >= budget * 0.8) {
+          const pct = Math.round((buildResult.estimatedTokens / budget) * 100);
+          yield {
+            type: "warning",
+            message: `Context usage is at ${pct}% of the configured limit (${budget} tokens). Older messages may be trimmed soon.`,
+          };
         }
-      }
 
-      const tools = self.toolRegistry.getDescriptors();
-      const buildResult = self.promptBuilder.build({
-        history,
-        tools,
-        currentDateTime: self.getCurrentDateTime(),
-        adapterPrompt: self.getAdapterPrompt(message.adapterId),
+        yield* self.runToolLoop(
+          buildResult,
+          tools,
+          signal,
+          session,
+          message,
+        );
+      } finally {
+        self.activeResponses.delete(session.id);
+      }
+    }
+
+    return new StreamableResponse(generate());
+  }
+
+  // ── Extracted helpers for handleMessageStream ────────────────────────────────
+
+  private handleSlashCommand(
+    cmd: string,
+    session: Session,
+    message: InboundMessage,
+  ): AsyncGenerator<StreamEvent> | null {
+    if (cmd === "/stop") return this.handleStopCommand(session);
+    if (cmd === "/new") return this.handleNewCommand(session);
+    if (cmd === "/reset") return this.handleResetCommand(session);
+    if (cmd === "/fork" || cmd.startsWith("/fork ")) return this.handleForkCommand(cmd, session, message);
+    if (cmd === "/sessions") return this.handleSessionsCommand(session, message);
+    if (cmd === "/schedule" || cmd.startsWith("/schedule ")) return this.handleScheduleSlashCommand(cmd);
+    return null;
+  }
+
+  private async *handleStopCommand(session: Session): AsyncGenerator<StreamEvent> {
+    const stopped = this.stopSession(session.id);
+    const text = stopped ? "Stopped." : "Nothing to stop.";
+    this.logger.log({
+      sessionId: session.id,
+      eventType: "session:stop",
+      component: "router",
+      payload: { stopped },
+    });
+    yield { type: "text-delta", delta: text };
+    yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+  }
+
+  private async *handleNewCommand(session: Session): AsyncGenerator<StreamEvent> {
+    await this.sessionManager.close(session.id);
+    yield { type: "reset" };
+    yield { type: "text-delta", delta: "Session archived. Starting fresh." };
+    yield { type: "done", text: "Session archived. Starting fresh.", usage: { promptTokens: 0, completionTokens: 0 } };
+  }
+
+  private async *handleResetCommand(session: Session): AsyncGenerator<StreamEvent> {
+    await this.sessionManager.destroy(session.id);
+    yield { type: "reset" };
+    yield { type: "text-delta", delta: "Session wiped. Starting fresh." };
+    yield { type: "done", text: "Session wiped. Starting fresh.", usage: { promptTokens: 0, completionTokens: 0 } };
+  }
+
+  private async *handleForkCommand(
+    cmd: string,
+    session: Session,
+    message: InboundMessage,
+  ): AsyncGenerator<StreamEvent> {
+    const arg = cmd.slice("/fork".length).trim();
+    const sourceId = arg || session.id;
+
+    const sourceContent = await this.sessionManager.readRawLog(sourceId);
+    if (sourceContent === null) {
+      const text = `Session "${sourceId}" not found.`;
+      yield { type: "text-delta", delta: text };
+      yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+      return;
+    }
+
+    await this.sessionManager.close(session.id);
+    const forked = await this.sessionManager.fork(
+      sourceId,
+      message.adapterId,
+      message.channelId,
+      message.senderId,
+    );
+
+    const text = `Forked session ${sourceId.slice(0, 8)}… into ${forked.id.slice(0, 8)}…. History preserved, capabilities reset.`;
+    yield { type: "text-delta", delta: text };
+    yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+  }
+
+  private async *handleSessionsCommand(
+    _session: Session,
+    message: InboundMessage,
+  ): AsyncGenerator<StreamEvent> {
+    const items = await this.sessionManager.listForSender(message.senderId);
+
+    let text: string;
+    if (items.length === 0) {
+      text = "No sessions found.";
+    } else {
+      const lines = items.map((item) => {
+        const id = item.sessionId.slice(0, 8);
+        const status = item.archived ? "archived" : "active";
+        const date = new Date(item.createdAt).toISOString().slice(0, 10);
+        const preview = item.preview ? ` — ${item.preview}` : "";
+        return `${id}  ${item.adapterId.padEnd(10)} ${status.padEnd(9)} ${date}${preview}`;
       });
-      const messages = buildResult.messages;
+      text = `Sessions:\n${lines.join("\n")}`;
+    }
 
-      // Context budget warnings
-      const budget = self.promptBuilder.budget;
-      if (buildResult.truncatedCount === history.length && history.length > 0) {
-        yield {
-          type: "warning",
-          message: "Context limit reached — conversation history was dropped. Consider increasing your token budget or using /compact.",
-        };
-      } else if (buildResult.estimatedTokens >= budget * 0.8) {
-        const pct = Math.round((buildResult.estimatedTokens / budget) * 100);
-        yield {
-          type: "warning",
-          message: `Context usage is at ${pct}% of the configured limit (${budget} tokens). Older messages may be trimmed soon.`,
-        };
-      }
+    yield { type: "text-delta", delta: text };
+    yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+  }
 
-      let totalPromptTokens = 0;
-      let totalCompletionTokens = 0;
-      let fullText = "";
-      let fullReasoning = "";
-      let iterations = 0;
+  private async *handleScheduleSlashCommand(cmd: string): AsyncGenerator<StreamEvent> {
+    const text = await this.handleScheduleCommand(cmd);
+    yield { type: "text-delta", delta: text };
+    yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+  }
 
-      // Streaming LLM + tool call loop
-      try {
+  private async *handleCompactCommand(
+    session: Session,
+    message: InboundMessage,
+  ): AsyncGenerator<StreamEvent> {
+    let text: string;
+    if (!this.compactor) {
+      text = "Compaction is not configured.";
+    } else {
+      const result = await this.compactor.compact(session.id);
+      text = result.compressedTurnCount === 0
+        ? "Nothing to compact yet."
+        : `Compaction complete. Summarised ${result.compressedTurnCount} turns (${result.summaryLength} chars).`;
+    }
+    await this.sessionManager.appendToLog(session.id, {
+      type: "outbound",
+      message: { channelId: message.channelId, text, timestamp: Date.now() },
+    });
+    yield { type: "text-delta", delta: text };
+    yield { type: "done", text, usage: { promptTokens: 0, completionTokens: 0 } };
+  }
+
+  private async autoCompactIfNeeded(
+    sessionId: string,
+    buildResult: BuildResult,
+  ): Promise<BuildResult> {
+    if (!this.compactor || !this.config.compaction?.enabled) return buildResult;
+
+    const compCfg = this.config.compaction;
+    if (buildResult.estimatedTokens <= compCfg.tokenBudget - compCfg.reserveTokens) {
+      return buildResult;
+    }
+
+    try {
+      await this.compactor.compact(sessionId);
+      const refreshedHistory = await this.sessionManager.getHistory(sessionId);
+      return this.promptBuilder.build({
+        history: refreshedHistory,
+        tools: this.toolRegistry.getDescriptors(),
+        currentDateTime: this.getCurrentDateTime(),
+      });
+    } catch (err) {
+      this.logger.log({
+        sessionId,
+        eventType: "session:compaction",
+        component: "router",
+        payload: {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+      return buildResult;
+    }
+  }
+
+  private async *runToolLoop(
+    buildResult: BuildResult,
+    tools: readonly import("../types.js").ToolDescriptor[],
+    signal: AbortSignal,
+    session: Session,
+    message: InboundMessage,
+  ): AsyncGenerator<StreamEvent> {
+    const messages = buildResult.messages;
+    const budget = this.promptBuilder.budget;
+
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let fullText = "";
+    let fullReasoning = "";
+    let iterations = 0;
+
+    try {
       while (iterations <= MAX_TOOL_ITERATIONS) {
         if (signal.aborted) break;
 
@@ -466,32 +522,28 @@ export class MessageRouter {
         let iterationReasoning = "";
         const toolAccumulators = new Map<number, { id: string; name: string; args: string }>();
 
-        for await (const chunk of self.llmClient.chatStream(
+        for await (const chunk of this.llmClient.chatStream(
           messages,
           tools.length > 0 ? tools : undefined,
           { signal },
         )) {
           if (signal.aborted) break;
 
-          // Accumulate reasoning deltas
           if (chunk.reasoningDelta) {
             iterationReasoning += chunk.reasoningDelta;
             yield { type: "reasoning-delta" as const, delta: chunk.reasoningDelta };
           }
 
-          // Accumulate text deltas
           if (chunk.delta) {
             iterationText += chunk.delta;
             yield { type: "text-delta", delta: chunk.delta };
           }
 
-          // Accumulate token usage from final streaming chunk
           if (chunk.usage) {
             totalPromptTokens = chunk.usage.promptTokens;
             totalCompletionTokens = chunk.usage.completionTokens;
           }
 
-          // Accumulate tool call deltas
           if (chunk.toolCallDeltas) {
             for (const delta of chunk.toolCallDeltas) {
               const existing = toolAccumulators.get(delta.index);
@@ -517,7 +569,6 @@ export class MessageRouter {
         fullText += iterationText;
         fullReasoning += iterationReasoning;
 
-        // Build completed tool calls
         const completedToolCalls: ToolCall[] = [...toolAccumulators.values()]
           .filter((tc) => tc.id && tc.name)
           .map((tc) => ({
@@ -527,10 +578,9 @@ export class MessageRouter {
           }));
 
         if (completedToolCalls.length === 0 || iterations >= MAX_TOOL_ITERATIONS) {
-          // Log the final outbound message
           const outbound: OutboundMessage = { channelId: message.channelId, text: fullText, timestamp: Date.now() };
-          await self.sessionManager.appendToLog(session.id, { type: "outbound", message: outbound });
-          self.logger.log({
+          await this.sessionManager.appendToLog(session.id, { type: "outbound", message: outbound });
+          this.logger.log({
             sessionId: session.id,
             eventType: "message:outbound",
             component: "router",
@@ -552,23 +602,20 @@ export class MessageRouter {
           return;
         }
 
-        // Tool call loop iteration
         iterations++;
 
-        // Add assistant message with tool calls to conversation
         messages.push({
           role: "assistant",
           content: iterationText,
           tool_calls: completedToolCalls,
         });
 
-        // Execute each tool call
         for (const toolCall of completedToolCalls) {
           if (signal.aborted) break;
 
           yield { type: "tool-start", toolCall };
 
-          const toolResult = await self.processToolCall(
+          const toolResult = await this.processToolCall(
             toolCall,
             session.id,
             { adapterId: message.adapterId, channelId: message.channelId, senderId: message.senderId },
@@ -591,36 +638,27 @@ export class MessageRouter {
           });
         }
 
-        // Reset text and reasoning for the next iteration — tool result follow-up may produce new text
         fullText = "";
         fullReasoning = "";
       }
-      } catch (err) {
-        // AbortError from fetch or stream is expected when /stop fires
-        if (!signal.aborted) throw err;
-      }
-
-      // If aborted by /stop, yield partial result and exit
-      if (signal.aborted) {
-        self.logger.log({
-          sessionId: session.id,
-          eventType: "session:stop",
-          component: "router",
-          payload: { textLength: fullText.length, iterations },
-        });
-        yield {
-          type: "done",
-          text: fullText,
-          usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
-        };
-      }
-
-      } finally {
-        self.activeResponses.delete(session.id);
-      }
+    } catch (err) {
+      if (!signal.aborted) throw err;
     }
 
-    return new StreamableResponse(generate());
+    // If aborted by /stop, yield partial result
+    if (signal.aborted) {
+      this.logger.log({
+        sessionId: session.id,
+        eventType: "session:stop",
+        component: "router",
+        payload: { textLength: fullText.length, iterations },
+      });
+      yield {
+        type: "done",
+        text: fullText,
+        usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
+      };
+    }
   }
 
   private getCurrentDateTime(): string {

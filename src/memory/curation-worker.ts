@@ -1,20 +1,14 @@
 import {
-  BetterClawsError,
+  createErrorClass,
   type MemoryConfig,
   type MemoryEntry,
   type ChatMessage,
-  type LlmResponse,
-} from "../types.js";
+  type LlmResponse } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { LongTermStore } from "./long-term-store.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 
-export class CurationError extends BetterClawsError {
-  constructor(message: string, code: string = "CURATION_ERROR") {
-    super(message, "curation-worker", code);
-    this.name = "CurationError";
-  }
-}
+export const CurationError = createErrorClass("CurationError", "curation-worker", "CURATION_ERROR");
 
 // ── LLM interface (subset needed by curation) ──────────────────────────────
 

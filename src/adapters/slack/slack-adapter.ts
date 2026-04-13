@@ -1,17 +1,11 @@
 import {
-  BetterClawsError,
+  createErrorClass,
   type ChannelAdapter,
   type InboundMessage,
-  type OutboundMessage,
-} from "../../types.js";
+  type OutboundMessage } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
 
-export class SlackError extends BetterClawsError {
-  constructor(message: string, code: string = "SLACK_ERROR") {
-    super(message, "slack", code);
-    this.name = "SlackError";
-  }
-}
+export const SlackError = createErrorClass("SlackError", "slack", "SLACK_ERROR");
 
 // ── Slack API types (minimal subset) ────────────────────────────────────────
 

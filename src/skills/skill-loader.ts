@@ -12,8 +12,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  BetterClawsError,
-  isCapability,
+  BetterClawsError, createErrorClass,
   type SkillConfig,
   type ToolDescriptor,
   type ToolHandler,
@@ -22,13 +21,9 @@ import {
 import type { RegisteredTool } from "../tools/registry.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import { parseSkillMd } from "./frontmatter-parser.js";
+import { validateToolDescriptor } from "../utils/validate-descriptor.js";
 
-export class SkillLoaderError extends BetterClawsError {
-  constructor(message: string, code: string = "SKILL_LOADER_ERROR") {
-    super(message, "skill-loader", code);
-    this.name = "SkillLoaderError";
-  }
-}
+export const SkillLoaderError = createErrorClass("SkillLoaderError", "skill-loader", "SKILL_LOADER_ERROR");
 
 export class SkillLoader {
   private readonly logger: StructuredLogger;
@@ -201,43 +196,14 @@ export class SkillLoader {
   }
 
   private validateDescriptor(raw: unknown, skillName: string): ToolDescriptor {
-    if (raw === null || typeof raw !== "object") {
-      throw new SkillLoaderError(
-        `Descriptor for skill "${skillName}" is not an object`,
-        "INVALID_DESCRIPTOR",
-      );
-    }
-
-    const obj = raw as Record<string, unknown>;
-
-    if (typeof obj["name"] !== "string" || obj["name"].length === 0) {
-      throw new SkillLoaderError(`Descriptor for skill "${skillName}" missing "name"`, "INVALID_DESCRIPTOR");
-    }
-    if (typeof obj["description"] !== "string") {
-      throw new SkillLoaderError(`Descriptor for skill "${skillName}" missing "description"`, "INVALID_DESCRIPTOR");
-    }
-    if (obj["parameters"] === null || typeof obj["parameters"] !== "object") {
-      throw new SkillLoaderError(`Descriptor for skill "${skillName}" missing "parameters"`, "INVALID_DESCRIPTOR");
-    }
-    if (!Array.isArray(obj["capabilities"])) {
-      throw new SkillLoaderError(`Descriptor for skill "${skillName}" missing "capabilities" array`, "INVALID_DESCRIPTOR");
-    }
-
-    for (const cap of obj["capabilities"]) {
-      if (typeof cap !== "string" || !isCapability(cap)) {
-        throw new SkillLoaderError(
-          `Descriptor for skill "${skillName}" has unknown capability: "${String(cap)}"`,
-          "INVALID_CAPABILITY",
-        );
+    try {
+      return validateToolDescriptor(raw, `skill "${skillName}"`);
+    } catch (err) {
+      if (err instanceof BetterClawsError) {
+        throw new SkillLoaderError(err.message, err.code);
       }
+      throw err;
     }
-
-    return {
-      name: obj["name"] as string,
-      description: obj["description"] as string,
-      parameters: obj["parameters"] as ToolDescriptor["parameters"],
-      capabilities: obj["capabilities"] as unknown as ToolDescriptor["capabilities"],
-    };
   }
 
   private extractHandler(module: unknown, skillName: string): ToolHandler {

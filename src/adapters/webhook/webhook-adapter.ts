@@ -1,19 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
-  BetterClawsError,
+  createErrorClass,
   type ChannelAdapter,
   type InboundMessage,
-  type OutboundMessage,
-} from "../../types.js";
+  type OutboundMessage } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
+import { readBody } from "../../utils/http.js";
 
-export class WebhookError extends BetterClawsError {
-  constructor(message: string, code: string = "WEBHOOK_ERROR") {
-    super(message, "webhook", code);
-    this.name = "WebhookError";
-  }
-}
+export const WebhookError = createErrorClass("WebhookError", "webhook", "WEBHOOK_ERROR");
 
 // ── Webhook payload ─────────────────────────────────────────────────────────
 
@@ -234,27 +229,7 @@ export class WebhookAdapter implements ChannelAdapter {
   }
 
   private readBody(req: IncomingMessage): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      const maxSize = 1024 * 1024; // 1MB limit
-
-      req.on("data", (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > maxSize) {
-          req.destroy();
-          reject(new WebhookError("Request body too large", "BODY_TOO_LARGE"));
-          return;
-        }
-        chunks.push(chunk);
-      });
-
-      req.on("end", () => {
-        resolve(Buffer.concat(chunks).toString("utf-8"));
-      });
-
-      req.on("error", reject);
-    });
+    return readBody(req);
   }
 
   private verifySignature(body: string, header: string): boolean {

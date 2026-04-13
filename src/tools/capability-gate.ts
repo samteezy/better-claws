@@ -1,18 +1,12 @@
 import {
-  BetterClawsError,
+  createErrorClass,
   type Capability,
   type GateDecision,
   type GrantScope,
-  type ToolDescriptor,
-} from "../types.js";
+  type ToolDescriptor } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 
-export class GateError extends BetterClawsError {
-  constructor(message: string, code: string = "GATE_ERROR") {
-    super(message, "gate", code);
-    this.name = "GateError";
-  }
-}
+export const GateError = createErrorClass("GateError", "gate", "GATE_ERROR");
 
 export interface CapabilityGateOptions {
   readonly defaultPolicy: "deny" | "allow";

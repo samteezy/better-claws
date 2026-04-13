@@ -1,11 +1,6 @@
-import { BetterClawsError } from "../types.js";
+import { createErrorClass } from "../types.js";
 
-export class RedactError extends BetterClawsError {
-  constructor(message: string, code: string) {
-    super(message, "redact", code);
-    this.name = "RedactError";
-  }
-}
+export const RedactError = createErrorClass("RedactError", "redact", "REDACT_ERROR");
 
 const REDACTION_PLACEHOLDER = "[REDACTED]";
 
@@ -50,11 +45,37 @@ const SECRET_PATTERNS: readonly [RegExp, string | ((...args: string[]) => string
 export function redactSecrets(input: string): string {
   let result = input;
   for (const [pattern, replacer] of SECRET_PATTERNS) {
-    if (typeof replacer === "string") {
-      result = result.replace(pattern, replacer);
-    } else {
-      result = result.replace(pattern, replacer);
-    }
+    result =
+      typeof replacer === "string"
+        ? result.replace(pattern, replacer)
+        : result.replace(pattern, replacer);
   }
   return result;
+}
+
+/**
+ * Recursively redact keys in an object/array tree.
+ * Caller supplies the key-matching predicate and optional placeholder string.
+ */
+export function redactObject(
+  value: unknown,
+  isSecret: (key: string) => boolean,
+  placeholder: string = "[REDACTED]",
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((v) => redactObject(v, isSecret, placeholder));
+  }
+  if (typeof value === "object" && value !== null) {
+    const obj = value as Record<string, unknown>;
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (isSecret(key)) {
+        result[key] = placeholder;
+      } else {
+        result[key] = redactObject(val, isSecret, placeholder);
+      }
+    }
+    return result;
+  }
+  return value;
 }

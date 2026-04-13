@@ -1,23 +1,17 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { timingSafeEqual } from "node:crypto";
 import { SLASH_COMMANDS } from "../../router/message-router.js";
 import {
-  BetterClawsError,
+  createErrorClass,
   type InboundMessage,
   type OutboundMessage,
   type StreamableChannelAdapter,
-  type StreamableResponse,
-} from "../../types.js";
+  type StreamableResponse } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
+import { authenticateBearer, readBody } from "../../utils/http.js";
 
-export class WebChatError extends BetterClawsError {
-  constructor(message: string, code: string = "WEBCHAT_ERROR") {
-    super(message, "webchat", code);
-    this.name = "WebChatError";
-  }
-}
+export const WebChatError = createErrorClass("WebChatError", "webchat", "WEBCHAT_ERROR");
 
 // ── Options ─────────────────────────────────────────────────────────────────
 
@@ -393,41 +387,11 @@ export class WebChatAdapter implements StreamableChannelAdapter {
   }
 
   private authenticate(req: IncomingMessage): boolean {
-    if (!this.authToken) return true;
-
-    const header = req.headers["authorization"];
-    if (!header || !header.startsWith("Bearer ")) return false;
-
-    const token = header.slice(7);
-    const tokenBuf = Buffer.from(token);
-    const expectedBuf = Buffer.from(this.authToken);
-
-    if (tokenBuf.byteLength !== expectedBuf.byteLength) return false;
-    return timingSafeEqual(tokenBuf, expectedBuf);
+    return authenticateBearer(req, this.authToken);
   }
 
   private readBody(req: IncomingMessage): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      const maxSize = 1024 * 1024; // 1MB
-
-      req.on("data", (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > maxSize) {
-          req.destroy();
-          reject(new WebChatError("Request body too large", "BODY_TOO_LARGE"));
-          return;
-        }
-        chunks.push(chunk);
-      });
-
-      req.on("end", () => {
-        resolve(Buffer.concat(chunks).toString("utf-8"));
-      });
-
-      req.on("error", reject);
-    });
+    return readBody(req);
   }
 }
 

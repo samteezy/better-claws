@@ -4,8 +4,9 @@ import {
   SessionCompactor,
   CompactionError,
 } from "../../src/sessions/compactor.js";
-import type {
-  ChatMessage,
+import {
+  BetterClawsError,
+  type ChatMessage,
 } from "../../src/types.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { LlmClient } from "../../src/llm/llm-client.js";
@@ -336,7 +337,7 @@ describe("SessionCompactor", () => {
       assert.equal(payload.success, true);
     });
 
-    it("propagates error as CompactionError when LLM call fails", async () => {
+    it("propagates error as BetterClawsError when LLM call fails", async () => {
       const logger = createMockLogger();
       const llmClient = createMockLlmClient();
       (llmClient as unknown as Record<string, unknown>).chat = async () => {
@@ -368,7 +369,7 @@ describe("SessionCompactor", () => {
         assert.fail("should throw CompactionError");
       } catch (err) {
         assert.ok(err instanceof CompactionError);
-        assert.ok((err as CompactionError).message.includes("LLM service down"));
+        assert.ok((err as BetterClawsError).message.includes("LLM service down"));
       }
     });
 

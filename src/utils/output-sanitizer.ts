@@ -1,4 +1,4 @@
-import { redactSecrets } from "./redact.js";
+import { redactObject, redactSecrets } from "./redact.js";
 
 const DEFAULT_MAX_BYTES = 10_240; // 10 KB
 
@@ -14,8 +14,6 @@ const SENSITIVE_KEYS = new Set([
   "access_token",
   "refresh_token",
 ]);
-
-const REDACTED = "[REDACTED]";
 
 export interface SanitizeOptions {
   /** Maximum byte length of the output. Defaults to 10 KB. */
@@ -50,6 +48,9 @@ export function sanitizeOutput(
   return result;
 }
 
+const isSensitiveKey = (key: string): boolean =>
+  SENSITIVE_KEYS.has(key.toLowerCase());
+
 /**
  * Attempt to parse as JSON, redact sensitive keys, and re-serialize.
  * If parsing fails (not JSON), return the input unchanged.
@@ -58,31 +59,12 @@ function stripSensitiveKeys(input: string): string {
   try {
     const parsed: unknown = JSON.parse(input);
     if (typeof parsed === "object" && parsed !== null) {
-      return JSON.stringify(redactObject(parsed));
+      return JSON.stringify(redactObject(parsed, isSensitiveKey));
     }
   } catch {
     // Not JSON — return as-is
   }
   return input;
-}
-
-function redactObject(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(redactObject);
-  }
-  if (typeof value === "object" && value !== null) {
-    const obj = value as Record<string, unknown>;
-    const result: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(obj)) {
-      if (SENSITIVE_KEYS.has(key.toLowerCase())) {
-        result[key] = REDACTED;
-      } else {
-        result[key] = redactObject(val);
-      }
-    }
-    return result;
-  }
-  return value;
 }
 
 function truncateToBytes(input: string, maxBytes: number): string {

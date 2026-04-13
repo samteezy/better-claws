@@ -6,18 +6,13 @@ import {
 } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname, resolve } from "node:path";
-import { timingSafeEqual } from "node:crypto";
-import { BetterClawsError, type BetterClawsConfig, type ToolPolicy } from "../types.js";
+import { createErrorClass, type BetterClawsConfig, type ToolPolicy } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 import { saveConfig } from "../config.js";
+import { authenticateBearer, readBody } from "../utils/http.js";
 
-export class DashboardError extends BetterClawsError {
-  constructor(message: string, code: string = "DASHBOARD_ERROR") {
-    super(message, "dashboard", code);
-    this.name = "DashboardError";
-  }
-}
+export const DashboardError = createErrorClass("DashboardError", "dashboard", "DASHBOARD_ERROR");
 
 // ── Types for API responses ─────────────────────────────────────────────────
 
@@ -809,38 +804,17 @@ export class DashboardServer {
 
   // ── Request body parsing ────────────────────────────────────────────────
 
-  private readRequestBody(req: IncomingMessage): Promise<Record<string, unknown> | null> {
-    return new Promise((resolve) => {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      const maxSize = 1024 * 1024; // 1MB
-
-      req.on("data", (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > maxSize) {
-          req.destroy();
-          resolve(null);
-          return;
-        }
-        chunks.push(chunk);
-      });
-
-      req.on("end", () => {
-        try {
-          const raw = Buffer.concat(chunks).toString("utf-8");
-          const parsed = JSON.parse(raw) as unknown;
-          if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-            resolve(parsed as Record<string, unknown>);
-          } else {
-            resolve(null);
-          }
-        } catch {
-          resolve(null);
-        }
-      });
-
-      req.on("error", () => resolve(null));
-    });
+  private async readRequestBody(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+    try {
+      const raw = await readBody(req);
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   // ── Static file serving ───────────────────────────────────────────────
@@ -877,17 +851,7 @@ export class DashboardServer {
   // ── Authentication ────────────────────────────────────────────────
 
   private authenticate(req: IncomingMessage): boolean {
-    if (!this.authToken) return true; // no token configured — open access
-
-    const header = req.headers["authorization"];
-    if (!header || !header.startsWith("Bearer ")) return false;
-
-    const token = header.slice(7);
-    const tokenBuf = Buffer.from(token);
-    const expectedBuf = Buffer.from(this.authToken);
-
-    if (tokenBuf.byteLength !== expectedBuf.byteLength) return false;
-    return timingSafeEqual(tokenBuf, expectedBuf);
+    return authenticateBearer(req, this.authToken);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────

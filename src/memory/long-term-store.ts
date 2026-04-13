@@ -2,18 +2,12 @@ import { readFile, writeFile, appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
-  BetterClawsError,
+  createErrorClass,
   type MemoryEntry,
-  type MemoryConfig,
-} from "../types.js";
+  type MemoryConfig } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 
-export class LongTermStoreError extends BetterClawsError {
-  constructor(message: string, code: string = "LONG_TERM_STORE_ERROR") {
-    super(message, "long-term-store", code);
-    this.name = "LongTermStoreError";
-  }
-}
+export const LongTermStoreError = createErrorClass("LongTermStoreError", "long-term-store", "LONG_TERM_STORE_ERROR");
 
 export interface LongTermStoreOptions {
   readonly directory: string;

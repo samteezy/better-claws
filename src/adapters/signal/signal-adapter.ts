@@ -1,17 +1,11 @@
 import {
-  BetterClawsError,
+  createErrorClass,
   type ChannelAdapter,
   type InboundMessage,
-  type OutboundMessage,
-} from "../../types.js";
+  type OutboundMessage } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
 
-export class SignalError extends BetterClawsError {
-  constructor(message: string, code: string = "SIGNAL_ERROR") {
-    super(message, "signal", code);
-    this.name = "SignalError";
-  }
-}
+export const SignalError = createErrorClass("SignalError", "signal", "SIGNAL_ERROR");
 
 // ── Signal CLI REST API types (minimal subset) ─────────────────────────────
 

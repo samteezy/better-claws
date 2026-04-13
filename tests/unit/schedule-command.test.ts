@@ -5,6 +5,7 @@ import {
   SchedulerError,
   type ScheduleDefinition,
 } from "../../src/scheduler/scheduler.js";
+import { BetterClawsError } from "../../src/types.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
@@ -611,8 +612,8 @@ describe("/schedule command integration", () => {
         assert.fail("Should have thrown");
       } catch (err) {
         assert.ok(err instanceof SchedulerError);
-        assert.ok((err as SchedulerError).message.includes("fake"));
-        assert.equal((err as SchedulerError).component, "scheduler");
+        assert.ok((err as BetterClawsError).message.includes("fake"));
+        assert.equal((err as BetterClawsError).component, "scheduler");
       }
     });
 

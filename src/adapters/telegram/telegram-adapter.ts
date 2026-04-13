@@ -1,17 +1,11 @@
 import {
-  BetterClawsError,
+  createErrorClass,
   type ChannelAdapter,
   type InboundMessage,
-  type OutboundMessage,
-} from "../../types.js";
+  type OutboundMessage } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
 
-export class TelegramError extends BetterClawsError {
-  constructor(message: string, code: string = "TELEGRAM_ERROR") {
-    super(message, "telegram", code);
-    this.name = "TelegramError";
-  }
-}
+export const TelegramError = createErrorClass("TelegramError", "telegram", "TELEGRAM_ERROR");
 
 // ── Telegram API types (minimal subset) ──────────────────────────────────────
 

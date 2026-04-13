@@ -1,13 +1,9 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { BetterClawsError, type EventType, type LogEntry } from "../types.js";
+import { createErrorClass, type EventType, type LogEntry } from "../types.js";
+import { redactObject } from "../utils/redact.js";
 
-export class LoggerError extends BetterClawsError {
-  constructor(message: string, code: string = "LOGGER_ERROR") {
-    super(message, "logger", code);
-    this.name = "LoggerError";
-  }
-}
+export const LoggerError = createErrorClass("LoggerError", "logger", "LOGGER_ERROR");
 
 const SENSITIVE_KEYS =
   /^(apikey|api_key|token|secret|password|authorization|credential)$/i;
@@ -15,17 +11,10 @@ const SENSITIVE_KEYS =
 function redactPayload(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(payload)) {
-    if (SENSITIVE_KEYS.test(key)) {
-      result[key] = "[REDACTED]";
-    } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-      result[key] = redactPayload(value as Record<string, unknown>);
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
+  return redactObject(
+    payload,
+    (key) => SENSITIVE_KEYS.test(key),
+  ) as Record<string, unknown>;
 }
 
 export interface StructuredLoggerOptions {

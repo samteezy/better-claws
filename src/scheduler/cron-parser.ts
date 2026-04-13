@@ -1,11 +1,6 @@
-import { BetterClawsError } from "../types.js";
+import { createErrorClass } from "../types.js";
 
-export class CronParseError extends BetterClawsError {
-  constructor(message: string) {
-    super(message, "cron-parser", "PARSE_ERROR");
-    this.name = "CronParseError";
-  }
-}
+export const CronParseError = createErrorClass("CronParseError", "cron-parser", "PARSE_ERROR");
 
 /**
  * Minimal 5-field cron expression parser.

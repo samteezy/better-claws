@@ -1,10 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
-  BetterClawsError,
+  createErrorClass,
   type BetterClawsConfig,
-  type LlmConfig,
-} from "./types.js";
+  type LlmConfig } from "./types.js";
 
 export interface ResolvedWeakLlmConfig {
   readonly baseUrl: string;
@@ -25,12 +24,7 @@ export function resolveWeakLlmConfig(llm: LlmConfig): ResolvedWeakLlmConfig | nu
   };
 }
 
-export class ConfigError extends BetterClawsError {
-  constructor(message: string, code: string = "CONFIG_ERROR") {
-    super(message, "config", code);
-    this.name = "ConfigError";
-  }
-}
+export const ConfigError = createErrorClass("ConfigError", "config", "CONFIG_ERROR");
 
 export const DEFAULT_CONFIG: BetterClawsConfig = {
   gateway: {

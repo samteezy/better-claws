@@ -1,8 +1,3 @@
-import { BetterClawsError } from "../types.js";
+import { createErrorClass } from "../types.js";
 
-export class SecretError extends BetterClawsError {
-  constructor(message: string, code: string = "SECRET_ERROR") {
-    super(message, "secrets", code);
-    this.name = "SecretError";
-  }
-}
+export const SecretError = createErrorClass("SecretError", "secrets", "SECRET_ERROR");

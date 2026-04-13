@@ -2,24 +2,18 @@ import { appendFile, mkdir, readdir, readFile, rename, unlink, writeFile } from 
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import {
-  BetterClawsError,
+  createErrorClass,
   type Capability,
   type ChatMessage,
   type GrantScope,
   type SessionLogEntry,
   type SessionState,
-  type ToolPolicy,
-} from "../types.js";
+  type ToolPolicy } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import { WorkingMemory } from "../memory/working-memory.js";
 import { workingMemoryRegistry } from "../tools/built-in/memory.js";
 
-export class SessionError extends BetterClawsError {
-  constructor(message: string, code: string = "SESSION_ERROR") {
-    super(message, "session", code);
-    this.name = "SessionError";
-  }
-}
+export const SessionError = createErrorClass("SessionError", "session", "SESSION_ERROR");
 
 export interface Session {
   readonly id: string;
@@ -141,24 +135,24 @@ export class SessionManager {
     }
   }
 
-  async getHistory(
+  /**
+   * Parse a session's JSONL log, returning entries after the last compaction
+   * point and the compaction summary (if any).
+   */
+  private async parseSessionLog(
     sessionId: string,
-    limit?: number,
-  ): Promise<ChatMessage[]> {
+  ): Promise<{ entries: SessionLogEntry[]; compactionSummary: string | null }> {
     const session = this.sessions.get(sessionId);
-    if (!session) return [];
+    if (!session) return { entries: [], compactionSummary: null };
 
     let content: string;
     try {
       content = await readFile(session.logPath, "utf-8");
     } catch {
-      return [];
+      return { entries: [], compactionSummary: null };
     }
 
     const lines = content.trim().split("\n").filter(Boolean);
-
-    // Parse all entries, then find the last compaction point.
-    // Everything before (and including) the last compaction is replaced by its summary.
     const parsed: SessionLogEntry[] = [];
     for (const line of lines) {
       try {
@@ -169,7 +163,7 @@ export class SessionManager {
     }
 
     let lastCompactionIdx = -1;
-    let compactionSummary = "";
+    let compactionSummary: string | null = null;
     for (let i = 0; i < parsed.length; i++) {
       const entry = parsed[i]!;
       if (entry.type === "compaction") {
@@ -178,18 +172,27 @@ export class SessionManager {
       }
     }
 
+    return {
+      entries: parsed.slice(lastCompactionIdx + 1),
+      compactionSummary,
+    };
+  }
+
+  async getHistory(
+    sessionId: string,
+    limit?: number,
+  ): Promise<ChatMessage[]> {
+    const { entries, compactionSummary } = await this.parseSessionLog(sessionId);
     const messages: ChatMessage[] = [];
 
-    if (lastCompactionIdx !== -1) {
+    if (compactionSummary !== null) {
       messages.push({
         role: "user",
         content: `[Conversation summary: ${compactionSummary}]`,
       });
     }
 
-    const startIdx = lastCompactionIdx + 1;
-    for (let i = startIdx; i < parsed.length; i++) {
-      const entry = parsed[i]!;
+    for (const entry of entries) {
       switch (entry.type) {
         case "inbound":
           messages.push({ role: "user", content: entry.message.text });
@@ -207,9 +210,6 @@ export class SessionManager {
         case "toolCall":
         case "compaction":
         case "fork":
-          // toolCall is captured inline in the messages array by the router;
-          // compaction entries are handled above via the summary scan.
-          // fork entries are provenance metadata — not part of the conversation.
           break;
       }
     }
@@ -224,48 +224,17 @@ export class SessionManager {
   async getDetailedHistory(
     sessionId: string,
   ): Promise<Array<{ role: string; content: string; timestamp?: number }>> {
-    const session = this.sessions.get(sessionId);
-    if (!session) return [];
-
-    let content: string;
-    try {
-      content = await readFile(session.logPath, "utf-8");
-    } catch {
-      return [];
-    }
-
-    const lines = content.trim().split("\n").filter(Boolean);
-    const parsed: SessionLogEntry[] = [];
-    for (const line of lines) {
-      try {
-        parsed.push(JSON.parse(line) as SessionLogEntry);
-      } catch {
-        // skip malformed lines
-      }
-    }
-
-    let lastCompactionIdx = -1;
-    let compactionSummary = "";
-    for (let i = 0; i < parsed.length; i++) {
-      const entry = parsed[i]!;
-      if (entry.type === "compaction") {
-        lastCompactionIdx = i;
-        compactionSummary = entry.summary;
-      }
-    }
-
+    const { entries, compactionSummary } = await this.parseSessionLog(sessionId);
     const messages: Array<{ role: string; content: string; timestamp?: number }> = [];
 
-    if (lastCompactionIdx !== -1) {
+    if (compactionSummary !== null) {
       messages.push({
         role: "user",
         content: `[Conversation summary: ${compactionSummary}]`,
       });
     }
 
-    const startIdx = lastCompactionIdx + 1;
-    for (let i = startIdx; i < parsed.length; i++) {
-      const entry = parsed[i]!;
+    for (const entry of entries) {
       switch (entry.type) {
         case "inbound":
           messages.push({

@@ -5,7 +5,7 @@
  * specification without requiring an external YAML library.
  */
 
-import { BetterClawsError } from "../types.js";
+import { createErrorClass } from "../types.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,12 +23,7 @@ export interface ParsedSkillMd {
   readonly body: string;
 }
 
-export class FrontmatterParseError extends BetterClawsError {
-  constructor(message: string) {
-    super(message, "frontmatter-parser", "PARSE_ERROR");
-    this.name = "FrontmatterParseError";
-  }
-}
+export const FrontmatterParseError = createErrorClass("FrontmatterParseError", "frontmatter-parser", "PARSE_ERROR");
 
 // ── Parser ───────────────────────────────────────────────────────────────────
 

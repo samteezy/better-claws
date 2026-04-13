@@ -1,18 +1,12 @@
 import {
-  BetterClawsError,
+  createErrorClass,
   type ChatMessage,
-  type CompactionConfig,
-} from "../types.js";
+  type CompactionConfig } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { LlmClient } from "../llm/llm-client.js";
 import type { SessionManager } from "./session-manager.js";
 
-export class CompactionError extends BetterClawsError {
-  constructor(message: string, code: string = "COMPACTION_ERROR") {
-    super(message, "compactor", code);
-    this.name = "CompactionError";
-  }
-}
+export const CompactionError = createErrorClass("CompactionError", "compactor", "COMPACTION_ERROR");
 
 export interface SessionCompactorOptions {
   readonly sessionManager: SessionManager;

@@ -2,19 +2,13 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
-  BetterClawsError,
+  createErrorClass,
   type ExecutionContext,
   type ToolHandler,
-  type ToolResult,
-} from "../types.js";
+  type ToolResult } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 
-export class ExecutorError extends BetterClawsError {
-  constructor(message: string, code: string = "EXECUTOR_ERROR") {
-    super(message, "executor", code);
-    this.name = "ExecutorError";
-  }
-}
+export const ExecutorError = createErrorClass("ExecutorError", "executor", "EXECUTOR_ERROR");
 
 export interface ToolExecutorOptions {
   readonly scratchBaseDir: string;

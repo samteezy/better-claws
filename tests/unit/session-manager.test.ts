@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SessionManager, SessionError } from "../../src/sessions/session-manager.js";
 import { workingMemoryRegistry } from "../../src/tools/built-in/memory.js";
-import type {
-  SessionLogEntry,
+import {
+  BetterClawsError,
+  type SessionLogEntry,
 } from "../../src/types.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 
@@ -213,7 +214,7 @@ describe("SessionManager", () => {
         assert.fail("should throw SessionError");
       } catch (err) {
         assert.ok(err instanceof SessionError);
-        assert.equal((err as SessionError).code, "NOT_FOUND");
+        assert.equal((err as BetterClawsError).code, "NOT_FOUND");
       }
     });
 
@@ -411,7 +412,7 @@ describe("SessionManager", () => {
         assert.fail("should throw SessionError");
       } catch (err) {
         assert.ok(err instanceof SessionError);
-        assert.equal((err as SessionError).code, "NOT_FOUND");
+        assert.equal((err as BetterClawsError).code, "NOT_FOUND");
       }
     });
 
@@ -1773,7 +1774,7 @@ describe("SessionManager", () => {
         assert.fail("should throw SessionError");
       } catch (err) {
         assert.ok(err instanceof SessionError);
-        assert.equal((err as SessionError).code, "NOT_FOUND");
+        assert.equal((err as BetterClawsError).code, "NOT_FOUND");
       }
     });
 

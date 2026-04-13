@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ToolRegistry } from "../../src/tools/registry.js";
 import { RegistryError } from "../../src/tools/registry.js";
+import { BetterClawsError } from "../../src/types.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 
 function createMockLogger() {
@@ -119,7 +120,7 @@ export const execute = async (params, context) => {
           (err) => {
             assert.ok(err instanceof RegistryError);
             assert.match(
-              (err as RegistryError).message,
+              (err as BetterClawsError).message,
               /missing "capabilities" array/,
             );
             return true;
@@ -156,7 +157,7 @@ export const execute = async (params, context) => {
           (err) => {
             assert.ok(err instanceof RegistryError);
             assert.match(
-              (err as RegistryError).message,
+              (err as BetterClawsError).message,
               /unknown capability: "invalid:capability"/,
             );
             return true;
@@ -197,7 +198,7 @@ export const execute = async (params, context) => {
           () => registry.loadTools(),
           (err) => {
             assert.ok(err instanceof RegistryError);
-            assert.match((err as RegistryError).message, /conflicts with existing tool/);
+            assert.match((err as BetterClawsError).message, /conflicts with existing tool/);
             return true;
           },
         );
@@ -384,7 +385,7 @@ export const notExecute = async () => {};
           (err) => {
             assert.ok(err instanceof RegistryError);
             assert.match(
-              (err as RegistryError).message,
+              (err as BetterClawsError).message,
               /must export an "execute" function/,
             );
             return true;
@@ -457,7 +458,7 @@ export const notExecute = async () => {};
           () => registry.loadTools(),
           (err) => {
             assert.ok(err instanceof RegistryError);
-            assert.match((err as RegistryError).message, /missing "name"/);
+            assert.match((err as BetterClawsError).message, /missing "name"/);
             return true;
           },
         );
@@ -491,7 +492,7 @@ export const notExecute = async () => {};
           () => registry.loadTools(),
           (err) => {
             assert.ok(err instanceof RegistryError);
-            assert.match((err as RegistryError).message, /missing "description"/);
+            assert.match((err as BetterClawsError).message, /missing "description"/);
             return true;
           },
         );
@@ -525,7 +526,7 @@ export const notExecute = async () => {};
           () => registry.loadTools(),
           (err) => {
             assert.ok(err instanceof RegistryError);
-            assert.match((err as RegistryError).message, /missing "parameters"/);
+            assert.match((err as BetterClawsError).message, /missing "parameters"/);
             return true;
           },
         );
@@ -724,7 +725,7 @@ export const notExecute = async () => {};
           (err) => {
             assert.ok(err instanceof RegistryError);
             assert.match(
-              (err as RegistryError).message,
+              (err as BetterClawsError).message,
               /conflicts with existing tool/,
             );
             return true;
@@ -964,7 +965,7 @@ export const notExecute = async () => {};
         (err) => {
           assert.ok(err instanceof RegistryError);
           assert.match(
-            (err as RegistryError).message,
+            (err as BetterClawsError).message,
             /Duplicate built-in tool name/,
           );
           return true;
@@ -1052,7 +1053,7 @@ export const notExecute = async () => {};
         () => registry.register(tool2),
         (err) => {
           assert.ok(err instanceof RegistryError);
-          assert.match((err as RegistryError).message, /name already exists/);
+          assert.match((err as BetterClawsError).message, /name already exists/);
           return true;
         },
       );

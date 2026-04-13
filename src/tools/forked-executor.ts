@@ -5,19 +5,13 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
-  BetterClawsError,
+  createErrorClass,
   type ExecutionContext,
-  type ToolResult,
-} from "../types.js";
+  type ToolResult } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import { sanitizeOutput } from "../utils/output-sanitizer.js";
 
-export class ForkedExecutorError extends BetterClawsError {
-  constructor(message: string, code: string = "FORKED_EXECUTOR_ERROR") {
-    super(message, "forked-executor", code);
-    this.name = "ForkedExecutorError";
-  }
-}
+export const ForkedExecutorError = createErrorClass("ForkedExecutorError", "forked-executor", "FORKED_EXECUTOR_ERROR");
 
 // ── IPC message types ───────────────────────────────────────────────────────
 

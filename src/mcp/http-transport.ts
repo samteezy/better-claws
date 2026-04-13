@@ -8,16 +8,11 @@
 
 import http from "node:http";
 import https from "node:https";
-import { BetterClawsError } from "../types.js";
+import { createErrorClass } from "../types.js";
 import type { McpTransport } from "./transport.js";
 import type { JsonRpcResponse } from "./json-rpc.js";
 
-export class HttpTransportError extends BetterClawsError {
-  constructor(message: string, code: string = "HTTP_TRANSPORT_ERROR") {
-    super(message, "http-transport", code);
-    this.name = "HttpTransportError";
-  }
-}
+export const HttpTransportError = createErrorClass("HttpTransportError", "http-transport", "HTTP_TRANSPORT_ERROR");
 
 // ── Transport ────────────────────────────────────────────────────────────────
 

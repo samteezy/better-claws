@@ -2,21 +2,16 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  BetterClawsError,
-  isCapability,
+  BetterClawsError, createErrorClass,
   type BuiltInToolModule,
   type ToolDescriptor,
   type ToolHandler,
   type ToolPolicy,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
+import { validateToolDescriptor } from "../utils/validate-descriptor.js";
 
-export class RegistryError extends BetterClawsError {
-  constructor(message: string, code: string = "REGISTRY_ERROR") {
-    super(message, "registry", code);
-    this.name = "RegistryError";
-  }
-}
+export const RegistryError = createErrorClass("RegistryError", "registry", "REGISTRY_ERROR");
 
 export interface RegisteredTool {
   readonly descriptor: ToolDescriptor;
@@ -199,76 +194,14 @@ export class ToolRegistry {
     raw: unknown,
     dirName: string,
   ): ToolDescriptor {
-    if (raw === null || typeof raw !== "object") {
-      throw new RegistryError(
-        `Descriptor for "${dirName}" is not an object`,
-        "INVALID_DESCRIPTOR",
-      );
-    }
-
-    const obj = raw as Record<string, unknown>;
-
-    if (typeof obj["name"] !== "string" || obj["name"].length === 0) {
-      throw new RegistryError(
-        `Descriptor for "${dirName}" missing "name"`,
-        "INVALID_DESCRIPTOR",
-      );
-    }
-    if (typeof obj["description"] !== "string") {
-      throw new RegistryError(
-        `Descriptor for "${dirName}" missing "description"`,
-        "INVALID_DESCRIPTOR",
-      );
-    }
-    if (obj["parameters"] === null || typeof obj["parameters"] !== "object") {
-      throw new RegistryError(
-        `Descriptor for "${dirName}" missing "parameters"`,
-        "INVALID_DESCRIPTOR",
-      );
-    }
-    if (!Array.isArray(obj["capabilities"])) {
-      throw new RegistryError(
-        `Descriptor for "${dirName}" missing "capabilities" array`,
-        "INVALID_DESCRIPTOR",
-      );
-    }
-
-    for (const cap of obj["capabilities"]) {
-      if (typeof cap !== "string" || !isCapability(cap)) {
-        throw new RegistryError(
-          `Descriptor for "${dirName}" has unknown capability: "${String(cap)}"`,
-          "INVALID_CAPABILITY",
-        );
+    try {
+      return validateToolDescriptor(raw, dirName, { validateSecrets: true });
+    } catch (err) {
+      if (err instanceof BetterClawsError) {
+        throw new RegistryError(err.message, err.code);
       }
+      throw err;
     }
-
-    // Validate optional secrets field
-    let secrets: readonly string[] | undefined;
-    if (obj["secrets"] !== undefined) {
-      if (!Array.isArray(obj["secrets"])) {
-        throw new RegistryError(
-          `Descriptor for "${dirName}" has invalid "secrets" field (expected array)`,
-          "INVALID_DESCRIPTOR",
-        );
-      }
-      for (const s of obj["secrets"]) {
-        if (typeof s !== "string" || s.length === 0) {
-          throw new RegistryError(
-            `Descriptor for "${dirName}" has invalid secret key: "${String(s)}"`,
-            "INVALID_DESCRIPTOR",
-          );
-        }
-      }
-      secrets = obj["secrets"] as string[];
-    }
-
-    return {
-      name: obj["name"] as string,
-      description: obj["description"] as string,
-      parameters: obj["parameters"] as ToolDescriptor["parameters"],
-      capabilities: obj["capabilities"] as unknown as ToolDescriptor["capabilities"],
-      ...(secrets ? { secrets } : {}),
-    };
   }
 
   private extractHandler(module: unknown, dirName: string): ToolHandler {

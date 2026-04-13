@@ -10,7 +10,7 @@ import {
 } from "../../src/dashboard/dashboard-server.js";
 import { SessionManager } from "../../src/sessions/session-manager.js";
 import type { StructuredLogger } from "../../src/logger/structured-logger.js";
-import type { BetterClawsConfig } from "../../src/types.js";
+import { BetterClawsError, type BetterClawsConfig } from "../../src/types.js";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -676,7 +676,7 @@ describe("DashboardServer", () => {
         () => server.start(),
         (err) => {
           assert.ok(err instanceof DashboardError);
-          assert.equal((err as DashboardError).code, "UNSAFE_CONFIG");
+          assert.equal((err as BetterClawsError).code, "UNSAFE_CONFIG");
           assert.ok((err as Error).message.includes("non-loopback address"));
           return true;
         },
@@ -718,7 +718,7 @@ describe("DashboardServer", () => {
         () => server.start(),
         (err) => {
           assert.ok(err instanceof DashboardError);
-          assert.equal((err as DashboardError).code, "UNSAFE_CONFIG");
+          assert.equal((err as BetterClawsError).code, "UNSAFE_CONFIG");
           return true;
         },
       );

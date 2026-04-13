@@ -1,12 +1,7 @@
-import { BetterClawsError } from "../types.js";
+import { createErrorClass } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 
-export class WorkingMemoryError extends BetterClawsError {
-  constructor(message: string, code: string = "WORKING_MEMORY_ERROR") {
-    super(message, "working-memory", code);
-    this.name = "WorkingMemoryError";
-  }
-}
+export const WorkingMemoryError = createErrorClass("WorkingMemoryError", "working-memory", "WORKING_MEMORY_ERROR");
 
 /**
  * A single entry in working memory — a distilled fact, goal, correction,

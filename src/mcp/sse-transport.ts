@@ -10,16 +10,11 @@
 
 import http from "node:http";
 import https from "node:https";
-import { BetterClawsError } from "../types.js";
+import { createErrorClass } from "../types.js";
 import type { McpTransport } from "./transport.js";
 import type { JsonRpcResponse } from "./json-rpc.js";
 
-export class SseTransportError extends BetterClawsError {
-  constructor(message: string, code: string = "SSE_TRANSPORT_ERROR") {
-    super(message, "sse-transport", code);
-    this.name = "SseTransportError";
-  }
-}
+export const SseTransportError = createErrorClass("SseTransportError", "sse-transport", "SSE_TRANSPORT_ERROR");
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

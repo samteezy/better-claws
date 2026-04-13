@@ -1,19 +1,13 @@
 import {
-  BetterClawsError,
+  createErrorClass,
   type ChatMessage,
-  type ToolDescriptor,
-} from "../types.js";
+  type ToolDescriptor } from "../types.js";
 import {
   sanitizeMemoryContent,
   wrapMemoryBlock,
 } from "../utils/prompt-sanitizer.js";
 
-export class PromptBuilderError extends BetterClawsError {
-  constructor(message: string, code: string = "PROMPT_BUILDER_ERROR") {
-    super(message, "prompt", code);
-    this.name = "PromptBuilderError";
-  }
-}
+export const PromptBuilderError = createErrorClass("PromptBuilderError", "prompt", "PROMPT_BUILDER_ERROR");
 
 export interface PromptBuilderOptions {
   /** Base system prompt text. */
