@@ -170,9 +170,13 @@ export class Scheduler implements ChannelAdapter {
     });
   }
 
-  /** Get the last result for a schedule channel. Useful for testing. */
+  /** Get the last result for a schedule by its ID. */
   getLastResult(scheduleId: string): OutboundMessage | undefined {
-    return this.lastResults.get(`cron:${scheduleId}`);
+    const prefix = `cron:${scheduleId}:`;
+    for (const [key, value] of this.lastResults) {
+      if (key.startsWith(prefix)) return value;
+    }
+    return undefined;
   }
 
   /** Get all enabled schedule IDs. */

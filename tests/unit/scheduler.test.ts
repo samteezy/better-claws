@@ -264,7 +264,7 @@ describe("Scheduler", () => {
     it("stores results and logs outbound", async () => {
       const { scheduler, logger } = makeScheduler([]);
 
-      await scheduler.send("cron:test-1", { channelId: "cron:test-1", text: "result" });
+      await scheduler.send("cron:test-1:1704067200000", { channelId: "cron:test-1:1704067200000", text: "result" });
 
       const result = scheduler.getLastResult("test-1");
       assert.ok(result);
