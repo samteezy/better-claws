@@ -6,6 +6,7 @@ import type {
   ToolResult,
 } from "../../types.js";
 import { checkPath } from "../../utils/path-policy.js";
+import { missingParamResult } from "./tool-helpers.js";
 
 export const descriptor: ToolDescriptor = {
   name: "shell",
@@ -47,12 +48,7 @@ export const handler: ToolHandler = {
     const command = params["command"];
 
     if (typeof command !== "string" || command.length === 0) {
-      return {
-        success: false,
-        output: null,
-        error: "Missing required parameter: command",
-        durationMs: Date.now() - start,
-      };
+      return missingParamResult("command", start);
     }
 
     const args = Array.isArray(params["args"])

@@ -11,6 +11,7 @@ import {
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { LongTermStore } from "../memory/long-term-store.js";
 import type { SuggestionStore, CreateSuggestionInput } from "./suggestion-store.js";
+import { toErrorMessage } from "../utils/errors.js";
 
 export class SuggestionError extends BetterClawsError {
   constructor(message: string, code: string = "SUGGESTION_ERROR") {
@@ -176,7 +177,7 @@ export class SuggestionWorker {
         component: "suggestion-worker",
         payload: {
           action: "cycle_error",
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
         },
       });
     }
@@ -366,7 +367,7 @@ export class SuggestionWorker {
         component: "suggestion-worker",
         payload: {
           action: "llm_error",
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
         },
       });
       return [];

@@ -1,3 +1,4 @@
+import { toErrorMessage } from "../../utils/errors.js";
 import type { WorkingMemory } from "../../memory/working-memory.js";
 import type { LongTermStore } from "../../memory/long-term-store.js";
 import type { TfIdfRetriever } from "../../memory/retrieval.js";
@@ -381,7 +382,7 @@ export const handler: ToolHandler = {
       return {
         success: false,
         output: null,
-        error: err instanceof Error ? err.message : String(err),
+        error: toErrorMessage(err),
         durationMs: Date.now() - start,
       };
     }

@@ -8,6 +8,7 @@ import type {
   StreamableResponse,
 } from "../../types.js";
 import { sage, clay, lavender, rose, stone, amber, bold, dim } from "../../utils/ansi.js";
+import { toErrorMessage } from "../../utils/errors.js";
 import { renderMarkdown, StreamingMarkdownWriter } from "../../utils/terminal-markdown.js";
 
 const PROMPT_PLAIN = "you \u203A ";
@@ -239,7 +240,7 @@ export class CliAdapter implements StreamableChannelAdapter {
     const prev = this.streamChain;
     this.streamChain = prev.then(() =>
       this.doSendStream(_channelId, response).catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = toErrorMessage(err);
         process.stderr.write(rose(`  stream error: ${msg}`) + "\n");
       })
     );

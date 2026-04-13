@@ -43,8 +43,6 @@ export const bold = wrap("\x1b[1m", "\x1b[22m");
 export const dim = wrap("\x1b[2m", "\x1b[22m");
 export const italic = wrap("\x1b[3m", "\x1b[23m");
 
-// ── Utilities ────────────────────────────────────────────────────────────────
-
 /** Strip all ANSI escape sequences from a string. */
 export function strip(text: string): string {
   return text.replace(/\x1b\[[0-9;]*m/g, "");

@@ -12,6 +12,7 @@ import type { SessionManager } from "../sessions/session-manager.js";
 import { saveConfig } from "../config.js";
 import { authenticateBearer, readBody } from "../utils/http.js";
 import { workingMemoryRegistry } from "../tools/built-in/memory.js";
+import { toErrorMessage } from "../utils/errors.js";
 
 export const DashboardError = createErrorClass("DashboardError", "dashboard", "DASHBOARD_ERROR");
 
@@ -575,7 +576,7 @@ export class DashboardServer {
 
       this.sendJson(res, 200, updated);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       const status = msg.includes("not found") ? 404 : 400;
       this.sendJson(res, status, { error: msg });
     }
@@ -720,7 +721,7 @@ export class DashboardServer {
       await this.persistConfig(body);
     } catch (err) {
       this.sendJson(res, 500, {
-        error: `Failed to save config: ${err instanceof Error ? err.message : String(err)}`,
+        error: `Failed to save config: ${toErrorMessage(err)}`,
       });
       return;
     }
@@ -758,7 +759,7 @@ export class DashboardServer {
       await this.persistConfig({ [sectionKey]: merged });
     } catch (err) {
       this.sendJson(res, 500, {
-        error: `Failed to save config: ${err instanceof Error ? err.message : String(err)}`,
+        error: `Failed to save config: ${toErrorMessage(err)}`,
       });
       return;
     }
@@ -864,7 +865,7 @@ export class DashboardServer {
       const created = this.context.scheduler.getSchedule(id);
       this.sendJson(res, 201, { id, ...created });
     } catch (err) {
-      this.sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      this.sendJson(res, 400, { error: toErrorMessage(err) });
     }
   }
 
@@ -899,7 +900,7 @@ export class DashboardServer {
       });
       this.sendJson(res, 200, updated);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       const status = msg.includes("not found") ? 404 : 400;
       this.sendJson(res, status, { error: msg });
     }

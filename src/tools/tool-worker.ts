@@ -7,6 +7,8 @@
  * This file is the entry point for child_process.fork().
  */
 
+import { toErrorMessage } from "../utils/errors.js";
+
 interface WorkerMessage {
   readonly handlerPath: string;
   readonly params: Record<string, unknown>;
@@ -86,7 +88,7 @@ process.on("message", async (msg: WorkerMessage) => {
     sendResult({
       success: false,
       output: null,
-      error: err instanceof Error ? err.message : String(err),
+      error: toErrorMessage(err),
       durationMs: Date.now() - startTime,
       stdout: capturedStdout.join(""),
       stderr: capturedStderr.join(""),

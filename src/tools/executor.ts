@@ -1,6 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { toErrorMessage } from "../utils/errors.js";
 import {
   createErrorClass,
   type ExecutionContext,
@@ -121,7 +122,7 @@ export class ToolExecutor {
         component: "executor",
         payload: {
           success: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
           durationMs,
         },
       });
@@ -129,7 +130,7 @@ export class ToolExecutor {
       return {
         success: false,
         output: null,
-        error: err instanceof Error ? err.message : String(err),
+        error: toErrorMessage(err),
         durationMs,
       };
     } finally {

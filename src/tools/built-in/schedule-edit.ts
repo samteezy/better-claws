@@ -1,3 +1,4 @@
+import { toErrorMessage } from "../../utils/errors.js";
 import type {
   ToolDescriptor,
   ToolHandler,
@@ -108,7 +109,7 @@ export const handler: ToolHandler = {
       return {
         success: false,
         output: null,
-        error: err instanceof Error ? err.message : String(err),
+        error: toErrorMessage(err),
         durationMs: Date.now() - start,
       };
     }

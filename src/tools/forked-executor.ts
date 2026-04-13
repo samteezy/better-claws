@@ -3,6 +3,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join, dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { toErrorMessage } from "../utils/errors.js";
 import { existsSync } from "node:fs";
 import {
   createErrorClass,
@@ -178,7 +179,7 @@ export class ForkedExecutor {
         payload: {
           success: false,
           ...(isAborted ? { aborted: true } : {}),
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
           durationMs,
           isolated: true,
         },
@@ -187,7 +188,7 @@ export class ForkedExecutor {
       return {
         success: false,
         output: null,
-        error: isAborted ? "Execution stopped by user" : (err instanceof Error ? err.message : String(err)),
+        error: isAborted ? "Execution stopped by user" : (toErrorMessage(err)),
         durationMs,
       };
     } finally {

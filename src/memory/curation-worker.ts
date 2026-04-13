@@ -1,3 +1,4 @@
+import { toErrorMessage } from "../utils/errors.js";
 import {
   createErrorClass,
   type MemoryConfig,
@@ -192,7 +193,7 @@ export class CurationWorker {
         component: "curation-worker",
         payload: {
           action: "cycle_error",
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
         },
       });
     }
@@ -268,7 +269,7 @@ export class CurationWorker {
         payload: {
           action: "distillation_error",
           sessionId,
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
         },
       });
       return [];
@@ -378,7 +379,7 @@ export class CurationWorker {
         payload: {
           action: "consolidation_error",
           category,
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
         },
       });
       return [];

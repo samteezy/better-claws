@@ -4,6 +4,7 @@ import {
   type InboundMessage,
   type OutboundMessage } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
+import { toErrorMessage } from "../../utils/errors.js";
 
 export const DiscordError = createErrorClass("DiscordError", "discord", "DISCORD_ERROR");
 
@@ -46,8 +47,7 @@ const OP_IDENTIFY = 2;
 const OP_HEARTBEAT_ACK = 11;
 const OP_HELLO = 10;
 
-/** Maximum inbound message length in characters. Messages exceeding this are truncated. */
-const MAX_MESSAGE_LENGTH = 32_768;
+import { truncateMessage } from "../../utils/text.js";
 
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
@@ -152,7 +152,7 @@ export class DiscordAdapter implements ChannelAdapter {
       });
     } catch (err) {
       throw new DiscordError(
-        `Network error sending message: ${err instanceof Error ? err.message : String(err)}`,
+        `Network error sending message: ${toErrorMessage(err)}`,
         "NETWORK_ERROR",
       );
     }
@@ -292,9 +292,7 @@ export class DiscordAdapter implements ChannelAdapter {
 
     if (!msg.content) return;
 
-    const text = msg.content.length > MAX_MESSAGE_LENGTH
-      ? msg.content.slice(0, MAX_MESSAGE_LENGTH)
-      : msg.content;
+    const text = truncateMessage(msg.content);
 
     const inbound: InboundMessage = {
       id: msg.id,

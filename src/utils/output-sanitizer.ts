@@ -13,6 +13,7 @@ const SENSITIVE_KEYS = new Set([
   "authorization",
   "access_token",
   "refresh_token",
+  "credential",
 ]);
 
 export interface SanitizeOptions {
@@ -48,7 +49,7 @@ export function sanitizeOutput(
   return result;
 }
 
-const isSensitiveKey = (key: string): boolean =>
+export const isSensitiveKey = (key: string): boolean =>
   SENSITIVE_KEYS.has(key.toLowerCase());
 
 /**

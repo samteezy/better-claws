@@ -18,6 +18,7 @@ import { TfIdfRetriever } from "./memory/retrieval.js";
 import { LongTermStore } from "./memory/long-term-store.js";
 import { SecretManager } from "./secrets/secret-manager.js";
 import { seedFromConfig } from "./secrets/seed.js";
+import { toErrorMessage } from "./utils/errors.js";
 import type { BetterClawsConfig } from "./types.js";
 import { DashboardServer, type DashboardAdapterInfo } from "./dashboard/dashboard-server.js";
 import { createAdapter } from "./adapters/adapter-factory.js";
@@ -27,6 +28,7 @@ import { SkillLoader } from "./skills/index.js";
 import { Scheduler } from "./scheduler/scheduler.js";
 import { SuggestionStore } from "./suggestions/suggestion-store.js";
 import { SuggestionWorker } from "./suggestions/suggestion-worker.js";
+import { CurationWorker } from "./memory/curation-worker.js";
 import { sage, stone, bold, dim } from "./utils/ansi.js";
 
 // ── App Factory ───────────────────────────────────────────────────────────────
@@ -121,7 +123,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
           payload: {
             action: "server_failed",
             server: name,
-            error: err instanceof Error ? err.message : String(err),
+            error: toErrorMessage(err),
           },
         });
       }
@@ -153,7 +155,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
           payload: {
             action: "skill_failed",
             skill: name,
-            error: err instanceof Error ? err.message : String(err),
+            error: toErrorMessage(err),
           },
         });
       }
@@ -302,6 +304,17 @@ export async function createApp(config: BetterClawsConfig, options?: {
   });
   await suggestionWorker.start();
 
+  // ── Curation ───────────────────────────────────────────────────────────
+  const curationLlmClient = weakLlmClient ?? llmClient;
+  const curationWorker = new CurationWorker({
+    store: longTermStore,
+    sessionManager,
+    llmClient: curationLlmClient,
+    config: config.memory,
+    logger,
+  });
+  await curationWorker.start();
+
   // ── Dashboard ────────────────────────────────────────────────────────────
   const dashboardEnabled = options?.dashboard ?? config.dashboard?.enabled ?? false;
   let dashboard: DashboardServer | null = null;
@@ -346,6 +359,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
     adapterNames,
     stop: async () => {
       await dashboard?.stop();
+      await curationWorker.stop();
       await suggestionWorker.stop();
       await scheduler.stop();
       await router.stop();

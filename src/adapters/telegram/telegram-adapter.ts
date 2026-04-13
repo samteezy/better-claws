@@ -4,6 +4,7 @@ import {
   type InboundMessage,
   type OutboundMessage } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
+import { toErrorMessage } from "../../utils/errors.js";
 
 export const TelegramError = createErrorClass("TelegramError", "telegram", "TELEGRAM_ERROR");
 
@@ -41,8 +42,7 @@ interface TelegramApiResponse<T> {
   readonly error_code?: number;
 }
 
-/** Maximum inbound message length in characters. Messages exceeding this are truncated. */
-const MAX_MESSAGE_LENGTH = 32_768;
+import { truncateMessage } from "../../utils/text.js";
 
 // ── Adapter ──────────────────────────────────────────────────────────────────
 
@@ -140,7 +140,7 @@ export class TelegramAdapter implements ChannelAdapter {
         eventType: "message:inbound",
         component: "telegram",
         payload: {
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
           action: "poll_error",
         },
       });
@@ -176,9 +176,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
     const msg = update.message;
     const rawText = msg.text as string;
-    const text = rawText.length > MAX_MESSAGE_LENGTH
-      ? rawText.slice(0, MAX_MESSAGE_LENGTH)
-      : rawText;
+    const text = truncateMessage(rawText);
     const senderId = msg.from
       ? String(msg.from.id)
       : "unknown";
@@ -229,7 +227,7 @@ export class TelegramAdapter implements ChannelAdapter {
       });
     } catch (err) {
       throw new TelegramError(
-        `Network error calling ${method}: ${err instanceof Error ? err.message : String(err)}`,
+        `Network error calling ${method}: ${toErrorMessage(err)}`,
         "NETWORK_ERROR",
       );
     }

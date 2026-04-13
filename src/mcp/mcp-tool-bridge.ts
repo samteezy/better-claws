@@ -3,6 +3,7 @@
  * Each tool is namespaced as `mcp__{serverName}__{toolName}` to prevent collisions.
  */
 
+import { toErrorMessage } from "../utils/errors.js";
 import type { ToolDescriptor, ToolHandler, ToolResult, McpServerConfig } from "../types.js";
 import type { RegisteredTool } from "../tools/registry.js";
 import type { McpClient, McpToolDefinition } from "./mcp-client.js";
@@ -108,7 +109,7 @@ export class McpToolBridge {
           return {
             success: false,
             output: null,
-            error: err instanceof Error ? err.message : String(err),
+            error: toErrorMessage(err),
             durationMs: Date.now() - start,
           };
         }

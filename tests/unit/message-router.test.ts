@@ -28,13 +28,9 @@ import type { SecretManager } from "../../src/secrets/secret-manager.js";
 import type { BetterClawsConfig } from "../../src/types.js";
 import type { SessionCompactor } from "../../src/sessions/compactor.js";
 import type { PromptBuilder } from "../../src/prompt/prompt-builder.js";
+import { createMockLogger } from "../helpers/mock-logger.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
-
-function createMockLogger() {
-  const logs: Array<Record<string, unknown>> = [];
-  return { logs, log(e: Record<string, unknown>) { logs.push(e); }, async flush() {}, async close() {} } as unknown as StructuredLogger & { logs: typeof logs };
-}
 
 function createMockSecretManager() {
   return {

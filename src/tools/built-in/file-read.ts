@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { toErrorMessage } from "../../utils/errors.js";
 import type {
   ToolDescriptor,
   ToolHandler,
@@ -6,6 +7,7 @@ import type {
   ToolResult,
 } from "../../types.js";
 import { checkPath } from "../../utils/path-policy.js";
+import { missingParamResult } from "./tool-helpers.js";
 
 export const descriptor: ToolDescriptor = {
   name: "file-read",
@@ -41,12 +43,7 @@ export const handler: ToolHandler = {
     const filePath = params["path"];
 
     if (typeof filePath !== "string" || filePath.length === 0) {
-      return {
-        success: false,
-        output: null,
-        error: "Missing required parameter: path",
-        durationMs: Date.now() - start,
-      };
+      return missingParamResult("path", start);
     }
 
     const allowedRoots = [context.scratchDir, ...(context.allowedFsRoots ?? [])];
@@ -91,7 +88,7 @@ export const handler: ToolHandler = {
       return {
         success: false,
         output: null,
-        error: err instanceof Error ? err.message : String(err),
+        error: toErrorMessage(err),
         durationMs: Date.now() - start,
       };
     }

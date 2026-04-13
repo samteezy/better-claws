@@ -2,19 +2,15 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createErrorClass, type EventType, type LogEntry } from "../types.js";
 import { redactObject } from "../utils/redact.js";
+import { toErrorMessage } from "../utils/errors.js";
+import { isSensitiveKey } from "../utils/output-sanitizer.js";
 
 export const LoggerError = createErrorClass("LoggerError", "logger", "LOGGER_ERROR");
-
-const SENSITIVE_KEYS =
-  /^(apikey|api_key|token|secret|password|authorization|credential)$/i;
 
 function redactPayload(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
-  return redactObject(
-    payload,
-    (key) => SENSITIVE_KEYS.test(key),
-  ) as Record<string, unknown>;
+  return redactObject(payload, isSensitiveKey) as Record<string, unknown>;
 }
 
 export interface StructuredLoggerOptions {
@@ -90,7 +86,7 @@ export class StructuredLogger {
       await appendFile(filePath, data, "utf-8");
     } catch (err) {
       process.stderr.write(
-        `[betterclaws:logger] Failed to write log: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[betterclaws:logger] Failed to write log: ${toErrorMessage(err)}\n`,
       );
     }
   }

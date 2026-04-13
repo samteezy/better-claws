@@ -4,20 +4,11 @@ import {
   DiscordAdapter,
   DiscordError,
 } from "../../src/adapters/discord/discord-adapter.js";
-import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { InboundMessage } from "../../src/types.js";
+import { createMockLogger } from "../helpers/mock-logger.js";
+import { MockWebSocket } from "../helpers/mock-websocket.js";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
-
-function createMockLogger() {
-  const logs: Array<Record<string, unknown>> = [];
-  return {
-    logs,
-    log(e: Record<string, unknown>) { logs.push(e); },
-    async flush() {},
-    async close() {},
-  } as unknown as StructuredLogger & { logs: typeof logs };
-}
 
 interface FetchCall {
   url: string;
@@ -47,42 +38,6 @@ function createMockFetch(
     } as Response;
   };
   return { fn: fn as typeof fetch, calls };
-}
-
-/** Minimal mock WebSocket for gateway testing. */
-class MockWebSocket {
-  static instances: MockWebSocket[] = [];
-
-  onopen: ((ev: unknown) => void) | null = null;
-  onmessage: ((ev: { data: string }) => void) | null = null;
-  onclose: ((ev: { code: number; reason: string }) => void) | null = null;
-  onerror: ((ev: unknown) => void) | null = null;
-  readyState = 1;
-  sentMessages: string[] = [];
-  closed = false;
-
-  constructor(public url: string) {
-    MockWebSocket.instances.push(this);
-    // Simulate async open
-    setTimeout(() => this.onopen?.({}), 5);
-  }
-
-  send(data: string): void {
-    this.sentMessages.push(data);
-  }
-
-  close(_code?: number, _reason?: string): void {
-    this.closed = true;
-  }
-
-  // Test helper: simulate receiving a message
-  simulateMessage(data: unknown): void {
-    this.onmessage?.({ data: JSON.stringify(data) });
-  }
-
-  simulateClose(code = 1000, reason = ""): void {
-    this.onclose?.({ code, reason });
-  }
 }
 
 function makeAdapter(overrides?: Partial<{

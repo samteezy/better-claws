@@ -4,6 +4,7 @@ import {
   createErrorClass,
   type BetterClawsConfig,
   type LlmConfig } from "./types.js";
+import { isEnoent, toErrorMessage } from "./utils/errors.js";
 
 export interface ResolvedWeakLlmConfig {
   readonly baseUrl: string;
@@ -164,15 +165,11 @@ export async function loadConfig(
     const content = await readFile(filePath, "utf-8");
     raw = JSON.parse(content) as unknown;
   } catch (err) {
-    if (
-      err instanceof Error &&
-      "code" in err &&
-      (err as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
+    if (isEnoent(err)) {
       return DEFAULT_CONFIG;
     }
     throw new ConfigError(
-      `Failed to read config at "${filePath}": ${err instanceof Error ? err.message : String(err)}`,
+      `Failed to read config at "${filePath}": ${toErrorMessage(err)}`,
       "READ_ERROR",
     );
   }
@@ -202,7 +199,7 @@ export async function saveConfig(
     await writeFile(filePath, json, "utf-8");
   } catch (err) {
     throw new ConfigError(
-      `Failed to write config at "${filePath}": ${err instanceof Error ? err.message : String(err)}`,
+      `Failed to write config at "${filePath}": ${toErrorMessage(err)}`,
       "WRITE_ERROR",
     );
   }

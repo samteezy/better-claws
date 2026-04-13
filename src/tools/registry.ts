@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isEnoent, toErrorMessage } from "../utils/errors.js";
 import {
   BetterClawsError, createErrorClass,
   type BuiltInToolModule,
@@ -71,15 +72,11 @@ export class ToolRegistry {
     try {
       entries = await readdir(this.pluginDirectory);
     } catch (err) {
-      if (
-        err instanceof Error &&
-        "code" in err &&
-        (err as NodeJS.ErrnoException).code === "ENOENT"
-      ) {
+      if (isEnoent(err)) {
         return; // no plugin directory — that's fine
       }
       throw new RegistryError(
-        `Failed to read plugin directory: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to read plugin directory: ${toErrorMessage(err)}`,
         "READ_ERROR",
       );
     }
@@ -152,7 +149,7 @@ export class ToolRegistry {
       rawDescriptor = JSON.parse(content) as unknown;
     } catch (err) {
       throw new RegistryError(
-        `Failed to load descriptor for tool "${dirName}": ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to load descriptor for tool "${dirName}": ${toErrorMessage(err)}`,
         "DESCRIPTOR_ERROR",
       );
     }
@@ -173,7 +170,7 @@ export class ToolRegistry {
       handlerModule = await import(pathToFileURL(handlerPath).href);
     } catch (err) {
       throw new RegistryError(
-        `Failed to load handler for tool "${dirName}": ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to load handler for tool "${dirName}": ${toErrorMessage(err)}`,
         "HANDLER_ERROR",
       );
     }

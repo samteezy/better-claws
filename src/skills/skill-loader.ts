@@ -22,6 +22,7 @@ import type { RegisteredTool } from "../tools/registry.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import { parseSkillMd } from "./frontmatter-parser.js";
 import { validateToolDescriptor } from "../utils/validate-descriptor.js";
+import { toErrorMessage } from "../utils/errors.js";
 
 export const SkillLoaderError = createErrorClass("SkillLoaderError", "skill-loader", "SKILL_LOADER_ERROR");
 
@@ -86,7 +87,7 @@ export class SkillLoader {
       content = await readFile(skillMdPath, "utf-8");
     } catch (err) {
       throw new SkillLoaderError(
-        `Failed to read SKILL.md for "${qualifiedName}": ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to read SKILL.md for "${qualifiedName}": ${toErrorMessage(err)}`,
         "SKILLMD_READ_ERROR",
       );
     }
@@ -159,7 +160,7 @@ export class SkillLoader {
       rawDescriptor = JSON.parse(content) as unknown;
     } catch (err) {
       throw new SkillLoaderError(
-        `Failed to load descriptor for skill "${qualifiedName}": ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to load descriptor for skill "${qualifiedName}": ${toErrorMessage(err)}`,
         "DESCRIPTOR_ERROR",
       );
     }
@@ -178,7 +179,7 @@ export class SkillLoader {
       handlerModule = await import(pathToFileURL(handlerPath).href);
     } catch (err) {
       throw new SkillLoaderError(
-        `Failed to load handler for skill "${qualifiedName}": ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to load handler for skill "${qualifiedName}": ${toErrorMessage(err)}`,
         "HANDLER_ERROR",
       );
     }

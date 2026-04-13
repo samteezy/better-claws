@@ -4,6 +4,7 @@ import {
   type InboundMessage,
   type OutboundMessage } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
+import { toErrorMessage } from "../../utils/errors.js";
 
 export const SlackError = createErrorClass("SlackError", "slack", "SLACK_ERROR");
 
@@ -34,8 +35,7 @@ interface SlackApiResponse {
   readonly url?: string;
 }
 
-/** Maximum inbound message length in characters. Messages exceeding this are truncated. */
-const MAX_MESSAGE_LENGTH = 32_768;
+import { truncateMessage } from "../../utils/text.js";
 
 // ── Adapter ─────────────────────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ export class SlackAdapter implements ChannelAdapter {
       });
     } catch (err) {
       throw new SlackError(
-        `Network error sending message: ${err instanceof Error ? err.message : String(err)}`,
+        `Network error sending message: ${toErrorMessage(err)}`,
         "NETWORK_ERROR",
       );
     }
@@ -183,7 +183,7 @@ export class SlackAdapter implements ChannelAdapter {
       });
     } catch (err) {
       throw new SlackError(
-        `Network error opening Socket Mode connection: ${err instanceof Error ? err.message : String(err)}`,
+        `Network error opening Socket Mode connection: ${toErrorMessage(err)}`,
         "NETWORK_ERROR",
       );
     }
@@ -252,7 +252,7 @@ export class SlackAdapter implements ChannelAdapter {
                 component: "slack",
                 payload: {
                   action: "reconnect_error",
-                  error: err instanceof Error ? err.message : String(err),
+                  error: toErrorMessage(err),
                 },
               });
             });
@@ -300,9 +300,7 @@ export class SlackAdapter implements ChannelAdapter {
 
     if (!event.text) return;
 
-    const text = event.text.length > MAX_MESSAGE_LENGTH
-      ? event.text.slice(0, MAX_MESSAGE_LENGTH)
-      : event.text;
+    const text = truncateMessage(event.text);
 
     const inbound: InboundMessage = {
       id: event.event_ts,

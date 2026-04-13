@@ -4,20 +4,10 @@ import {
   TelegramAdapter,
   TelegramError,
 } from "../../src/adapters/telegram/telegram-adapter.js";
-import type { StructuredLogger } from "../../src/logger/structured-logger.js";
 import type { InboundMessage } from "../../src/types.js";
+import { createMockLogger } from "../helpers/mock-logger.js";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
-
-function createMockLogger() {
-  const logs: Array<Record<string, unknown>> = [];
-  return {
-    logs,
-    log(e: Record<string, unknown>) { logs.push(e); },
-    async flush() {},
-    async close() {},
-  } as unknown as StructuredLogger & { logs: typeof logs };
-}
 
 interface FetchCall {
   url: string;

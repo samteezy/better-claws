@@ -5,6 +5,7 @@ import {
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { LlmClient } from "../llm/llm-client.js";
 import type { SessionManager } from "./session-manager.js";
+import { toErrorMessage } from "../utils/errors.js";
 
 export const CompactionError = createErrorClass("CompactionError", "compactor", "COMPACTION_ERROR");
 
@@ -90,7 +91,7 @@ export class SessionCompactor {
       summary = response.message.content.trim();
     } catch (err) {
       throw new CompactionError(
-        `Summarisation LLM call failed: ${err instanceof Error ? err.message : String(err)}`,
+        `Summarisation LLM call failed: ${toErrorMessage(err)}`,
         "SUMMARISATION_FAILED",
       );
     }

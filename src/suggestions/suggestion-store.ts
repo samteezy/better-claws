@@ -8,6 +8,7 @@ import {
   type SuggestionStatus,
 } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
+import { isEnoent, toErrorMessage } from "../utils/errors.js";
 
 export class SuggestionStoreError extends BetterClawsError {
   constructor(message: string, code: string = "SUGGESTION_STORE_ERROR") {
@@ -50,15 +51,11 @@ export class SuggestionStore {
     try {
       content = await readFile(filePath, "utf-8");
     } catch (err) {
-      if (
-        err instanceof Error &&
-        "code" in err &&
-        (err as NodeJS.ErrnoException).code === "ENOENT"
-      ) {
+      if (isEnoent(err)) {
         return;
       }
       throw new SuggestionStoreError(
-        `Failed to read suggestion store: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to read suggestion store: ${toErrorMessage(err)}`,
         "READ_ERROR",
       );
     }

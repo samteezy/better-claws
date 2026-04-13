@@ -1,6 +1,7 @@
 import { readFile, writeFile, appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { isEnoent, toErrorMessage } from "../utils/errors.js";
 import {
   createErrorClass,
   type MemoryEntry,
@@ -42,15 +43,11 @@ export class LongTermStore {
     try {
       content = await readFile(filePath, "utf-8");
     } catch (err) {
-      if (
-        err instanceof Error &&
-        "code" in err &&
-        (err as NodeJS.ErrnoException).code === "ENOENT"
-      ) {
+      if (isEnoent(err)) {
         return; // no file yet — start empty
       }
       throw new LongTermStoreError(
-        `Failed to read memory store: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to read memory store: ${toErrorMessage(err)}`,
         "READ_ERROR",
       );
     }

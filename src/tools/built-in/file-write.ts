@@ -1,4 +1,5 @@
 import { writeFile, mkdir } from "node:fs/promises";
+import { toErrorMessage } from "../../utils/errors.js";
 import { dirname } from "node:path";
 import type {
   ToolDescriptor,
@@ -7,6 +8,7 @@ import type {
   ToolResult,
 } from "../../types.js";
 import { checkPath } from "../../utils/path-policy.js";
+import { missingParamResult } from "./tool-helpers.js";
 
 export const descriptor: ToolDescriptor = {
   name: "file-write",
@@ -39,21 +41,11 @@ export const handler: ToolHandler = {
     const content = params["content"];
 
     if (typeof filePath !== "string" || filePath.length === 0) {
-      return {
-        success: false,
-        output: null,
-        error: "Missing required parameter: path",
-        durationMs: Date.now() - start,
-      };
+      return missingParamResult("path", start);
     }
 
     if (typeof content !== "string") {
-      return {
-        success: false,
-        output: null,
-        error: "Missing required parameter: content",
-        durationMs: Date.now() - start,
-      };
+      return missingParamResult("content", start);
     }
 
     const allowedRoots = [context.scratchDir, ...(context.allowedFsRoots ?? [])];
@@ -84,7 +76,7 @@ export const handler: ToolHandler = {
       return {
         success: false,
         output: null,
-        error: err instanceof Error ? err.message : String(err),
+        error: toErrorMessage(err),
         durationMs: Date.now() - start,
       };
     }

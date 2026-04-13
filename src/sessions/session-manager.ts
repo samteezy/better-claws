@@ -12,6 +12,7 @@ import {
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import { WorkingMemory } from "../memory/working-memory.js";
 import { workingMemoryRegistry } from "../tools/built-in/memory.js";
+import { toErrorMessage } from "../utils/errors.js";
 
 export const SessionError = createErrorClass("SessionError", "session", "SESSION_ERROR");
 
@@ -129,7 +130,7 @@ export class SessionManager {
       await appendFile(session.logPath, line, "utf-8");
     } catch (err) {
       throw new SessionError(
-        `Failed to write to session log: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to write to session log: ${toErrorMessage(err)}`,
         "WRITE_ERROR",
       );
     }

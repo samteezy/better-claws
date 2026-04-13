@@ -1,3 +1,4 @@
+import { toErrorMessage } from "../../utils/errors.js";
 import type {
   ToolDescriptor,
   ToolHandler,
@@ -10,11 +11,13 @@ const DEFAULT_MAX_BYTES = 102400; // 100KB
 /** Headers that must never be forwarded from LLM-generated requests. */
 const BLOCKED_HEADERS: ReadonlySet<string> = new Set(["authorization", "cookie", "proxy-authorization"]);
 
+/** @internal Exported for tests only. */
 export interface FilteredHeaders {
   readonly headers: Record<string, string>;
   readonly blocked: readonly string[];
 }
 
+/** @internal Exported for tests only. */
 export function filterHeaders(
   rawHeaders: Record<string, string>,
   blocklist: ReadonlySet<string> = BLOCKED_HEADERS,
@@ -171,7 +174,7 @@ export const handler: ToolHandler = {
       return {
         success: false,
         output: null,
-        error: err instanceof Error ? err.message : String(err),
+        error: toErrorMessage(err),
         durationMs: Date.now() - start,
         ...(warnings.length > 0 ? { warnings } : {}),
       };

@@ -4,6 +4,7 @@ import {
   type InboundMessage,
   type OutboundMessage } from "../../types.js";
 import type { StructuredLogger } from "../../logger/structured-logger.js";
+import { toErrorMessage } from "../../utils/errors.js";
 
 export const SignalError = createErrorClass("SignalError", "signal", "SIGNAL_ERROR");
 
@@ -145,7 +146,7 @@ export class SignalAdapter implements ChannelAdapter {
         eventType: "message:inbound",
         component: "signal",
         payload: {
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
           action: "poll_error",
         },
       });
@@ -227,7 +228,7 @@ export class SignalAdapter implements ChannelAdapter {
       response = await this.fetchFn(url, options);
     } catch (err) {
       throw new SignalError(
-        `Network error calling ${method} ${path}: ${err instanceof Error ? err.message : String(err)}`,
+        `Network error calling ${method} ${path}: ${toErrorMessage(err)}`,
         "NETWORK_ERROR",
       );
     }

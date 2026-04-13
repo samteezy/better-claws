@@ -13,6 +13,7 @@ import {
 import { StreamableResponse } from "./streamable-response.js";
 import { validateSchema } from "../utils/schema-validator.js";
 import { sanitizeOutput } from "../utils/output-sanitizer.js";
+import { toErrorMessage } from "../utils/errors.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { Session, SessionManager } from "../sessions/session-manager.js";
 import type { SessionCompactor } from "../sessions/compactor.js";
@@ -205,7 +206,7 @@ export class MessageRouter {
           eventType: "message:outbound",
           component: "router",
           payload: {
-            error: err instanceof Error ? err.message : String(err),
+            error: toErrorMessage(err),
             adapterId: adapter.id,
             channelId: msg.channelId,
           },
@@ -491,7 +492,7 @@ export class MessageRouter {
         component: "router",
         payload: {
           success: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: toErrorMessage(err),
         },
       });
       return buildResult;
