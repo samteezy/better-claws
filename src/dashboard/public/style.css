@@ -872,6 +872,27 @@ h3 {
 }
 .tool-item:last-child { border-bottom: none; }
 
+.tool-item[data-policy] {
+  transition: background-color 0.3s ease, border-left-color 0.3s ease;
+  border-radius: 6px;
+  margin-bottom: 2px;
+}
+.tool-item[data-policy="auto"] {
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+}
+.tool-item[data-policy="confirm"] {
+  background: var(--amber-soft);
+  border-left: 3px solid var(--amber);
+  padding-left: 12px;
+}
+.tool-item[data-policy="disabled"] {
+  background: var(--rose-soft);
+  border-left: 3px solid var(--rose);
+  padding-left: 12px;
+}
+
 .tool-item-managed {
   display: flex;
   justify-content: space-between;
