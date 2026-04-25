@@ -257,25 +257,27 @@ export async function createApp(config: BetterClawsConfig, options?: {
   };
 
   for (const [name, adapterConfig] of Object.entries(config.adapters)) {
+    const effectiveHost = adapterConfig.host ?? config.gateway.host;
+    const resolvedConfig = { ...adapterConfig, host: effectiveHost };
     const info: DashboardAdapterInfo = {
       id: name,
       name: name.charAt(0).toUpperCase() + name.slice(1),
       enabled: adapterConfig.enabled,
       type: ADAPTER_TYPES[name] ?? "internal",
       connected: adapterConfig.enabled,
-      host: adapterConfig.host,
+      host: effectiveHost,
       port: adapterConfig.port,
       path: adapterConfig.path,
       url: name === "webchat" && adapterConfig.enabled
-        ? `http://${adapterConfig.host ?? "127.0.0.1"}:${adapterConfig.port ?? 18702}`
+        ? `http://${effectiveHost}:${adapterConfig.port ?? 18702}`
         : name === "webhook" && adapterConfig.enabled
-          ? `http://${adapterConfig.host ?? "127.0.0.1"}:${adapterConfig.port}${adapterConfig.path ?? "/webhook"}`
+          ? `http://${effectiveHost}:${adapterConfig.port}${adapterConfig.path ?? "/webhook"}`
           : undefined,
     };
     adapterInfos.push(info);
 
     if (adapterConfig.enabled) {
-      const adapter = createAdapter(name, adapterConfig, logger);
+      const adapter = createAdapter(name, resolvedConfig, logger);
       router.registerAdapter(adapter);
       adapterNames.push(adapter.name);
     }
@@ -322,11 +324,12 @@ export async function createApp(config: BetterClawsConfig, options?: {
   let dashboard: DashboardServer | null = null;
 
   if (dashboardEnabled) {
-    const dashCfg = config.dashboard ?? { enabled: true, host: "127.0.0.1", port: 18701 };
+    const dashCfg = config.dashboard ?? { enabled: true, host: undefined, port: 18701, authToken: undefined };
+    const dashHost = dashCfg.host ?? config.gateway.host;
     const staticDir = join(process.cwd(), "src", "dashboard", "public");
 
     dashboard = new DashboardServer({
-      host: dashCfg.host,
+      host: dashHost,
       port: dashCfg.port,
       staticDir,
       logger,
@@ -413,8 +416,9 @@ async function main(): Promise<void> {
   });
 
   if (dashboard) {
-    const dashCfg = config.dashboard ?? { host: "127.0.0.1", port: 18701 };
-    process.stdout.write(label("Dashboard", `http://${dashCfg.host}:${dashCfg.port}`));
+    const dashCfg = config.dashboard ?? { host: undefined, port: 18701 };
+    const dashHost = dashCfg.host ?? config.gateway.host;
+    process.stdout.write(label("Dashboard", `http://${dashHost}:${dashCfg.port}`));
   }
 
   process.stdout.write(label("Adapters", adapterNames.length > 0 ? adapterNames.join(", ") : dim("none")));
