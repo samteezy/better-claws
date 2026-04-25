@@ -7,7 +7,7 @@
 // Provides both a batch `renderMarkdown()` for complete text and a
 // `StreamingMarkdownWriter` for rendering text-delta events as they arrive.
 
-import { bold, dim, italic, sage, stone } from "./ansi.js";
+import { bold, dim, italic, sage, stone, glyphs } from "./ansi.js";
 
 // ── Inline rendering ──────────────────────────────────────────────────────────
 
@@ -58,13 +58,13 @@ function renderLine(line: string, inCodeBlock: boolean): { text: string; inCodeB
   // ── List items ──────────────────────────────────────────────────────────
   const listMatch = /^(\s*)[*-]\s+(.+)$/.exec(line);
   if (listMatch) {
-    return { text: listMatch[1] + stone("\u2022") + " " + renderInline(listMatch[2]!), inCodeBlock: false, suppress: false };
+    return { text: listMatch[1] + stone(glyphs.bullet) + " " + renderInline(listMatch[2]!), inCodeBlock: false, suppress: false };
   }
 
   // ── Numbered list items ─────────────────────────────────────────────────
   const numListMatch = /^(\s*)\d+[.)]\s+(.+)$/.exec(line);
   if (numListMatch) {
-    return { text: numListMatch[1] + stone("\u2022") + " " + renderInline(numListMatch[2]!), inCodeBlock: false, suppress: false };
+    return { text: numListMatch[1] + stone(glyphs.bullet) + " " + renderInline(numListMatch[2]!), inCodeBlock: false, suppress: false };
   }
 
   // ── Regular line ────────────────────────────────────────────────────────

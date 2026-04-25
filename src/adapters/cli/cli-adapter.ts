@@ -7,13 +7,13 @@ import type {
   StreamableChannelAdapter,
   StreamableResponse,
 } from "../../types.js";
-import { sage, clay, lavender, rose, stone, amber, bold, dim } from "../../utils/ansi.js";
+import { sage, clay, lavender, rose, stone, amber, bold, dim, glyphs } from "../../utils/ansi.js";
 import { toErrorMessage } from "../../utils/errors.js";
 import { renderMarkdown, StreamingMarkdownWriter } from "../../utils/terminal-markdown.js";
 
-const PROMPT_PLAIN = "you \u203A ";
-const PROMPT_COLOR = clay(bold("you")) + clay(" \u203A ");
-const BOT_PREFIX = sage(bold("bot")) + sage(" \u203A ");
+const PROMPT_PLAIN = `you ${glyphs.prompt} `;
+const PROMPT_COLOR = clay(bold("you")) + clay(` ${glyphs.prompt} `);
+const BOT_PREFIX = sage(bold("bot")) + sage(` ${glyphs.prompt} `);
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -72,7 +72,7 @@ export class CliAdapter implements StreamableChannelAdapter {
     // Move to separator line (row - 1) and draw thin divider
     process.stdout.write(`\x1b[${rows - 1};1H\x1b[2K`);
     const cols = process.stdout.columns ?? 80;
-    process.stdout.write(stone(dim("\u2500".repeat(cols))));
+    process.stdout.write(stone(dim(glyphs.hRule.repeat(cols))));
     // Move to input line (bottom row) and draw prompt
     process.stdout.write(`\x1b[${rows};1H\x1b[2K`);
     process.stdout.write(PROMPT_COLOR);
@@ -286,7 +286,7 @@ export class CliAdapter implements StreamableChannelAdapter {
           case "tool-start":
             clearSpinners();
             md.flush();
-            process.stdout.write("\n" + lavender(dim("  \u27E1 " + event.toolCall.function.name + "...")) + "\n");
+            process.stdout.write("\n" + lavender(dim(`  ${glyphs.tool} ` + event.toolCall.function.name + "...")) + "\n");
             wrotePrefix = false;
             // Restart processing spinner while tool executes
             stopProcessing = this.startSpinner("Processing...");
@@ -295,9 +295,9 @@ export class CliAdapter implements StreamableChannelAdapter {
           case "tool-result":
             if (stopProcessing) { stopProcessing(); stopProcessing = null; }
             if (event.error) {
-              process.stdout.write(rose("  \u2717 " + event.toolName + " failed") + "\n");
+              process.stdout.write(rose(`  ${glyphs.fail} ` + event.toolName + " failed") + "\n");
             } else {
-              process.stdout.write(lavender(dim("  \u2713 " + event.toolName)) + "\n");
+              process.stdout.write(lavender(dim(`  ${glyphs.ok} ` + event.toolName)) + "\n");
             }
             wrotePrefix = false;
             break;
@@ -305,7 +305,7 @@ export class CliAdapter implements StreamableChannelAdapter {
           case "warning":
             clearSpinners();
             md.flush();
-            process.stdout.write("\n" + amber("  \u26A0 " + event.message) + "\n");
+            process.stdout.write("\n" + amber(`  ${glyphs.warn} ` + event.message) + "\n");
             wrotePrefix = false;
             break;
 
