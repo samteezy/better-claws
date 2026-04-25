@@ -10,7 +10,7 @@ interface PendingConfirmation {
   readonly toolName: string;
   readonly toolCall: ToolCall;
   readonly resolve: (result: ConfirmationResult) => void;
-  readonly timer: ReturnType<typeof setTimeout>;
+  readonly timer: NodeJS.Timeout;
   readonly createdAt: number;
 }
 

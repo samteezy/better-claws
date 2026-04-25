@@ -88,7 +88,7 @@ export class DiscordAdapter implements ChannelAdapter {
 
   private callback: ((msg: InboundMessage) => void) | null = null;
   private ws: GatewaySocket | null = null;
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
   private sequenceNumber: number | null = null;
   private sessionId: string | null = null;
   private running = false;

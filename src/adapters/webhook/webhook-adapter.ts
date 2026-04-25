@@ -53,7 +53,7 @@ export class WebhookAdapter implements ChannelAdapter {
   private server: Server | null = null;
   private pendingResponses = new Map<string, {
     resolve: (response: OutboundMessage) => void;
-    timer: ReturnType<typeof setTimeout>;
+    timer: NodeJS.Timeout;
   }>();
   private messageCounter = 0;
 

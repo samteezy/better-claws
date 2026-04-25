@@ -381,7 +381,9 @@ export class ForkedExecutor {
           message: "stripEnvironment is disabled — full parent environment will be inherited by child process",
         },
       });
-      return { ...process.env } as Record<string, string>;
+      return Object.fromEntries(
+        Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+      );
     }
 
     const env: Record<string, string> = {};

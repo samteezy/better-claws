@@ -42,11 +42,11 @@ export class WebChatAdapter implements StreamableChannelAdapter {
   private confirmationCallback: ((key: string, text: string) => boolean) | null = null;
   private readonly pendingResponses = new Map<string, {
     resolve: (response: OutboundMessage) => void;
-    timer: ReturnType<typeof setTimeout>;
+    timer: NodeJS.Timeout;
   }>();
   private readonly pendingStreamResponses = new Map<string, {
     res: ServerResponse;
-    timer: ReturnType<typeof setTimeout>;
+    timer: NodeJS.Timeout;
   }>();
 
   /** Response timeout in milliseconds. */

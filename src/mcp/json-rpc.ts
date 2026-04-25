@@ -37,7 +37,7 @@ export interface JsonRpcResponse {
 type PendingRequest = {
   resolve: (response: JsonRpcResponse) => void;
   reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: NodeJS.Timeout;
 };
 
 // ── Transport ────────────────────────────────────────────────────────────────

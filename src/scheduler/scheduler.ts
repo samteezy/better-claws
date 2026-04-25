@@ -76,7 +76,7 @@ export class Scheduler implements ChannelAdapter {
   private readonly saveConfigFn?: (config: Record<string, unknown>, path?: string) => Promise<void>;
 
   private callback: ((msg: InboundMessage) => void) | null = null;
-  private tickTimer: ReturnType<typeof setInterval> | null = null;
+  private tickTimer: NodeJS.Timeout | null = null;
   private running = false;
   private lastResults = new Map<string, OutboundMessage>();
 

@@ -116,7 +116,7 @@ export class HttpTransport implements McpTransport {
 
   private handleJsonResponse(
     res: http.IncomingMessage,
-    timer: ReturnType<typeof setTimeout>,
+    timer: NodeJS.Timeout,
     resolve: (r: JsonRpcResponse) => void,
     reject: (e: Error) => void,
   ): void {
@@ -152,7 +152,7 @@ export class HttpTransport implements McpTransport {
 
   private handleSseResponse(
     res: http.IncomingMessage,
-    timer: ReturnType<typeof setTimeout>,
+    timer: NodeJS.Timeout,
     resolve: (r: JsonRpcResponse) => void,
     reject: (e: Error) => void,
   ): void {

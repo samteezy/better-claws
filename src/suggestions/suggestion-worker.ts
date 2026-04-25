@@ -78,7 +78,7 @@ export class SuggestionWorker {
   private readonly logsDirectory: string;
   private readonly maxLlmCallsPerCycle: number;
 
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: NodeJS.Timeout | null = null;
   private running = false;
   private llmCallsThisCycle = 0;
 

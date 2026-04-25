@@ -68,7 +68,7 @@ export class TelegramAdapter implements ChannelAdapter {
   private callback: ((msg: InboundMessage) => void) | null = null;
   private running = false;
   private lastUpdateId = 0;
-  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private pollTimer: NodeJS.Timeout | null = null;
 
   constructor(options: TelegramAdapterOptions) {
     if (!options.token || options.token.length === 0) {

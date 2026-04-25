@@ -21,7 +21,7 @@ export const SseTransportError = createErrorClass("SseTransportError", "sse-tran
 interface PendingRequest {
   resolve: (response: JsonRpcResponse) => void;
   reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: NodeJS.Timeout;
 }
 
 interface SseEvent {

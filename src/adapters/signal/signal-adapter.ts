@@ -61,7 +61,7 @@ export class SignalAdapter implements ChannelAdapter {
 
   private callback: ((msg: InboundMessage) => void) | null = null;
   private running = false;
-  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private pollTimer: NodeJS.Timeout | null = null;
 
   constructor(options: SignalAdapterOptions) {
     if (!options.apiUrl || options.apiUrl.length === 0) {

@@ -47,7 +47,7 @@ The Dockerfile is a multi-stage build: compile TS in `node:22-alpine`, then copy
 
 ## Hard Constraints
 
-- **Zero external runtime dependencies.** Only `typescript` in devDependencies. Use Node stdlib (`crypto`, `fs`, `path`, `child_process`, `http`, `net`, etc.) for everything. If you'd normally reach for a package, implement it — most utilities are <200 lines.
+- **Zero external runtime dependencies.** Only `typescript` and `@types/node` in devDependencies. Use Node stdlib (`crypto`, `fs`, `path`, `child_process`, `http`, `net`, etc.) for everything. If you'd normally reach for a package, implement it — most utilities are <200 lines.
 - **Include `createdAt` + `updatedAt`** on any entity subject to decay or staleness tracking.
 - **LLM output is untrusted input.** It never executes without passing through the capability gate.
 - **Secrets never appear in LLM prompts.** Tools receive credentials via `ExecutionContext`, not prompt injection.
