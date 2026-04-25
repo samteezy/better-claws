@@ -121,6 +121,14 @@ export class MessageRouter {
 
   registerAdapter(adapter: ChannelAdapter): void {
     this.adapters.set(adapter.id, adapter);
+
+    // Give adapters that use per-message channel IDs (like webchat) a direct
+    // resolver so confirmation replies can bypass the key-based lookup.
+    if ("setConfirmationCallback" in adapter && typeof (adapter as Record<string, unknown>)["setConfirmationCallback"] === "function") {
+      (adapter as { setConfirmationCallback: (fn: (key: string, text: string) => boolean) => void })
+        .setConfirmationCallback((key, text) => this.confirmationBroker.resolve(key, text));
+    }
+
     adapter.onMessage((msg) => {
       const key = `${msg.adapterId}:${msg.channelId}:${msg.senderId}`;
 

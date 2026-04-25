@@ -37,6 +37,9 @@ export class WebChatAdapter implements StreamableChannelAdapter {
   private server: Server | null = null;
   private messageCounter = 0;
   private markdownJs = "";
+  private readonly activeStreamResponses = new Map<string, ServerResponse>();
+  private pendingConfirmationKey: string | null = null;
+  private confirmationCallback: ((key: string, text: string) => boolean) | null = null;
   private readonly pendingResponses = new Map<string, {
     resolve: (response: OutboundMessage) => void;
     timer: ReturnType<typeof setTimeout>;
@@ -146,12 +149,32 @@ export class WebChatAdapter implements StreamableChannelAdapter {
     this.callback = callback;
   }
 
+  setConfirmationCallback(fn: (key: string, text: string) => boolean): void {
+    this.confirmationCallback = fn;
+  }
+
   async send(channelId: string, message: OutboundMessage): Promise<void> {
     const pending = this.pendingResponses.get(channelId);
     if (pending) {
       clearTimeout(pending.timer);
       pending.resolve(message);
       this.pendingResponses.delete(channelId);
+    }
+
+    // During an active stream, write outbound messages as SSE events so the
+    // frontend can display them (e.g. confirmation prompts from the broker).
+    const activeRes = this.activeStreamResponses.get(channelId);
+    if (activeRes) {
+      const meta = message.metadata;
+      if (meta && typeof meta["_confirmationKey"] === "string") {
+        this.pendingConfirmationKey = meta["_confirmationKey"] as string;
+        const event = {
+          type: "confirmation-prompt" as const,
+          toolName: meta["_confirmationTool"] as string,
+          params: meta["_confirmationParams"] as string,
+        };
+        activeRes.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
     }
 
     this.logger.log({
@@ -173,6 +196,7 @@ export class WebChatAdapter implements StreamableChannelAdapter {
     const { res, timer } = pending;
     clearTimeout(timer);
     this.pendingStreamResponses.delete(channelId);
+    this.activeStreamResponses.set(channelId, res);
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -190,6 +214,7 @@ export class WebChatAdapter implements StreamableChannelAdapter {
 
     res.write("data: [DONE]\n\n");
     res.end();
+    this.activeStreamResponses.delete(channelId);
 
     this.logger.log({
       sessionId: null,
@@ -383,6 +408,16 @@ export class WebChatAdapter implements StreamableChannelAdapter {
 
     this.pendingStreamResponses.set(messageId, { res, timer });
 
+    // If a confirmation is pending, resolve it with this message text instead of
+    // routing to the LLM. The broker's key changed (new messageId), so we bypass
+    // the normal key-based resolution and use the stored callback directly.
+    if (this.pendingConfirmationKey && this.confirmationCallback) {
+      const key = this.pendingConfirmationKey;
+      this.pendingConfirmationKey = null;
+      const resolved = this.confirmationCallback(key, inbound.text);
+      if (resolved) return;
+    }
+
     this.callback?.(inbound);
   }
 
@@ -426,6 +461,10 @@ const CHAT_HTML = `<!DOCTYPE html>
     --scrollbar: #ddd8d0;
     --placeholder: #b5b0a8;
     --app-shadow: rgba(0,0,0,0.04);
+    --tool-bg: #f0eef8;
+    --tool-border: #dddaf0;
+    --tool-text: #8b7fbe;
+    --tool-done-text: var(--text-muted);
   }
   html[data-theme="dark"] {
     --bg: #1e1b18;
@@ -446,6 +485,10 @@ const CHAT_HTML = `<!DOCTYPE html>
     --scrollbar: #4a4540;
     --placeholder: #7a756f;
     --app-shadow: rgba(0,0,0,0.2);
+    --tool-bg: #28253a;
+    --tool-border: #3a3650;
+    --tool-text: #a49ad4;
+    --tool-done-text: var(--text-muted);
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -693,6 +736,112 @@ const CHAT_HTML = `<!DOCTYPE html>
     white-space: pre-wrap;
     line-height: 1.45;
   }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tool-call {
+    margin-bottom: 6px;
+    padding: 5px 10px;
+    background: var(--tool-bg);
+    border: 1px solid var(--tool-border);
+    border-radius: 8px;
+    font-family: "DM Mono", monospace;
+    font-size: 12px;
+    color: var(--tool-text);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .tool-call .tc-icon {
+    width: 12px; height: 12px;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: spin 0.8s linear infinite;
+  }
+  .tool-call.done {
+    background: transparent;
+    border-color: var(--tool-border);
+    color: var(--tool-done-text);
+  }
+  .tool-call.done .tc-icon {
+    animation: none;
+    border: none;
+    width: auto; height: auto;
+  }
+  .tool-call.done .tc-icon::before { content: "✓"; }
+  .tool-call.error {
+    background: var(--rose-soft);
+    border-color: transparent;
+    color: var(--rose-text);
+  }
+  .tool-call.error .tc-icon {
+    animation: none;
+    border: none;
+    width: auto; height: auto;
+  }
+  .tool-call.error .tc-icon::before { content: "✗"; }
+  .confirm-card {
+    align-self: flex-start;
+    max-width: 90%;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--tool-border);
+    border-radius: 14px;
+    border-bottom-left-radius: 6px;
+    font-size: 13px;
+    color: var(--text);
+    animation: msgIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .confirm-card .confirm-header {
+    font-family: "DM Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--tool-text);
+    margin-bottom: 6px;
+  }
+  .confirm-card .confirm-params {
+    font-family: "DM Mono", monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+  .confirm-card .confirm-btns {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .confirm-card .confirm-btns button {
+    padding: 5px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .confirm-card .confirm-btns button.allow {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .confirm-card .confirm-btns button.allow:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+  .confirm-card .confirm-btns button.allow-session {
+    background: transparent;
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .confirm-card .confirm-btns button.allow-session:hover { background: rgba(var(--accent-rgb),0.08); }
+  .confirm-card .confirm-btns button.deny {
+    background: transparent;
+    color: var(--rose-text);
+    border-color: var(--rose-text);
+  }
+  .confirm-card .confirm-btns button.deny:hover { background: var(--rose-soft); }
+  .confirm-card.resolved .confirm-btns { display: none; }
+  .confirm-card.resolved { opacity: 0.6; }
   .md-content { white-space: normal; }
   .md-content p { margin: 0 0 0.5em; }
   .md-content p:last-child { margin-bottom: 0; }
@@ -863,6 +1012,7 @@ const CHAT_HTML = `<!DOCTYPE html>
       var textSpan = document.createElement("span");
       if (msgEl) { msgEl.appendChild(textSpan); msgEl.classList.add("md-content"); }
       var mdStream = window.BcMarkdown ? new BcMarkdown.StreamRenderer(textSpan) : null;
+      var toolEls = [];
       var reader = r.body.getReader();
       var decoder = new TextDecoder();
       var buf = "";
@@ -896,7 +1046,28 @@ const CHAT_HTML = `<!DOCTYPE html>
             }
             try {
               var evt = JSON.parse(data);
-              if (evt.type === "reasoning-delta") {
+              if (evt.type === "tool-start") {
+                var tcEl = document.createElement("div");
+                tcEl.className = "tool-call";
+                var iconEl = document.createElement("span");
+                iconEl.className = "tc-icon";
+                tcEl.appendChild(iconEl);
+                var labelEl = document.createElement("span");
+                labelEl.textContent = evt.toolCall.function.name;
+                tcEl.appendChild(labelEl);
+                if (msgEl) msgEl.insertBefore(tcEl, textSpan);
+                toolEls.push({ name: evt.toolCall.function.name, el: tcEl });
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+              } else if (evt.type === "tool-result") {
+                for (var ti = 0; ti < toolEls.length; ti++) {
+                  if (toolEls[ti].name === evt.toolName) {
+                    var tel = toolEls[ti].el;
+                    tel.classList.add(evt.error ? "error" : "done");
+                    toolEls.splice(ti, 1);
+                    break;
+                  }
+                }
+              } else if (evt.type === "reasoning-delta") {
                 if (msgEl) {
                   var thinkEl = msgEl.querySelector(".thinking");
                   if (!thinkEl) {
@@ -948,6 +1119,38 @@ const CHAT_HTML = `<!DOCTYPE html>
                     ctxEl.textContent = (used / 1000).toFixed(1) + "k / " + (evt.context.budget / 1000).toFixed(1) + "k context";
                   }
                 }
+              } else if (evt.type === "confirmation-prompt") {
+                var cardEl = document.createElement("div");
+                cardEl.className = "confirm-card";
+                var hdrEl = document.createElement("div");
+                hdrEl.className = "confirm-header";
+                hdrEl.textContent = "⚠ " + evt.toolName + " requires confirmation";
+                cardEl.appendChild(hdrEl);
+                if (evt.params) {
+                  var parEl = document.createElement("div");
+                  parEl.className = "confirm-params";
+                  parEl.textContent = evt.params;
+                  cardEl.appendChild(parEl);
+                }
+                var btnsEl = document.createElement("div");
+                btnsEl.className = "confirm-btns";
+                var mkBtn = function(label, cls, reply) {
+                  var b = document.createElement("button");
+                  b.className = cls;
+                  b.textContent = label;
+                  b.addEventListener("click", function() {
+                    cardEl.classList.add("resolved");
+                    input.value = reply;
+                    form.dispatchEvent(new Event("submit"));
+                  });
+                  return b;
+                };
+                btnsEl.appendChild(mkBtn("Allow once", "allow", "YES"));
+                btnsEl.appendChild(mkBtn("Allow always", "allow-session", "YES ALWAYS"));
+                btnsEl.appendChild(mkBtn("Deny", "deny", "NO"));
+                cardEl.appendChild(btnsEl);
+                messagesEl.insertBefore(cardEl, messagesEl.lastElementChild);
+                messagesEl.scrollTop = messagesEl.scrollHeight;
               } else if (evt.type === "error") {
                 messages[msgIdx].role = "error";
                 messages[msgIdx].text = evt.message;

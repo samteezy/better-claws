@@ -104,6 +104,7 @@ export type StreamEvent =
   | { readonly type: "reasoning-delta"; readonly delta: string }
   | { readonly type: "tool-start"; readonly toolCall: ToolCall }
   | { readonly type: "tool-result"; readonly toolName: string; readonly output: unknown; readonly error?: string }
+  | { readonly type: "confirmation-prompt"; readonly toolName: string; readonly params: string }
   | { readonly type: "warning"; readonly message: string }
   | { readonly type: "error"; readonly message: string }
   | { readonly type: "reset" }

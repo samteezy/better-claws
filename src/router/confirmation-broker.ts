@@ -21,16 +21,18 @@ function parseReply(text: string): ConfirmationVerdict {
   return "deny";
 }
 
-function formatPrompt(toolName: string, toolCall: ToolCall): string {
-  let paramSummary: string;
+function formatParamSummary(toolCall: ToolCall): string {
   try {
     const params = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
-    paramSummary = Object.entries(params)
+    return Object.entries(params)
       .map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`)
       .join("\n");
   } catch {
-    paramSummary = `  ${toolCall.function.arguments}`;
+    return `  ${toolCall.function.arguments}`;
   }
+}
+
+function formatPrompt(toolName: string, paramSummary: string): string {
   return [
     `⚠ Tool "${toolName}" requires confirmation.`,
     "",
@@ -62,8 +64,9 @@ export class ConfirmationBroker {
   ): Promise<ConfirmationResult> {
     const key = `${adapterId}:${channelId}:${senderId}`;
 
-    const prompt = formatPrompt(toolName, toolCall);
-    await adapter.send(channelId, { channelId, text: prompt });
+    const params = formatParamSummary(toolCall);
+    const prompt = formatPrompt(toolName, params);
+    await adapter.send(channelId, { channelId, text: prompt, metadata: { _confirmationKey: key, _confirmationTool: toolName, _confirmationParams: params } });
 
     this.logger.log({
       sessionId: null,
