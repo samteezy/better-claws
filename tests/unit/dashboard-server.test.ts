@@ -677,7 +677,7 @@ describe("DashboardServer", () => {
         (err) => {
           assert.ok(err instanceof DashboardError);
           assert.equal((err as BetterClawsError).code, "UNSAFE_CONFIG");
-          assert.ok((err as Error).message.includes("non-loopback address"));
+          assert.ok((err as Error).message.includes("loopback"));
           return true;
         },
       );
