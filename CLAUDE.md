@@ -53,6 +53,16 @@ The Dockerfile is a multi-stage build: compile TS in `node:22-alpine`, then copy
 - **Secrets never appear in LLM prompts.** Tools receive credentials via `ExecutionContext`, not prompt injection.
 - **All state changes are logged.** No code path mutates state without emitting a structured log event.
 
+## Network Exposure
+
+`gateway.host` is the default bind address for HTTP-serving components (WebChat, Dashboard, Webhook). Each can override with its own `host` field. When the resolved bind address is non-loopback (anything other than `127.0.0.1` / `localhost`), an auth token is required:
+
+- WebChat: `adapters.webchat.secret`
+- Dashboard: `dashboard.authToken`
+- Webhook already requires `adapters.webhook.secret` (HMAC), so it's covered.
+
+The check fires at adapter `start()` (runtime), not at config load — startup will fatal-exit if a non-loopback host is set without the token.
+
 ## Architecture (quick reference)
 
 ```

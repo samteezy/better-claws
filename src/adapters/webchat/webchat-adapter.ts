@@ -67,7 +67,7 @@ export class WebChatAdapter implements StreamableChannelAdapter {
     const isNetworkExposed = this.host !== "127.0.0.1" && this.host !== "localhost";
     if (isNetworkExposed && !this.authToken) {
       throw new WebChatError(
-        "WebChat cannot bind to a non-loopback address without an authToken configured",
+        `WebChat is bound to ${this.host} but no auth token is set. Set "adapters.webchat.secret" in config (or use a loopback host like 127.0.0.1).`,
         "UNSAFE_CONFIG",
       );
     }
