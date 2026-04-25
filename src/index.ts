@@ -29,7 +29,7 @@ import { Scheduler } from "./scheduler/scheduler.js";
 import { SuggestionStore } from "./suggestions/suggestion-store.js";
 import { SuggestionWorker } from "./suggestions/suggestion-worker.js";
 import { CurationWorker } from "./memory/curation-worker.js";
-import { sage, stone, bold, dim } from "./utils/ansi.js";
+import { sage, stone, bold, dim, glyphs } from "./utils/ansi.js";
 
 // ── App Factory ───────────────────────────────────────────────────────────────
 
@@ -397,7 +397,7 @@ async function main(): Promise<void> {
   // ── Welcome banner ─────────────────────────────────────────────────────
   process.stdout.write("\n");
   process.stdout.write("  " + sage(bold("betterClaws")) + " " + dim("v0.1.0") + "\n");
-  process.stdout.write("  " + stone("\u2500".repeat(22)) + "\n");
+  process.stdout.write("  " + stone(glyphs.hRule.repeat(22)) + "\n");
 
   const label = (key: string, value: string) =>
     "  " + stone(key.padEnd(12)) + value + "\n";

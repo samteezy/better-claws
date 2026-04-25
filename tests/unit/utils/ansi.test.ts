@@ -11,6 +11,8 @@ import {
   italic,
   strip,
   enabled,
+  supportsUnicode,
+  resolveGlyphs,
 } from "../../../src/utils/ansi.js";
 
 describe("ansi", () => {
@@ -519,6 +521,140 @@ describe("ansi", () => {
       const longText = "x".repeat(1000);
       const formatted = bold(sage(longText));
       assert.equal(strip(formatted), longText);
+    });
+  });
+
+  describe("supportsUnicode()", () => {
+    it("returns true for UTF-8 locale on a capable terminal", () => {
+      assert.equal(
+        supportsUnicode({ LANG: "en_US.UTF-8", TERM: "xterm-256color" }),
+        true,
+      );
+    });
+
+    it("returns false for screen-256color (tmux default) even with UTF-8 locale", () => {
+      // Regression: this is the env that maps U+203A to '_' in tmux.
+      assert.equal(
+        supportsUnicode({ LANG: "en_US.UTF-8", TERM: "screen-256color" }),
+        false,
+      );
+    });
+
+    it("returns false for non-UTF-8 locale on a capable terminal", () => {
+      assert.equal(
+        supportsUnicode({ LANG: "C", TERM: "xterm-256color" }),
+        false,
+      );
+    });
+
+    it("returns false for tmux- prefixed terms", () => {
+      // tmux-256color is more capable but not flagged as limited; verify utf8 path still applies.
+      assert.equal(
+        supportsUnicode({ LANG: "en_US.UTF-8", TERM: "tmux-256color" }),
+        true,
+      );
+    });
+
+    it("returns false for the linux console TERM", () => {
+      assert.equal(
+        supportsUnicode({ LANG: "en_US.UTF-8", TERM: "linux" }),
+        false,
+      );
+    });
+
+    it("returns false for dumb terminals", () => {
+      assert.equal(
+        supportsUnicode({ LANG: "en_US.UTF-8", TERM: "dumb" }),
+        false,
+      );
+    });
+
+    it("BETTERCLAWS_ASCII=1 forces ASCII regardless of TERM/LANG", () => {
+      assert.equal(
+        supportsUnicode({
+          LANG: "en_US.UTF-8",
+          TERM: "xterm-256color",
+          BETTERCLAWS_ASCII: "1",
+        }),
+        false,
+      );
+    });
+
+    it("BETTERCLAWS_UNICODE=1 forces unicode even on screen-256color", () => {
+      assert.equal(
+        supportsUnicode({
+          LANG: "en_US.UTF-8",
+          TERM: "screen-256color",
+          BETTERCLAWS_UNICODE: "1",
+        }),
+        true,
+      );
+    });
+
+    it("BETTERCLAWS_ASCII=1 takes precedence over BETTERCLAWS_UNICODE=1", () => {
+      assert.equal(
+        supportsUnicode({
+          BETTERCLAWS_ASCII: "1",
+          BETTERCLAWS_UNICODE: "1",
+        }),
+        false,
+      );
+    });
+
+    it("respects LC_ALL over LANG", () => {
+      assert.equal(
+        supportsUnicode({
+          LC_ALL: "en_US.UTF-8",
+          LANG: "C",
+          TERM: "xterm-256color",
+        }),
+        true,
+      );
+    });
+
+    it("returns false when TERM and LANG are unset", () => {
+      assert.equal(supportsUnicode({}), false);
+    });
+  });
+
+  describe("resolveGlyphs()", () => {
+    it("returns Unicode glyphs on a capable terminal", () => {
+      const g = resolveGlyphs({ LANG: "en_US.UTF-8", TERM: "xterm-256color" });
+      assert.equal(g.prompt, "›");
+      assert.equal(g.hRule, "─");
+      assert.equal(g.ok, "✓");
+      assert.equal(g.fail, "✗");
+      assert.equal(g.tool, "⟡");
+      assert.equal(g.warn, "⚠");
+      assert.equal(g.bullet, "•");
+    });
+
+    it("returns ASCII glyphs under tmux's default screen-256color", () => {
+      const g = resolveGlyphs({ LANG: "en_US.UTF-8", TERM: "screen-256color" });
+      assert.equal(g.prompt, ">");
+      assert.equal(g.hRule, "-");
+      assert.equal(g.ok, "[ok]");
+      assert.equal(g.fail, "[x]");
+      assert.equal(g.tool, "*");
+      assert.equal(g.warn, "!");
+      assert.equal(g.bullet, "*");
+    });
+
+    it("returns ASCII glyphs when BETTERCLAWS_ASCII=1", () => {
+      const g = resolveGlyphs({
+        LANG: "en_US.UTF-8",
+        TERM: "xterm-256color",
+        BETTERCLAWS_ASCII: "1",
+      });
+      assert.equal(g.prompt, ">");
+    });
+
+    it("ASCII glyphs are all single-cell so layout math stays correct", () => {
+      // The CLI repeats hRule by `cols`. ASCII '-' is 1 column wide.
+      const g = resolveGlyphs({ TERM: "screen-256color" });
+      assert.equal(g.hRule.length, 1);
+      assert.equal(g.prompt.length, 1);
+      assert.equal(g.bullet.length, 1);
     });
   });
 });
