@@ -156,9 +156,14 @@ function validateConfig(raw: unknown): Record<string, unknown> {
   return raw;
 }
 
+export interface LoadConfigResult {
+  readonly config: BetterClawsConfig;
+  readonly localConfigPath?: string;
+}
+
 export async function loadConfig(
   configPath?: string,
-): Promise<BetterClawsConfig> {
+): Promise<LoadConfigResult> {
   const filePath = resolve(configPath ?? "config/betterclaws.json");
 
   let raw: unknown;
@@ -167,7 +172,7 @@ export async function loadConfig(
     raw = JSON.parse(content) as unknown;
   } catch (err) {
     if (isEnoent(err)) {
-      return DEFAULT_CONFIG;
+      return { config: DEFAULT_CONFIG };
     }
     throw new ConfigError(
       `Failed to read config at "${filePath}": ${toErrorMessage(err)}`,
@@ -176,13 +181,32 @@ export async function loadConfig(
   }
 
   const validated = validateConfig(raw);
-  const merged = deepMerge(
+  let merged = deepMerge(
     DEFAULT_CONFIG as unknown as Record<string, unknown>,
     validated,
-  ) as unknown as BetterClawsConfig;
-  const resolved = resolveEnvSecrets(merged) as BetterClawsConfig;
+  ) as Record<string, unknown>;
 
-  return resolved;
+  const localPath = filePath.replace(/\.json$/, ".local.json");
+  let localConfigPath: string | undefined;
+
+  try {
+    const localContent = await readFile(localPath, "utf-8");
+    const localRaw = JSON.parse(localContent) as unknown;
+    const localValidated = validateConfig(localRaw);
+    merged = deepMerge(merged, localValidated);
+    localConfigPath = localPath;
+  } catch (err) {
+    if (!isEnoent(err)) {
+      throw new ConfigError(
+        `Failed to read local config at "${localPath}": ${toErrorMessage(err)}`,
+        "READ_ERROR",
+      );
+    }
+  }
+
+  const resolved = resolveEnvSecrets(merged as unknown as BetterClawsConfig) as BetterClawsConfig;
+
+  return { config: resolved, localConfigPath };
 }
 
 /**

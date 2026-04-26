@@ -3,3 +3,4 @@ dist/
 data/
 *.tsbuildinfo
 .claude/scheduled_tasks.lock
+config/*.local.json

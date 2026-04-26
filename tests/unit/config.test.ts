@@ -179,9 +179,10 @@ describe("config", () => {
 
     it("returns DEFAULT_CONFIG when file does not exist", async () => {
       const nonexistentPath = join(tempDir, "nonexistent.json");
-      const config = await loadConfig(nonexistentPath);
+      const { config, localConfigPath } = await loadConfig(nonexistentPath);
 
       assert.deepEqual(config, DEFAULT_CONFIG);
+      assert.equal(localConfigPath, undefined);
     });
 
     it("loads and parses valid JSON config file", async () => {
@@ -193,7 +194,7 @@ describe("config", () => {
 
       await writeFile(configPath, JSON.stringify(configData), "utf-8");
 
-      const config = await loadConfig(configPath);
+      const { config } = await loadConfig(configPath);
 
       assert.equal(config.gateway.port, 19000);
       assert.equal(config.llm.model, "custom-model");
@@ -215,7 +216,7 @@ describe("config", () => {
 
       await writeFile(configPath, JSON.stringify(configData), "utf-8");
 
-      const config = await loadConfig(configPath);
+      const { config } = await loadConfig(configPath);
 
       // Merged values
       assert.equal(config.memory.maxLongTermEntries, 5000);
@@ -278,7 +279,7 @@ describe("config", () => {
 
       await writeFile(configPath, JSON.stringify(configData), "utf-8");
 
-      const config = await loadConfig(configPath);
+      const { config } = await loadConfig(configPath);
 
       assert.equal(config.llm.apiKey, "secret-key-123");
 
@@ -296,7 +297,7 @@ describe("config", () => {
 
       await writeFile(configPath, JSON.stringify(configData), "utf-8");
 
-      const config = await loadConfig(configPath);
+      const { config } = await loadConfig(configPath);
 
       // Updated values
       assert.equal(config.security.sandboxTimeout, 45000);
@@ -336,9 +337,88 @@ describe("config", () => {
 
       await writeFile(configPath, JSON.stringify(configData), "utf-8");
 
-      const config = await loadConfig(configPath);
+      const { config } = await loadConfig(configPath);
 
       assert.equal(config.gateway.port, 20000);
+    });
+
+    it("loads .local.json override when present and merges it on top", async () => {
+      const configPath = join(tempDir, "layered-base.json");
+      const localPath = join(tempDir, "layered-base.local.json");
+
+      await writeFile(configPath, JSON.stringify({ llm: { model: "base-model", temperature: 0.5 } }), "utf-8");
+      await writeFile(localPath, JSON.stringify({ llm: { model: "local-model" } }), "utf-8");
+
+      const { config, localConfigPath } = await loadConfig(configPath);
+
+      assert.equal(config.llm.model, "local-model");
+      assert.equal(config.llm.temperature, 0.5);
+      assert.equal(localConfigPath, localPath);
+    });
+
+    it("returns localConfigPath undefined when no .local.json exists", async () => {
+      const configPath = join(tempDir, "no-local-base.json");
+      await writeFile(configPath, JSON.stringify({ gateway: { port: 19100 } }), "utf-8");
+
+      const { config, localConfigPath } = await loadConfig(configPath);
+
+      assert.equal(config.gateway.port, 19100);
+      assert.equal(localConfigPath, undefined);
+    });
+
+    it("resolves env: values in .local.json", async () => {
+      process.env["LOCAL_SECRET"] = "local-secret-value";
+      const configPath = join(tempDir, "env-local-base.json");
+      const localPath = join(tempDir, "env-local-base.local.json");
+
+      await writeFile(configPath, JSON.stringify({}), "utf-8");
+      await writeFile(localPath, JSON.stringify({ llm: { apiKey: "env:LOCAL_SECRET" } }), "utf-8");
+
+      const { config } = await loadConfig(configPath);
+
+      assert.equal(config.llm.apiKey, "local-secret-value");
+      delete process.env["LOCAL_SECRET"];
+    });
+
+    it("local.json array replaces base array entirely", async () => {
+      const configPath = join(tempDir, "array-replace-base.json");
+      const localPath = join(tempDir, "array-replace-base.local.json");
+
+      await writeFile(configPath, JSON.stringify({ schedules: [{ id: "base-job" }] }), "utf-8");
+      await writeFile(localPath, JSON.stringify({ schedules: [{ id: "local-job" }] }), "utf-8");
+
+      const { config } = await loadConfig(configPath);
+
+      assert.deepEqual((config as unknown as { schedules: Array<{ id: string }> }).schedules, [{ id: "local-job" }]);
+    });
+
+    it("throws ConfigError when .local.json contains invalid JSON", async () => {
+      const configPath = join(tempDir, "bad-local-base.json");
+      const localPath = join(tempDir, "bad-local-base.local.json");
+
+      await writeFile(configPath, JSON.stringify({}), "utf-8");
+      await writeFile(localPath, "{ bad json", "utf-8");
+
+      assert.rejects(
+        () => loadConfig(configPath),
+        (err) =>
+          err instanceof ConfigError &&
+          err.code === "READ_ERROR" &&
+          err.message.includes("local config"),
+      );
+    });
+
+    it("derives local path from custom --config path", async () => {
+      const configPath = join(tempDir, "custom.json");
+      const localPath = join(tempDir, "custom.local.json");
+
+      await writeFile(configPath, JSON.stringify({ gateway: { port: 19200 } }), "utf-8");
+      await writeFile(localPath, JSON.stringify({ gateway: { port: 19201 } }), "utf-8");
+
+      const { config, localConfigPath } = await loadConfig(configPath);
+
+      assert.equal(config.gateway.port, 19201);
+      assert.equal(localConfigPath, localPath);
     });
   });
 
@@ -365,7 +445,7 @@ describe("config", () => {
 
         await writeFile(configPath, JSON.stringify(configData), "utf-8");
 
-        const config = await loadConfig(configPath);
+        const { config } = await loadConfig(configPath);
 
         assert.ok(typeof config.adapters === "object");
         assert.ok(config.adapters !== null);

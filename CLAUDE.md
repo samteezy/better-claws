@@ -79,6 +79,9 @@ Dashboard: HTTP server at configurable port for session inspection and log viewi
 - `tests/` — `unit/` and `integration/`
 - `tools/` — user-defined tool modules: shell, file-read, file-write, web-fetch, memory-update
 - `config/betterclaws.json` — runtime config; secrets use `env:VAR_NAME` syntax resolved at runtime
+- `config/betterclaws.local.json` — gitignored deployment overrides; deep-merged on top of the base config at load time (arrays replace, objects merge). Use for server-specific settings (API keys, model, adapter tokens) so `git pull` never conflicts. Derive local path from `--config` too: `foo.json` → `foo.local.json`.
+  - **Array caveat**: to add one schedule locally, copy the full `schedules` array and append your entry — arrays replace, they do not concatenate.
+  - **Migration**: `cp config/betterclaws.json config/betterclaws.local.json && git checkout config/betterclaws.json`, then trim the local file to only your overrides.
 - `data/` — gitignored runtime data (sessions/, memory/, logs/, scratch/)
 
 ## Adapters (implemented)

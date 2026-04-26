@@ -381,7 +381,7 @@ export async function createApp(config: BetterClawsConfig, options?: {
 async function main(): Promise<void> {
   const configFlagIndex = process.argv.indexOf("--config");
   const configPath = configFlagIndex !== -1 ? process.argv[configFlagIndex + 1] : undefined;
-  const config = await loadConfig(configPath);
+  const { config, localConfigPath } = await loadConfig(configPath);
   const dashboardFlag = process.argv.includes("--dashboard");
 
   // Load raw config for dashboard editing (before env resolution)
@@ -408,6 +408,9 @@ async function main(): Promise<void> {
     process.stdout.write(label("Model " + dim("(weak)"), weak.model));
   }
   process.stdout.write(label("Config", configPath ?? "config/betterclaws.json"));
+  if (localConfigPath) {
+    process.stdout.write(label("+ local", localConfigPath));
+  }
 
   const { router, dashboard, adapterNames, stop } = await createApp(config, {
     dashboard: dashboardFlag || undefined,
