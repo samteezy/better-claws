@@ -7,7 +7,72 @@ import {
 import type { InboundMessage } from "../../src/types.js";
 import { createMockLogger } from "../helpers/mock-logger.js";
 
-// ── Mocks ────────────────────────────────────────────────────────────────────
+// ── Mock WebSocket ────────────────────────────────────────────────────────────
+
+class MockWebSocket {
+  readonly url: string;
+  readyState: number = 0; // CONNECTING
+
+  onopen: ((this: WebSocket, ev: Event) => unknown) | null = null;
+  onmessage: ((this: WebSocket, ev: MessageEvent) => unknown) | null = null;
+  onerror: ((this: WebSocket, ev: Event) => unknown) | null = null;
+  onclose: ((this: WebSocket, ev: CloseEvent) => unknown) | null = null;
+
+  closed = false;
+
+  constructor(url: string) {
+    this.url = url;
+  }
+
+  close(): void {
+    this.readyState = 3;
+    this.closed = true;
+    if (this.onclose) {
+      this.onclose.call(this as unknown as WebSocket, { code: 1000, reason: "" } as CloseEvent);
+    }
+  }
+
+  simulateOpen(): void {
+    this.readyState = 1;
+    if (this.onopen) {
+      this.onopen.call(this as unknown as WebSocket, new Event("open"));
+    }
+  }
+
+  simulateMessage(data: unknown): void {
+    if (this.onmessage) {
+      this.onmessage.call(
+        this as unknown as WebSocket,
+        { data: JSON.stringify(data) } as MessageEvent,
+      );
+    }
+  }
+
+  simulateError(): void {
+    if (this.onerror) {
+      this.onerror.call(this as unknown as WebSocket, new Event("error"));
+    }
+  }
+
+  simulateClose(code = 1006): void {
+    this.readyState = 3;
+    if (this.onclose) {
+      this.onclose.call(this as unknown as WebSocket, { code, reason: "" } as CloseEvent);
+    }
+  }
+}
+
+function createMockWsFactory() {
+  const instances: MockWebSocket[] = [];
+  const factory = (url: string): WebSocket => {
+    const ws = new MockWebSocket(url);
+    instances.push(ws);
+    return ws as unknown as WebSocket;
+  };
+  return { factory, instances };
+}
+
+// ── Mock fetch ────────────────────────────────────────────────────────────────
 
 interface FetchCall {
   url: string;
@@ -44,7 +109,9 @@ function createMockFetch(
   return { fn: fn as typeof fetch, calls };
 }
 
-function makeSignalEnvelope(
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function makeEnvelope(
   sourceNumber: string,
   message: string,
   timestamp: number,
@@ -55,52 +122,22 @@ function makeSignalEnvelope(
   },
 ) {
   if (overrides?.noMessage) {
-    return {
+    return { envelope: { source: sourceNumber, sourceNumber, timestamp } };
+  }
+
+  const dataMessage: Record<string, unknown> = { message, timestamp };
+  if (overrides?.groupId) {
+    dataMessage["groupInfo"] = { groupId: overrides.groupId, type: "v2" };
+  }
+
+  return {
+    envelope: {
       source: sourceNumber,
       sourceNumber,
+      sourceName: overrides?.sourceName ?? "Sender",
+      dataMessage,
       timestamp,
-    };
-  }
-
-  const dataMessage: Record<string, unknown> = {
-    message: message ?? null,
-    timestamp,
-  };
-
-  if (overrides?.groupId) {
-    dataMessage["groupInfo"] = {
-      groupId: overrides.groupId,
-      type: "v2",
-    };
-  }
-
-  return {
-    source: sourceNumber,
-    sourceNumber,
-    sourceName: overrides?.sourceName ?? "Sender",
-    dataMessage,
-    timestamp,
-  };
-}
-
-function makeSignalReceiveItem(
-  sourceNumber: string,
-  message: string,
-  timestamp: number,
-  overrides?: {
-    groupId?: string;
-    sourceName?: string;
-    noMessage?: boolean;
-  },
-) {
-  return {
-    envelope: makeSignalEnvelope(
-      sourceNumber,
-      message,
-      timestamp,
-      overrides,
-    ),
-    account: "+15551234567",
+    },
   };
 }
 
@@ -109,33 +146,31 @@ function makeAdapter(
     apiUrl: string;
     number: string;
     pollingIntervalMs: number;
-    pollingTimeoutSecs: number;
     fetchFn: typeof fetch;
+    wsFactory: (url: string) => WebSocket;
     logger: ReturnType<typeof createMockLogger>;
   }>,
 ) {
   const logger = overrides?.logger ?? createMockLogger();
+  const wsMock = createMockWsFactory();
   const adapter = new SignalAdapter({
     apiUrl: overrides?.apiUrl ?? "http://localhost:8080",
     number: overrides?.number ?? "+15551234567",
     pollingIntervalMs: overrides?.pollingIntervalMs ?? 50,
-    pollingTimeoutSecs: overrides?.pollingTimeoutSecs ?? 1,
     logger,
     fetchFn: overrides?.fetchFn,
+    wsFactory: overrides?.wsFactory ?? wsMock.factory,
   });
-  return { adapter, logger };
+  return { adapter, logger, wsMock };
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("SignalAdapter", () => {
   describe("constructor", () => {
     it("throws SignalError with MISSING_CONFIG if apiUrl is empty", () => {
       assert.throws(
-        () =>
-          makeAdapter({
-            apiUrl: "",
-          }),
+        () => makeAdapter({ apiUrl: "" }),
         (err: unknown) =>
           err instanceof SignalError && err.code === "MISSING_CONFIG",
       );
@@ -143,10 +178,7 @@ describe("SignalAdapter", () => {
 
     it("throws SignalError with MISSING_CONFIG if number is empty", () => {
       assert.throws(
-        () =>
-          makeAdapter({
-            number: "",
-          }),
+        () => makeAdapter({ number: "" }),
         (err: unknown) =>
           err instanceof SignalError && err.code === "MISSING_CONFIG",
       );
@@ -161,38 +193,25 @@ describe("SignalAdapter", () => {
       assert.equal(adapter.name, "Signal");
     });
 
-    it("strips trailing slashes from apiUrl", () => {
-      const mock = createMockFetch([{ ok: true, status: 200, result: [] }]);
+    it("strips trailing slashes and uses ws:// scheme", () => {
+      const wsMock = createMockWsFactory();
       const { adapter } = makeAdapter({
         apiUrl: "http://localhost:8080///",
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
+        wsFactory: wsMock.factory,
       });
-      adapter.onMessage(() => {});
 
-      // Start and immediately stop to trigger one poll
       void adapter.start();
+      void adapter.stop();
 
-      // Give the first poll a chance to run
-      setTimeout(() => {
-        void adapter.stop();
-      }, 30);
-
-      // Check that the URL doesn't have double slashes at the end
-      setTimeout(() => {
-        if (mock.calls.length > 0) {
-          const firstUrl = mock.calls[0]!.url;
-          assert.ok(
-            !firstUrl.includes("http://localhost:8080///"),
-            "apiUrl should have trailing slashes stripped",
-          );
-        }
-      }, 80);
+      assert.equal(wsMock.instances.length, 1);
+      const url = wsMock.instances[0]!.url;
+      assert.ok(url.startsWith("ws://"), "should use ws:// scheme");
+      assert.ok(!url.includes("///"), "should strip trailing slashes");
     });
   });
 
   describe("start / stop", () => {
-    it("logs start event with action and pollingIntervalMs", async () => {
+    it("logs start event with action and reconnectDelayMs", async () => {
       const { adapter, logger } = makeAdapter();
       await adapter.start();
       await adapter.stop();
@@ -205,7 +224,7 @@ describe("SignalAdapter", () => {
       assert.equal(startLog["eventType"], "config:change");
       assert.equal(startLog["component"], "signal");
       const payload = startLog["payload"] as Record<string, unknown>;
-      assert.equal(typeof payload["pollingIntervalMs"], "number");
+      assert.equal(typeof payload["reconnectDelayMs"], "number");
     });
 
     it("logs stop event", async () => {
@@ -219,6 +238,16 @@ describe("SignalAdapter", () => {
       );
       assert.ok(stopLog, "should log stop event");
       assert.equal(stopLog["eventType"], "config:change");
+    });
+
+    it("does not reconnect after stop()", async () => {
+      const { adapter, wsMock } = makeAdapter({ pollingIntervalMs: 10 });
+      await adapter.start();
+      await adapter.stop();
+
+      const countAfterStop = wsMock.instances.length;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(wsMock.instances.length, countAfterStop, "no new WS connections after stop");
     });
   });
 
@@ -311,24 +340,133 @@ describe("SignalAdapter", () => {
     });
   });
 
-  describe("polling and message processing", () => {
-    it("processes valid DM envelope and calls onMessage callback", async () => {
-      const item = makeSignalReceiveItem("+15559876543", "hi there", 1700000000);
-      const mock = createMockFetch([
-        { ok: true, status: 200, result: [item] },
-        { ok: true, status: 200, result: [] },
-      ]);
-
+  describe("WebSocket connection", () => {
+    it("connects to correct URL with encoded phone number", async () => {
+      const wsMock = createMockWsFactory();
       const { adapter } = makeAdapter({
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
+        number: "+15551234567",
+        wsFactory: wsMock.factory,
       });
+
+      await adapter.start();
+
+      assert.equal(wsMock.instances.length, 1);
+      const url = wsMock.instances[0]!.url;
+      assert.ok(url.startsWith("ws://"), "should use ws:// scheme");
+      assert.ok(url.includes("/v1/receive/"), "should use /v1/receive path");
+      assert.ok(url.includes("%2B15551234567"), "should URL-encode the phone number");
+
+      await adapter.stop();
+    });
+
+    it("logs ws_connected on open", async () => {
+      const logger = createMockLogger();
+      const { adapter, wsMock } = makeAdapter({ logger });
+
+      await adapter.start();
+      wsMock.instances[0]!.simulateOpen();
+
+      const connLog = logger.logs.find(
+        (l) => (l["payload"] as Record<string, unknown>)["action"] === "ws_connected",
+      );
+      assert.ok(connLog, "should log ws_connected");
+
+      await adapter.stop();
+    });
+
+    it("reconnects after WebSocket closes", async () => {
+      const wsMock = createMockWsFactory();
+      const { adapter } = makeAdapter({
+        pollingIntervalMs: 10,
+        wsFactory: wsMock.factory,
+      });
+
+      await adapter.start();
+      assert.equal(wsMock.instances.length, 1);
+
+      wsMock.instances[0]!.simulateClose();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      assert.ok(wsMock.instances.length >= 2, "should create a new connection after close");
+
+      await adapter.stop();
+    });
+
+    it("doubles reconnect delay on repeated closes", async () => {
+      const logger = createMockLogger();
+      const wsMock = createMockWsFactory();
+      const { adapter } = makeAdapter({
+        pollingIntervalMs: 10,
+        wsFactory: wsMock.factory,
+        logger,
+      });
+
+      await adapter.start();
+
+      wsMock.instances[0]!.simulateClose();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      wsMock.instances[1]!.simulateClose();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const closeLogs = logger.logs.filter(
+        (l) => (l["payload"] as Record<string, unknown>)["action"] === "ws_closed",
+      );
+
+      assert.ok(closeLogs.length >= 2, "should have at least two close logs");
+      const delay1 = (closeLogs[0]!["payload"] as Record<string, unknown>)["reconnectDelayMs"] as number;
+      const delay2 = (closeLogs[1]!["payload"] as Record<string, unknown>)["reconnectDelayMs"] as number;
+      assert.ok(delay2 > delay1, `second delay (${delay2}) should exceed first (${delay1})`);
+
+      await adapter.stop();
+    });
+
+    it("resets reconnect delay after successful open", async () => {
+      const logger = createMockLogger();
+      const wsMock = createMockWsFactory();
+      const { adapter } = makeAdapter({
+        pollingIntervalMs: 10,
+        wsFactory: wsMock.factory,
+        logger,
+      });
+
+      await adapter.start();
+
+      // Close without open (delay doubles)
+      wsMock.instances[0]!.simulateClose();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Open the second connection (resets delay)
+      wsMock.instances[1]!.simulateOpen();
+      wsMock.instances[1]!.simulateClose();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const closeLogs = logger.logs.filter(
+        (l) => (l["payload"] as Record<string, unknown>)["action"] === "ws_closed",
+      );
+
+      assert.ok(closeLogs.length >= 2);
+      const delay1 = (closeLogs[0]!["payload"] as Record<string, unknown>)["reconnectDelayMs"] as number;
+      const delay2 = (closeLogs[1]!["payload"] as Record<string, unknown>)["reconnectDelayMs"] as number;
+      assert.ok(
+        delay2 <= delay1,
+        `delay after reset (${delay2}) should not exceed pre-reset delay (${delay1})`,
+      );
+
+      await adapter.stop();
+    });
+  });
+
+  describe("message processing", () => {
+    it("processes valid DM envelope and calls onMessage callback", async () => {
+      const { adapter, wsMock } = makeAdapter();
       const received: InboundMessage[] = [];
       adapter.onMessage((msg) => received.push(msg));
 
       await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await adapter.stop();
+      const ws = wsMock.instances[0]!;
+      ws.simulateOpen();
+      ws.simulateMessage(makeEnvelope("+15559876543", "hi there", 1700000000));
 
       assert.equal(received.length, 1);
       assert.equal(received[0]!.text, "hi there");
@@ -336,136 +474,84 @@ describe("SignalAdapter", () => {
       assert.equal(received[0]!.senderId, "+15559876543");
       assert.equal(received[0]!.adapterId, "signal");
       assert.equal(received[0]!.timestamp, 1700000000);
+
+      await adapter.stop();
     });
 
     it("processes valid group envelope with group: prefix", async () => {
-      const item = makeSignalReceiveItem("+15559876543", "group msg", 1700000001, {
-        groupId: "groupabc123",
-      });
-      const mock = createMockFetch([
-        { ok: true, status: 200, result: [item] },
-        { ok: true, status: 200, result: [] },
-      ]);
-
-      const { adapter } = makeAdapter({
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
-      });
+      const { adapter, wsMock } = makeAdapter();
       const received: InboundMessage[] = [];
       adapter.onMessage((msg) => received.push(msg));
 
       await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await adapter.stop();
+      const ws = wsMock.instances[0]!;
+      ws.simulateMessage(
+        makeEnvelope("+15559876543", "group msg", 1700000001, { groupId: "groupabc123" }),
+      );
 
       assert.equal(received.length, 1);
       assert.equal(received[0]!.channelId, "group:groupabc123");
       assert.equal(received[0]!.text, "group msg");
+
+      await adapter.stop();
     });
 
     it("skips envelopes without dataMessage", async () => {
-      const item = {
-        envelope: {
-          source: "+15559876543",
-          sourceNumber: "+15559876543",
-          timestamp: 1700000000,
-        },
-        account: "+15551234567",
-      };
-      const mock = createMockFetch([
-        { ok: true, status: 200, result: [item] },
-        { ok: true, status: 200, result: [] },
-      ]);
-
-      const { adapter } = makeAdapter({
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
-      });
+      const { adapter, wsMock } = makeAdapter();
       const received: InboundMessage[] = [];
       adapter.onMessage((msg) => received.push(msg));
 
       await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await adapter.stop();
+      wsMock.instances[0]!.simulateMessage({
+        envelope: { source: "+15559876543", sourceNumber: "+15559876543", timestamp: 1700000000 },
+      });
 
       assert.equal(received.length, 0);
+      await adapter.stop();
     });
 
     it("skips envelopes with null message", async () => {
-      const item = makeSignalReceiveItem(
-        "+15559876543",
-        "",
-        1700000000,
-        { noMessage: true },
-      );
-      const mock = createMockFetch([
-        { ok: true, status: 200, result: [item] },
-        { ok: true, status: 200, result: [] },
-      ]);
-
-      const { adapter } = makeAdapter({
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
-      });
+      const { adapter, wsMock } = makeAdapter();
       const received: InboundMessage[] = [];
       adapter.onMessage((msg) => received.push(msg));
 
       await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await adapter.stop();
+      wsMock.instances[0]!.simulateMessage(
+        makeEnvelope("+15559876543", "", 1700000000, { noMessage: true }),
+      );
 
       assert.equal(received.length, 0);
+      await adapter.stop();
     });
 
     it("skips self-messages (source === bot number)", async () => {
-      const item = makeSignalReceiveItem(
-        "+15551234567",
-        "self message",
-        1700000000,
-      );
-      const mock = createMockFetch([
-        { ok: true, status: 200, result: [item] },
-        { ok: true, status: 200, result: [] },
-      ]);
-
-      const { adapter } = makeAdapter({
-        number: "+15551234567",
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
-      });
+      const { adapter, wsMock } = makeAdapter({ number: "+15551234567" });
       const received: InboundMessage[] = [];
       adapter.onMessage((msg) => received.push(msg));
 
       await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await adapter.stop();
+      wsMock.instances[0]!.simulateMessage(
+        makeEnvelope("+15551234567", "self message", 1700000000),
+      );
 
       assert.equal(received.length, 0);
+      await adapter.stop();
     });
 
     it("logs inbound messages with correct payload", async () => {
-      const item = makeSignalReceiveItem("+15559876543", "test msg", 1700000002, {
-        sourceName: "Alice Smith",
-      });
-      const mock = createMockFetch([
-        { ok: true, status: 200, result: [item] },
-        { ok: true, status: 200, result: [] },
-      ]);
-
       const logger = createMockLogger();
-      const { adapter } = makeAdapter({
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
-        logger,
-      });
+      const { adapter, wsMock } = makeAdapter({ logger });
       adapter.onMessage(() => {});
 
       await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await adapter.stop();
+      wsMock.instances[0]!.simulateMessage(
+        makeEnvelope("+15559876543", "test msg", 1700000002, { sourceName: "Alice Smith" }),
+      );
 
       const inboundLog = logger.logs.find(
-        (l) => l["eventType"] === "message:inbound",
+        (l) => l["eventType"] === "message:inbound" &&
+          (l["payload"] as Record<string, unknown>)["action"] !== "ws_error" &&
+          (l["payload"] as Record<string, unknown>)["action"] !== "ws_closed",
       );
       assert.ok(inboundLog);
       const payload = inboundLog["payload"] as Record<string, unknown>;
@@ -474,138 +560,69 @@ describe("SignalAdapter", () => {
       assert.equal(payload["senderId"], "+15559876543");
       assert.equal(payload["senderName"], "Alice Smith");
       assert.equal(payload["textLength"], 8);
+
+      await adapter.stop();
     });
 
     it("does not crash if no callback registered", async () => {
-      const item = makeSignalReceiveItem(
-        "+15559876543",
-        "orphan msg",
-        1700000003,
-      );
-      const mock = createMockFetch([
-        { ok: true, status: 200, result: [item] },
-        { ok: true, status: 200, result: [] },
-      ]);
-
-      const { adapter } = makeAdapter({
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
-      });
+      const { adapter, wsMock } = makeAdapter();
 
       await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await adapter.stop();
-    });
-
-    it("logs polling errors without crashing", async () => {
-      let callCount = 0;
-      const fn = (async () => {
-        callCount++;
-        if (callCount === 1) throw new Error("Temporary network failure");
-        return {
-          json: async () => ({ result: [] }),
-          status: 200,
-          ok: true,
-        };
-      }) as unknown as typeof fetch;
-
-      const logger = createMockLogger();
-      const { adapter } = makeAdapter({
-        fetchFn: fn,
-        pollingIntervalMs: 10,
-        logger,
-      });
-
-      await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      await adapter.stop();
-
-      const errorLog = logger.logs.find(
-        (l) =>
-          (l["payload"] as Record<string, unknown>)["action"] === "poll_error",
+      wsMock.instances[0]!.simulateMessage(
+        makeEnvelope("+15559876543", "orphan msg", 1700000003),
       );
-      assert.ok(errorLog, "should log polling error");
+
+      await adapter.stop();
     });
 
     it("stores raw envelope in InboundMessage", async () => {
-      const item = makeSignalReceiveItem(
-        "+15559876543",
-        "raw test",
-        1700000004,
-      );
-      const mock = createMockFetch([
-        { ok: true, status: 200, result: [item] },
-        { ok: true, status: 200, result: [] },
-      ]);
-
-      const { adapter } = makeAdapter({
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
-      });
+      const { adapter, wsMock } = makeAdapter();
       const received: InboundMessage[] = [];
       adapter.onMessage((msg) => received.push(msg));
 
+      const msg = makeEnvelope("+15559876543", "raw test", 1700000004);
       await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await adapter.stop();
+      wsMock.instances[0]!.simulateMessage(msg);
 
       assert.equal(received.length, 1);
-      assert.deepEqual(received[0]!.raw, item);
-    });
-  });
+      assert.deepEqual(received[0]!.raw, msg);
 
-  describe("receiveMessages API call", () => {
-    it("calls correct URL with encoded number and timeout", async () => {
-      const mock = createMockFetch([
-        { ok: true, status: 200, result: [] },
-      ]);
-
-      const { adapter } = makeAdapter({
-        number: "+15551234567",
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
-        pollingTimeoutSecs: 15,
-      });
-
-      await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 40));
       await adapter.stop();
-
-      assert.ok(mock.calls.length >= 1);
-      const firstCall = mock.calls[0]!.url;
-      assert.ok(
-        firstCall.includes("/v1/receive/"),
-        "should use /v1/receive endpoint",
-      );
-      assert.ok(
-        firstCall.includes("%2B15551234567"),
-        "should URL-encode the phone number",
-      );
-      assert.ok(
-        firstCall.includes("timeout=15"),
-        "should include timeout parameter",
-      );
     });
 
-    it("handles 204 No Content response", async () => {
-      const mock = createMockFetch([
-        { ok: true, status: 204, result: undefined },
-        { ok: true, status: 200, result: [] },
-      ]);
-
-      const { adapter } = makeAdapter({
-        fetchFn: mock.fn,
-        pollingIntervalMs: 10,
-      });
+    it("silently ignores non-JSON WebSocket messages", async () => {
+      const { adapter, wsMock } = makeAdapter();
       const received: InboundMessage[] = [];
       adapter.onMessage((msg) => received.push(msg));
 
       await adapter.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await adapter.stop();
+      const ws = wsMock.instances[0]!;
 
-      // Should not crash with 204
+      // Inject a raw non-JSON message directly
+      if (ws.onmessage) {
+        ws.onmessage.call(
+          ws as unknown as WebSocket,
+          { data: "not json {{" } as MessageEvent,
+        );
+      }
+
       assert.equal(received.length, 0);
+      await adapter.stop();
+    });
+
+    it("logs ws_error on WebSocket error", async () => {
+      const logger = createMockLogger();
+      const { adapter, wsMock } = makeAdapter({ logger });
+
+      await adapter.start();
+      wsMock.instances[0]!.simulateError();
+
+      const errLog = logger.logs.find(
+        (l) => (l["payload"] as Record<string, unknown>)["action"] === "ws_error",
+      );
+      assert.ok(errLog, "should log ws_error");
+
+      await adapter.stop();
     });
   });
 
