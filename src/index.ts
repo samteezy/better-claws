@@ -29,6 +29,9 @@ import { Scheduler } from "./scheduler/scheduler.js";
 import { SuggestionStore } from "./suggestions/suggestion-store.js";
 import { SuggestionWorker } from "./suggestions/suggestion-worker.js";
 import { CurationWorker } from "./memory/curation-worker.js";
+import { AgendaStore } from "./memory/agenda-store.js";
+import { ReflectionJob } from "./router/reflection-job.js";
+import { setAgendaStore } from "./tools/built-in/agenda.js";
 import { sage, stone, bold, dim, glyphs } from "./utils/ansi.js";
 
 // ── App Factory ───────────────────────────────────────────────────────────────
@@ -201,7 +204,8 @@ export async function createApp(config: BetterClawsConfig, options?: {
   });
   await longTermStore.load();
   setLongTermStore(longTermStore);
-  setRetriever(new TfIdfRetriever({ store: longTermStore }));
+  const retriever = new TfIdfRetriever({ store: longTermStore });
+  setRetriever(retriever);
 
   const compactionCfg = config.compaction;
   const compactor = compactionCfg?.enabled
@@ -213,6 +217,20 @@ export async function createApp(config: BetterClawsConfig, options?: {
     persona: config.systemContext?.persona,
     userContext: config.systemContext?.userContext,
   });
+
+  // ── Agenda & Reflection ──────────────────────────────────────────────────
+  const agendaStore = new AgendaStore(join("data", "memory", "agenda.jsonl"), logger);
+  await agendaStore.load();
+  setAgendaStore(agendaStore);
+
+  const reflectionLlmClient = weakLlmClient ?? llmClient;
+  const reflectionJob = new ReflectionJob(
+    reflectionLlmClient,
+    agendaStore,
+    longTermStore,
+    logger,
+    config.reflect ?? {},
+  );
 
   // ── Scheduler ───────────────────────────────────────────────────────────
   const scheduler = new Scheduler({
@@ -241,6 +259,9 @@ export async function createApp(config: BetterClawsConfig, options?: {
     promptBuilder,
     confirmationBroker,
     scheduler,
+    agendaStore,
+    reflectionJob,
+    retriever,
   });
 
   // ── Config-driven adapters ───────────────────────────────────────────────

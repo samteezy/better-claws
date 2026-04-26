@@ -358,6 +358,7 @@ export class Scheduler implements ChannelAdapter {
         cron: schedule.definition.cron,
         target: schedule.definition.target,
       },
+      synthetic: { kind: "cron" },
     };
 
     this.logger.log({

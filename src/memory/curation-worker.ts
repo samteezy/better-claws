@@ -33,13 +33,21 @@ export interface CurationWorkerOptions {
 
 // ── Distillation prompt ─────────────────────────────────────────────────────
 
-const DISTILLATION_SYSTEM_PROMPT = `You are a memory curation agent. Given a conversation log, extract durable facts, user preferences, project details, entity information, and procedures as structured memory entries.
+const DISTILLATION_SYSTEM_PROMPT = `You are a memory curation agent. Given a conversation log, extract durable facts, user preferences, project details, entity information, procedures, and observations about the AI assistant's own behaviour.
 
 Return a JSON array of objects, each with:
-- "category": one of "fact", "preference", "project", "entity", "procedure"
+- "category": one of "fact", "preference", "project", "entity", "procedure", "self"
 - "content": a concise statement of what was learned
 - "confidence": a number 0-1 indicating how confident you are this is a durable memory
 - "tags": an array of relevant keyword strings
+
+Category guidance:
+- "fact": objective facts about the world, the user's environment, or completed tasks
+- "preference": things the user likes, dislikes, or prefers
+- "project": ongoing work, goals, or initiatives
+- "entity": people, organisations, or systems referenced
+- "procedure": how-to knowledge, workflows, or steps
+- "self": patterns about the AI assistant's own performance — recurring struggles, capability gaps, or strengths observed in this session. Use tag "agent:self". Only include if something meaningful was observed.
 
 Only extract information that would be useful across future conversations. Do not include ephemeral details like greetings or one-time requests. Return [] if nothing durable was discussed.
 
@@ -48,6 +56,8 @@ Respond ONLY with valid JSON — no markdown, no explanation.`;
 // ── Consolidation prompt ────────────────────────────────────────────────────
 
 const CONSOLIDATION_SYSTEM_PROMPT = `You are a memory consolidation agent. Given a set of potentially overlapping or contradictory memory entries, identify which entries should be consolidated.
+
+Entries may belong to categories: "fact", "preference", "project", "entity", "procedure", or "self" (patterns about the AI assistant's own behaviour, tagged "agent:self").
 
 For each group of related entries, indicate which entry is the most current/accurate (the "winner") and which entries it supersedes.
 

@@ -167,6 +167,17 @@ const CONFIG_SCHEMA_SECTIONS: readonly ConfigSectionSchema[] = [
       { key: "keepRecentTokens", label: "Keep Recent Tokens", type: "number", description: "Tokens of recent history to preserve during compaction.", placeholder: "1000" },
     ],
   },
+  {
+    key: "reflect",
+    label: "Reflection & Agenda",
+    description: "Post-turn reflection runs a few minutes after each AI response to check for agenda items to raise and capture self-knowledge. All settings take effect without restart.",
+    fields: [
+      { key: "enabled", label: "Enabled", type: "boolean", description: "Enable post-turn reflection and proactive nudges. Default: true." },
+      { key: "delayMs", label: "Reflection Delay (ms)", type: "number", description: "Milliseconds to wait after an AI response before running reflection. Default: 240000 (4 min).", placeholder: "240000" },
+      { key: "cooldownMs", label: "Nudge Cooldown (ms)", type: "number", description: "Minimum time between proactive nudges per user. Default: 900000 (15 min).", placeholder: "900000" },
+      { key: "maxItemsInPrompt", label: "Max Agenda Items in Prompt", type: "number", description: "How many pending agenda items to inject into the AI's context window. Default: 5.", placeholder: "5" },
+    ],
+  },
 ];
 
 // ── MIME types ──────────────────────────────────────────────────────────────

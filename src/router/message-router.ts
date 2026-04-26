@@ -3,16 +3,20 @@ import {
   createErrorClass,
   isCapability,
   isStreamableAdapter,
+  type AgendaItem,
   type BetterClawsConfig,
   type ChannelAdapter,
+  type ChatMessage,
   type InboundMessage,
   type OutboundMessage,
+  type SessionState,
   type StreamEvent,
   type ToolCall,
 } from "../types.js";
 import { StreamableResponse } from "./streamable-response.js";
 import { validateSchema } from "../utils/schema-validator.js";
 import { sanitizeOutput } from "../utils/output-sanitizer.js";
+import { sanitizeMemoryContent } from "../utils/prompt-sanitizer.js";
 import { toErrorMessage } from "../utils/errors.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { Session, SessionManager } from "../sessions/session-manager.js";
@@ -24,6 +28,10 @@ import type { CompositeExecutor } from "../tools/composite-executor.js";
 import type { SecretManager } from "../secrets/secret-manager.js";
 import type { BuildResult, PromptBuilder } from "../prompt/prompt-builder.js";
 import { ConfirmationBroker } from "./confirmation-broker.js";
+import type { AgendaStore } from "../memory/agenda-store.js";
+import type { ReflectionJob } from "./reflection-job.js";
+import type { TfIdfRetriever } from "../memory/retrieval.js";
+import { registerSessionSender } from "../tools/built-in/agenda.js";
 
 export const RouterError = createErrorClass("RouterError", "router", "ROUTER_ERROR");
 
@@ -70,6 +78,9 @@ export interface MessageRouterOptions {
   readonly promptBuilder: PromptBuilder;
   readonly confirmationBroker?: ConfirmationBroker;
   readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
+  readonly agendaStore?: AgendaStore;
+  readonly reflectionJob?: ReflectionJob;
+  readonly retriever?: TfIdfRetriever;
 }
 
 export class MessageRouter {
@@ -85,12 +96,25 @@ export class MessageRouter {
   private readonly promptBuilder: PromptBuilder;
   private readonly confirmationBroker: ConfirmationBroker;
   private readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
+  private readonly agendaStore?: AgendaStore;
+  private readonly reflectionJob?: ReflectionJob;
+  private readonly retriever?: TfIdfRetriever;
   private readonly adapters = new Map<string, ChannelAdapter>();
   private readonly activeResponses = new Map<string, AbortController>();
   private readonly channelQueues = new Map<string, {
     activeCount: number;
     pending: InboundMessage[];
   }>();
+  private readonly reflectionHandles = new Map<string, { timer: NodeJS.Timeout; controller: AbortController }>();
+  private readonly lastNudgeSent = new Map<string, number>();
+  private readonly interactiveAdapters: ReadonlySet<string>;
+
+  private static readonly DEFAULT_REFLECT_DELAY_MS = 240_000;
+  private static readonly DEFAULT_REFLECT_COOLDOWN_MS = 900_000;
+  private static readonly DEFAULT_REFLECT_MAX_ITEMS = 5;
+  private static readonly DEFAULT_INTERACTIVE_ADAPTERS: ReadonlySet<string> = new Set([
+    "telegram", "discord", "slack", "webchat", "cli",
+  ]);
 
   static getSlashCommands(): readonly SlashCommandDescriptor[] {
     return SLASH_COMMANDS;
@@ -117,6 +141,12 @@ export class MessageRouter {
     this.confirmationBroker = options.confirmationBroker
       ?? new ConfirmationBroker(this.logger, this.config.security.confirmationTimeoutMs ?? 120_000);
     this.scheduler = options.scheduler;
+    this.agendaStore = options.agendaStore;
+    this.reflectionJob = options.reflectionJob;
+    this.retriever = options.retriever;
+    this.interactiveAdapters = this.config.reflect?.interactiveAdapters
+      ? new Set(this.config.reflect.interactiveAdapters)
+      : MessageRouter.DEFAULT_INTERACTIVE_ADAPTERS;
   }
 
   registerAdapter(adapter: ChannelAdapter): void {
@@ -242,10 +272,112 @@ export class MessageRouter {
   }
 
   async stop(): Promise<void> {
+    for (const { timer, controller } of this.reflectionHandles.values()) {
+      clearTimeout(timer);
+      controller.abort();
+    }
+    this.reflectionHandles.clear();
     for (const adapter of this.adapters.values()) {
       await adapter.stop();
     }
     await this.logger.close();
+  }
+
+  // ── Reflection (post-turn) ───────────────────────────────────────────────
+
+  private isInteractiveAdapter(adapterId: string): boolean {
+    if (this.config.reflect?.enabled === false) return false;
+    return this.interactiveAdapters.has(adapterId);
+  }
+
+  private armReflection(sessionState: SessionState, history: readonly ChatMessage[]): void {
+    if (!this.reflectionJob || !this.agendaStore) return;
+    this.cancelReflection(sessionState.id);
+
+    const delayMs = this.config.reflect?.delayMs ?? MessageRouter.DEFAULT_REFLECT_DELAY_MS;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      this.reflectionHandles.delete(sessionState.id);
+      void this.runReflection(sessionState, history, controller.signal);
+    }, delayMs);
+    this.reflectionHandles.set(sessionState.id, { timer, controller });
+  }
+
+  private cancelReflection(sessionId: string): void {
+    const handle = this.reflectionHandles.get(sessionId);
+    if (!handle) return;
+    clearTimeout(handle.timer);
+    handle.controller.abort();
+    this.reflectionHandles.delete(sessionId);
+  }
+
+  private async runReflection(
+    sessionState: SessionState,
+    history: readonly ChatMessage[],
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!this.reflectionJob || !this.agendaStore) return;
+    if (signal.aborted) return;
+
+    const cooldownMs = this.config.reflect?.cooldownMs ?? MessageRouter.DEFAULT_REFLECT_COOLDOWN_MS;
+    const lastNudge = this.lastNudgeSent.get(sessionState.senderId);
+    if (lastNudge !== undefined && Date.now() - lastNudge < cooldownMs) return;
+
+    const pendingItems = this.agendaStore.listPending(sessionState.senderId).filter(
+      (i) => this.agendaStore!.canRaise(i),
+    );
+    const result = await this.reflectionJob.run(sessionState, history.slice(-12), pendingItems, signal);
+
+    if (signal.aborted || !result.nudgeItemId) return;
+    const item = pendingItems.find((i) => i.id === result.nudgeItemId);
+    if (!item) return;
+
+    await this.deliverReflectNudge(sessionState, item, result.nudgeRationale ?? "");
+    await this.agendaStore.markRaised(result.nudgeItemId);
+    this.lastNudgeSent.set(sessionState.senderId, Date.now());
+  }
+
+  private async deliverReflectNudge(
+    sessionState: SessionState,
+    item: AgendaItem,
+    rationale: string,
+  ): Promise<void> {
+    const adapter = this.adapters.get(sessionState.adapterId);
+    if (!adapter) return;
+
+    const nudgePrompt = [
+      `You have a pending agenda item to raise with the user.`,
+      `Item: "${sanitizeMemoryContent(item.content, 500)}"`,
+      item.context ? `Context: "${sanitizeMemoryContent(item.context, 500)}"` : "",
+      rationale ? `Rationale: "${rationale}"` : "",
+      `Craft a natural, brief message to raise this — don't be abrupt. If it's a capability-gap item, frame it as asking the user for coaching or guidance.`,
+    ].filter(Boolean).join("\n");
+
+    const syntheticMessage: InboundMessage = {
+      id: randomUUID(),
+      adapterId: sessionState.adapterId,
+      channelId: sessionState.channelId,
+      senderId: sessionState.senderId,
+      text: nudgePrompt,
+      timestamp: Date.now(),
+      synthetic: { kind: "reflect", reason: `agenda:${item.id}` },
+    };
+
+    this.logger.log({
+      sessionId: sessionState.id,
+      eventType: "message:reflect",
+      component: "router",
+      payload: { action: "nudge_sent", agendaItemId: item.id, adapterId: sessionState.adapterId },
+    });
+
+    const streamable = this.handleMessageStream(syntheticMessage);
+
+    if (isStreamableAdapter(adapter)) {
+      await adapter.sendStream(sessionState.channelId, streamable);
+    } else {
+      const text = await streamable.text;
+      await adapter.send(sessionState.channelId, { channelId: sessionState.channelId, text });
+    }
   }
 
   async handleMessage(message: InboundMessage): Promise<OutboundMessage> {
@@ -284,6 +416,13 @@ export class MessageRouter {
         message.senderId,
       );
 
+      if (!message.synthetic) {
+        self.cancelReflection(session.id);
+      }
+
+      // ExecutionContext doesn't carry senderId; register here so the agenda tool can scope items
+      registerSessionSender(session.id, message.senderId);
+
       const cmd = message.text.trim();
 
       // Handle slash commands
@@ -293,10 +432,12 @@ export class MessageRouter {
         return;
       }
 
-      await self.sessionManager.appendToLog(session.id, {
-        type: "inbound",
-        message,
-      });
+      if (message.synthetic?.kind !== "reflect") {
+        await self.sessionManager.appendToLog(session.id, {
+          type: "inbound",
+          message,
+        });
+      }
 
       if (cmd === "/compact") {
         yield* self.handleCompactCommand(session, message);
@@ -310,7 +451,21 @@ export class MessageRouter {
 
       try {
         const history = await self.sessionManager.getHistory(session.id);
-        const tools = self.toolRegistry.getDescriptors();
+        // no side-effect tools in reflect turns
+        const tools = message.synthetic?.kind === "reflect"
+          ? []
+          : self.toolRegistry.getDescriptors();
+
+        const longTermMemories = self.retriever && message.text.trim().length > 0
+          ? self.retriever.retrieveWithInference(message.text, 5).map((r) => r.entry.content)
+          : undefined;
+
+        const agendaItems = self.agendaStore && message.synthetic?.kind !== "reflect"
+          ? self.agendaStore.serializeForPrompt(
+              message.senderId,
+              self.config.reflect?.maxItemsInPrompt ?? MessageRouter.DEFAULT_REFLECT_MAX_ITEMS,
+            )
+          : undefined;
 
         // Build prompt (single build), then auto-compact if needed
         let buildResult = self.promptBuilder.build({
@@ -318,6 +473,8 @@ export class MessageRouter {
           tools,
           currentDateTime: self.getCurrentDateTime(),
           adapterPrompt: self.getAdapterPrompt(message.adapterId),
+          longTermMemories: longTermMemories && longTermMemories.length > 0 ? longTermMemories : undefined,
+          agendaItems: agendaItems && agendaItems.length > 0 ? agendaItems : undefined,
         });
         buildResult = await self.autoCompactIfNeeded(session.id, buildResult);
 
@@ -343,6 +500,14 @@ export class MessageRouter {
           session,
           message,
         );
+
+        if (
+          message.synthetic?.kind !== "reflect" &&
+          !signal.aborted &&
+          self.isInteractiveAdapter(message.adapterId)
+        ) {
+          self.armReflection(session.state, history);
+        }
       } finally {
         self.activeResponses.delete(session.id);
       }

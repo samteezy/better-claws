@@ -32,6 +32,8 @@ export interface InboundMessage {
   readonly text: string;
   readonly timestamp: number;
   readonly raw?: unknown;
+  /** Set on system-generated messages (e.g. cron, post-turn reflection). */
+  readonly synthetic?: { readonly kind: "cron" | "reflect"; readonly reason?: string };
 }
 
 export interface OutboundMessage {
@@ -239,6 +241,8 @@ export const EVENT_TYPES = [
   "message:queue",
   "confirmation:request",
   "confirmation:result",
+  "message:reflect",
+  "agenda:write",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -419,6 +423,19 @@ export interface Suggestion {
   updatedAt: number;
 }
 
+export interface ReflectConfig {
+  /** Enable post-turn reflection. Default: true. */
+  readonly enabled?: boolean;
+  /** Milliseconds to wait after last AI response before running reflection. Default: 240_000 (4 min). */
+  readonly delayMs?: number;
+  /** Minimum milliseconds between nudges per sender. Default: 900_000 (15 min). */
+  readonly cooldownMs?: number;
+  /** Max pending agenda items to inject into the context window. Default: 5. */
+  readonly maxItemsInPrompt?: number;
+  /** Adapter IDs on which post-turn reflection is enabled. Default: ["telegram","discord","slack","webchat","cli"]. */
+  readonly interactiveAdapters?: readonly string[];
+}
+
 export interface BetterClawsConfig {
   readonly gateway: GatewayConfig;
   readonly llm: LlmConfig;
@@ -433,13 +450,38 @@ export interface BetterClawsConfig {
   readonly systemContext?: SystemContextConfig;
   readonly suggestions?: SuggestionsConfig;
   readonly schedules?: readonly import("./scheduler/scheduler.js").ScheduleDefinition[];
+  readonly reflect?: ReflectConfig;
+}
+
+// ── Agenda ───────────────────────────────────────────────────────────────────
+
+export type AgendaItemType = "follow-up" | "user-clarification" | "capability-gap" | "general";
+export type AgendaItemStatus = "pending" | "raised" | "snoozed" | "resolved";
+
+export interface AgendaItem {
+  readonly id: string;
+  /** Identifies the user this item belongs to (cross-session). */
+  readonly senderId: string;
+  readonly type: AgendaItemType;
+  readonly content: string;
+  status: AgendaItemStatus;
+  readonly priority: "low" | "normal" | "high";
+  readonly addedAt: number;
+  updatedAt: number;
+  lastRaisedAt?: number;
+  /** Session that generated this item (may be any adapter, including cron/webhook). */
+  readonly sourceSessionId?: string;
+  readonly sourceAdapterId?: string;
+  /** Brief rationale for why the item was added. */
+  readonly context?: string;
+  snoozeUntil?: number;
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
 export interface MemoryEntry {
   readonly id: string;
-  readonly category: "fact" | "preference" | "project" | "entity" | "procedure";
+  readonly category: "fact" | "preference" | "project" | "entity" | "procedure" | "self";
   readonly content: string;
   readonly sourceSessions: readonly string[];
   readonly created: number;

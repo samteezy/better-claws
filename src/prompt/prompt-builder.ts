@@ -35,6 +35,8 @@ export interface BuildInput {
   readonly workingMemory?: string;
   /** Optional retrieved long-term memories (placeholder for issue #5). */
   readonly longTermMemories?: readonly string[];
+  /** Serialized pending agenda items for this sender. */
+  readonly agendaItems?: readonly string[];
 }
 
 export interface BuildResult {
@@ -144,6 +146,12 @@ export class PromptBuilder {
         .map((m) => `- ${m}`)
         .join("\n");
       parts.push(`\n${wrapMemoryBlock("RelevantMemories", sanitizedMemories)}`);
+    }
+
+    // Inject AI agenda items if present
+    if (input.agendaItems && input.agendaItems.length > 0) {
+      const list = input.agendaItems.map((item) => `- ${sanitizeMemoryContent(item, 500)}`).join("\n");
+      parts.push(`\n${wrapMemoryBlock("MyAgenda", list)}`);
     }
 
     // Inject tool declarations

@@ -7,6 +7,7 @@ import * as memory from "./memory.js";
 import * as scheduleList from "./schedule-list.js";
 import * as scheduleAdd from "./schedule-add.js";
 import * as scheduleEdit from "./schedule-edit.js";
+import * as agenda from "./agenda.js";
 
 export const builtInTools: readonly BuiltInToolModule[] = [
   shell,
@@ -17,4 +18,5 @@ export const builtInTools: readonly BuiltInToolModule[] = [
   scheduleList,
   scheduleAdd,
   scheduleEdit,
+  agenda,
 ];
