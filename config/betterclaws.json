@@ -43,6 +43,10 @@
       "scheduling": {
         "path": "skills/scheduling",
         "enabled": true
+      },
+      "donut": {
+        "path": "skills/donut",
+        "enabled": true
       }
     }
   },
