@@ -32,7 +32,12 @@ export function createAdapter(
   switch (name) {
     case "telegram":
       requireFields(name, config, ["token"]);
-      return new TelegramAdapter({ token: config.token!, logger });
+      return new TelegramAdapter({
+        token: config.token!,
+        pollingIntervalMs: config.pollingIntervalMs,
+        pollingTimeoutSecs: config.pollingTimeoutSecs,
+        logger,
+      });
 
     case "discord":
       requireFields(name, config, ["token"]);

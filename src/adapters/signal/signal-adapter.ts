@@ -72,6 +72,7 @@ export interface SignalAdapterOptions {
 }
 
 const GROUP_PREFIX = "group:";
+const SIGNAL_GROUP_RECIPIENT_PREFIX = "group.";
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const SEND_TIMEOUT_MS = 30_000;
 
@@ -170,7 +171,7 @@ export class SignalAdapter implements ChannelAdapter {
   async send(channelId: string, message: OutboundMessage): Promise<void> {
     const isGroup = channelId.startsWith(GROUP_PREFIX);
     const recipient = isGroup
-      ? `group.${channelId.slice(GROUP_PREFIX.length)}`
+      ? `${SIGNAL_GROUP_RECIPIENT_PREFIX}${channelId.slice(GROUP_PREFIX.length)}`
       : channelId;
 
     await this.callApi("POST", `/v2/send`, {
