@@ -83,6 +83,22 @@ export interface MessageRouterOptions {
   readonly retriever?: TfIdfRetriever;
 }
 
+interface ChannelQueue {
+  activeCount: number;
+  pending: InboundMessage[];
+}
+
+interface ReflectionHandle {
+  timer: NodeJS.Timeout;
+  controller: AbortController;
+}
+
+interface ToolCallAccumulator {
+  id: string;
+  name: string;
+  args: string;
+}
+
 export class MessageRouter {
   private readonly sessionManager: SessionManager;
   private readonly llmClient: LlmClient;
@@ -101,11 +117,8 @@ export class MessageRouter {
   private readonly retriever?: TfIdfRetriever;
   private readonly adapters = new Map<string, ChannelAdapter>();
   private readonly activeResponses = new Map<string, AbortController>();
-  private readonly channelQueues = new Map<string, {
-    activeCount: number;
-    pending: InboundMessage[];
-  }>();
-  private readonly reflectionHandles = new Map<string, { timer: NodeJS.Timeout; controller: AbortController }>();
+  private readonly channelQueues = new Map<string, ChannelQueue>();
+  private readonly reflectionHandles = new Map<string, ReflectionHandle>();
   private readonly lastNudgeSent = new Map<string, number>();
   private readonly interactiveAdapters: ReadonlySet<string>;
 
@@ -708,7 +721,7 @@ export class MessageRouter {
 
         let iterationText = "";
         let iterationReasoning = "";
-        const toolAccumulators = new Map<number, { id: string; name: string; args: string }>();
+        const toolAccumulators = new Map<number, ToolCallAccumulator>();
 
         for await (const chunk of this.llmClient.chatStream(
           messages,

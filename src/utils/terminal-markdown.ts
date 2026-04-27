@@ -9,6 +9,12 @@
 
 import { bold, dim, italic, sage, stone, glyphs } from "./ansi.js";
 
+interface RenderLineResult {
+  text: string;
+  inCodeBlock: boolean;
+  suppress: boolean;
+}
+
 // ── Inline rendering ──────────────────────────────────────────────────────────
 
 /**
@@ -39,7 +45,7 @@ function renderInline(text: string): string {
  * Render a single complete line of markdown to ANSI output.
  * Returns the rendered line and whether we entered/exited a code block.
  */
-function renderLine(line: string, inCodeBlock: boolean): { text: string; inCodeBlock: boolean; suppress: boolean } {
+function renderLine(line: string, inCodeBlock: boolean): RenderLineResult {
   // ── Fenced code blocks ──────────────────────────────────────────────────
   if (line.trimStart().startsWith("```")) {
     return { text: "", inCodeBlock: !inCodeBlock, suppress: true };

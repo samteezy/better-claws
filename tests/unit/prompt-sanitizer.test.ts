@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { sanitizeMemoryContent, wrapMemoryBlock, SanitizerError } from "../../src/utils/prompt-sanitizer.js";
+import { BetterClawsError } from "../../src/types.js";
 
 describe("sanitizeMemoryContent", () => {
   describe("clean content", () => {
@@ -330,12 +331,14 @@ describe("sanitizeMemoryContent", () => {
 
     it("has component set to 'sanitizer'", () => {
       const error = new SanitizerError("test message", "TEST_CODE");
-      assert.strictEqual((error as any).component, "sanitizer");
+      assert.ok(error instanceof BetterClawsError);
+      assert.strictEqual(error.component, "sanitizer");
     });
 
     it("has correct code", () => {
       const error = new SanitizerError("test message", "TEST_CODE");
-      assert.strictEqual((error as any).code, "TEST_CODE");
+      assert.ok(error instanceof BetterClawsError);
+      assert.strictEqual(error.code, "TEST_CODE");
     });
   });
 });

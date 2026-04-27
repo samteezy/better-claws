@@ -29,6 +29,15 @@ interface SseEvent {
   data: string;
 }
 
+interface ParseSseBufferResult {
+  events: SseEvent[];
+  remainder: string;
+}
+
+function isJsonRpcResponse(msg: unknown): msg is JsonRpcResponse {
+  return typeof msg === "object" && msg !== null && "id" in msg && ("result" in msg || "error" in msg);
+}
+
 // ── Transport ────────────────────────────────────────────────────────────────
 
 export class SseTransport implements McpTransport {
@@ -242,8 +251,8 @@ export class SseTransport implements McpTransport {
             if (data.trim().length > 0) {
               try {
                 const msg = JSON.parse(data) as Record<string, unknown>;
-                if ("id" in msg && ("result" in msg || "error" in msg)) {
-                  this.handleResponse(msg as unknown as JsonRpcResponse);
+                if (isJsonRpcResponse(msg)) {
+                  this.handleResponse(msg);
                 }
               } catch {
                 // Not JSON — that's fine, responses come via SSE
@@ -269,8 +278,8 @@ export class SseTransport implements McpTransport {
       return;
     }
 
-    if ("id" in msg && ("result" in msg || "error" in msg)) {
-      this.handleResponse(msg as unknown as JsonRpcResponse);
+    if (isJsonRpcResponse(msg)) {
+      this.handleResponse(msg);
     } else if ("method" in msg && !("id" in msg)) {
       this.notificationHandler?.(
         msg["method"] as string,
@@ -287,7 +296,7 @@ export class SseTransport implements McpTransport {
     pending.resolve(response);
   }
 
-  private parseSseBuffer(buffer: string): { events: SseEvent[]; remainder: string } {
+  private parseSseBuffer(buffer: string): ParseSseBufferResult {
     const events: SseEvent[] = [];
     const blocks = buffer.split("\n\n");
     const remainder = blocks.pop() ?? "";

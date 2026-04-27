@@ -172,6 +172,8 @@ export class DiscordAdapter implements ChannelAdapter {
   // ── Gateway ─────────────────────────────────────────────────────────────
 
   private connectGateway(): void {
+    // WebSocket and GatewaySocket diverge on onmessage's event parameter type due to
+    // parameter contravariance. The double cast is intentional — we only access .data.
     const ws = new this.WebSocketCtor(this.gatewayUrl) as unknown as GatewaySocket;
     this.ws = ws;
 

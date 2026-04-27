@@ -10,6 +10,13 @@ import { readBody } from "../../utils/http.js";
 
 export const WebhookError = createErrorClass("WebhookError", "webhook", "WEBHOOK_ERROR");
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface PendingResponse {
+  resolve: (response: OutboundMessage) => void;
+  timer: NodeJS.Timeout;
+}
+
 // ── Webhook payload ─────────────────────────────────────────────────────────
 
 interface WebhookPayload {
@@ -51,10 +58,7 @@ export class WebhookAdapter implements ChannelAdapter {
 
   private callback: ((msg: InboundMessage) => void) | null = null;
   private server: Server | null = null;
-  private pendingResponses = new Map<string, {
-    resolve: (response: OutboundMessage) => void;
-    timer: NodeJS.Timeout;
-  }>();
+  private pendingResponses = new Map<string, PendingResponse>();
   private messageCounter = 0;
 
   constructor(options: WebhookAdapterOptions) {

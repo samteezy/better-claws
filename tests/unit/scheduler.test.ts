@@ -22,13 +22,22 @@ function createMockLogger() {
 
 function makeScheduler(
   schedules: ScheduleDefinition[],
-  overrides?: { tickIntervalMs?: number; logger?: ReturnType<typeof createMockLogger> },
+  overrides?: {
+    tickIntervalMs?: number;
+    logger?: ReturnType<typeof createMockLogger>;
+    saveConfig?: (config: Record<string, unknown>, path?: string) => Promise<void>;
+    rawConfig?: Record<string, unknown>;
+    configPath?: string;
+  },
 ) {
   const logger = overrides?.logger ?? createMockLogger();
   const scheduler = new Scheduler({
     schedules,
     logger,
     tickIntervalMs: overrides?.tickIntervalMs ?? 50,
+    saveConfig: overrides?.saveConfig,
+    rawConfig: overrides?.rawConfig,
+    configPath: overrides?.configPath,
   });
   return { scheduler, logger };
 }
@@ -648,13 +657,10 @@ describe("Scheduler", () => {
       const rawConfig = {};
 
       const { scheduler } = makeScheduler([], {
-        logger: createMockLogger(),
+        saveConfig: mockSave,
+        rawConfig,
+        configPath: "/fake/path",
       });
-
-      // Manually inject persistence
-      (scheduler as any).saveConfigFn = mockSave;
-      (scheduler as any).rawConfig = rawConfig;
-      (scheduler as any).configPath = "/fake/path";
 
       await scheduler.addSchedule({
         name: "Persist test",
@@ -675,10 +681,7 @@ describe("Scheduler", () => {
 
       const { scheduler } = makeScheduler([
         { id: "upd-test", name: "Update", cron: "* * * * *", prompt: "x" },
-      ]);
-
-      (scheduler as any).saveConfigFn = mockSave;
-      (scheduler as any).rawConfig = rawConfig;
+      ], { saveConfig: mockSave, rawConfig });
 
       await scheduler.updateSchedule("upd-test", { name: "Updated" });
 
@@ -694,10 +697,7 @@ describe("Scheduler", () => {
 
       const { scheduler } = makeScheduler([
         { id: "en-test", name: "Enable test", cron: "* * * * *", prompt: "x" },
-      ]);
-
-      (scheduler as any).saveConfigFn = mockSave;
-      (scheduler as any).rawConfig = rawConfig;
+      ], { saveConfig: mockSave, rawConfig });
 
       await scheduler.setEnabled("en-test", false);
 
@@ -714,10 +714,7 @@ describe("Scheduler", () => {
       const { scheduler } = makeScheduler([
         { id: "a1", name: "All 1", cron: "* * * * *", prompt: "x" },
         { id: "a2", name: "All 2", cron: "* * * * *", prompt: "x" },
-      ]);
-
-      (scheduler as any).saveConfigFn = mockSave;
-      (scheduler as any).rawConfig = rawConfig;
+      ], { saveConfig: mockSave, rawConfig });
 
       await scheduler.setAllEnabled(false);
 
@@ -733,10 +730,7 @@ describe("Scheduler", () => {
 
       const { scheduler } = makeScheduler([
         { id: "rm-test", name: "Remove test", cron: "* * * * *", prompt: "x" },
-      ]);
-
-      (scheduler as any).saveConfigFn = mockSave;
-      (scheduler as any).rawConfig = rawConfig;
+      ], { saveConfig: mockSave, rawConfig });
 
       await scheduler.removeSchedule("rm-test");
 
@@ -758,10 +752,7 @@ describe("Scheduler", () => {
           prompt: "test prompt",
           target: { adapterId: "telegram", channelId: "123" },
         },
-      ]);
-
-      (scheduler as any).saveConfigFn = mockSave;
-      (scheduler as any).rawConfig = rawConfig;
+      ], { saveConfig: mockSave, rawConfig });
 
       await scheduler.addSchedule({
         name: "Added schedule",

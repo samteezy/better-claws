@@ -226,6 +226,8 @@ export class SlackAdapter implements ChannelAdapter {
   }
 
   private connectWebSocket(wsUrl: string): void {
+    // WebSocket and SocketLike diverge on onmessage's event parameter type due to
+    // parameter contravariance. The double cast is intentional — we only access .data.
     const ws = new this.WebSocketCtor(wsUrl) as unknown as SocketLike;
     this.ws = ws;
 

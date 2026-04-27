@@ -1,5 +1,16 @@
 import type { StreamEvent, StreamableResponse as IStreamableResponse } from "../types.js";
 
+interface DeferredPromises {
+  resolveText: (v: string) => void;
+  rejectText: (e: unknown) => void;
+  resolveReasoning: (v: string | undefined) => void;
+  rejectReasoning: (e: unknown) => void;
+  resolveUsage: (v: { readonly promptTokens: number; readonly completionTokens: number }) => void;
+  rejectUsage: (e: unknown) => void;
+  resolveWarnings: (v: readonly string[]) => void;
+  rejectWarnings: (e: unknown) => void;
+}
+
 /**
  * Wraps an async generator of StreamEvents, providing both an async iterable
  * for chunk-by-chunk consumption and promise-based accessors for the final
@@ -28,7 +39,7 @@ export class StreamableResponse implements IStreamableResponse {
     const collectedWarnings: string[] = [];
 
     // Deferred promise wiring
-    const deferred = {
+    const deferred: DeferredPromises = {
       resolveText: (_v: string): void => {},
       rejectText: (_e: unknown): void => {},
       resolveReasoning: (_v: string | undefined): void => {},

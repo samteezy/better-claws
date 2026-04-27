@@ -14,6 +14,10 @@ import type { JsonRpcResponse } from "./json-rpc.js";
 
 export const HttpTransportError = createErrorClass("HttpTransportError", "http-transport", "HTTP_TRANSPORT_ERROR");
 
+function isJsonRpcResponse(msg: unknown): msg is JsonRpcResponse {
+  return typeof msg === "object" && msg !== null && "id" in msg && ("result" in msg || "error" in msg);
+}
+
 // ── Transport ────────────────────────────────────────────────────────────────
 
 export class HttpTransport implements McpTransport {
@@ -188,11 +192,11 @@ export class HttpTransport implements McpTransport {
         }
 
         // JSON-RPC response (has id + result/error)
-        if ("id" in msg && ("result" in msg || "error" in msg)) {
+        if (isJsonRpcResponse(msg)) {
           if (!resolved) {
             clearTimeout(timer);
             resolved = true;
-            resolve(msg as unknown as JsonRpcResponse);
+            resolve(msg);
           }
         }
         // Server notification (has method, no id)

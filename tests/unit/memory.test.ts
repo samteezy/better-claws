@@ -80,8 +80,8 @@ describe("memory tool", () => {
 
   afterEach(() => {
     workingMemoryRegistry.clear();
-    setLongTermStore(null as unknown as any);
-    setRetriever(null as unknown as any);
+    setLongTermStore(null);
+    setRetriever(null);
   });
 
   describe("set action", () => {
@@ -279,7 +279,7 @@ describe("memory tool", () => {
     });
 
     it("gracefully handles missing long-term store (null instance)", async () => {
-      setLongTermStore(null as any);
+      setLongTermStore(null);
 
       const result = await handler.execute(
         {
@@ -928,7 +928,7 @@ describe("memory tool", () => {
     });
 
     it("returns error when retriever is not initialized", async () => {
-      setRetriever(null as unknown as any);
+      setRetriever(null);
 
       const result = await handler.execute(
         { action: "search", query: "test" },

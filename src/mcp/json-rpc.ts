@@ -40,6 +40,14 @@ type PendingRequest = {
   timer: NodeJS.Timeout;
 };
 
+function isJsonRpcResponse(msg: unknown): msg is JsonRpcResponse {
+  return typeof msg === "object" && msg !== null && "id" in msg && ("result" in msg || "error" in msg);
+}
+
+function isJsonRpcNotification(msg: unknown): msg is JsonRpcNotification {
+  return typeof msg === "object" && msg !== null && "method" in msg && !("id" in msg);
+}
+
 // ── Transport ────────────────────────────────────────────────────────────────
 
 export class JsonRpcTransport implements McpTransport {
@@ -119,10 +127,10 @@ export class JsonRpcTransport implements McpTransport {
         continue; // skip malformed lines
       }
 
-      if ("id" in msg && ("result" in msg || "error" in msg)) {
-        this.handleResponse(msg as unknown as JsonRpcResponse);
-      } else if ("method" in msg && !("id" in msg)) {
-        this.handleNotification(msg as unknown as JsonRpcNotification);
+      if (isJsonRpcResponse(msg)) {
+        this.handleResponse(msg);
+      } else if (isJsonRpcNotification(msg)) {
+        this.handleNotification(msg);
       }
       // Ignore other messages (e.g., requests from server — not handled in client mode)
     }

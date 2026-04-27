@@ -23,7 +23,7 @@ export const workingMemoryRegistry = new Map<string, WorkingMemory>();
  */
 export let longTermStoreInstance: LongTermStore | null = null;
 
-export function setLongTermStore(store: LongTermStore): void {
+export function setLongTermStore(store: LongTermStore | null): void {
   longTermStoreInstance = store;
 }
 
@@ -33,7 +33,7 @@ export function setLongTermStore(store: LongTermStore): void {
  */
 export let retrieverInstance: TfIdfRetriever | null = null;
 
-export function setRetriever(retriever: TfIdfRetriever): void {
+export function setRetriever(retriever: TfIdfRetriever | null): void {
   retrieverInstance = retriever;
 }
 

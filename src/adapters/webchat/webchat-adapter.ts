@@ -13,6 +13,18 @@ import { authenticateBearer, readBody } from "../../utils/http.js";
 
 export const WebChatError = createErrorClass("WebChatError", "webchat", "WEBCHAT_ERROR");
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface PendingResponse {
+  resolve: (response: OutboundMessage) => void;
+  timer: NodeJS.Timeout;
+}
+
+interface PendingStreamResponse {
+  res: ServerResponse;
+  timer: NodeJS.Timeout;
+}
+
 // ── Options ─────────────────────────────────────────────────────────────────
 
 export interface WebChatAdapterOptions {
@@ -40,14 +52,8 @@ export class WebChatAdapter implements StreamableChannelAdapter {
   private readonly activeStreamResponses = new Map<string, ServerResponse>();
   private pendingConfirmationKey: string | null = null;
   private confirmationCallback: ((key: string, text: string) => boolean) | null = null;
-  private readonly pendingResponses = new Map<string, {
-    resolve: (response: OutboundMessage) => void;
-    timer: NodeJS.Timeout;
-  }>();
-  private readonly pendingStreamResponses = new Map<string, {
-    res: ServerResponse;
-    timer: NodeJS.Timeout;
-  }>();
+  private readonly pendingResponses = new Map<string, PendingResponse>();
+  private readonly pendingStreamResponses = new Map<string, PendingStreamResponse>();
 
   /** Response timeout in milliseconds. */
   private readonly timeoutMs: number;
