@@ -255,12 +255,26 @@ export class MessageRouter {
         const fullText = warnings.length > 0
           ? warnings.map((w) => `\u26A0 ${w}`).join("\n") + "\n\n" + text
           : text;
-        void adapter.send(msg.channelId, { channelId: msg.channelId, text: fullText });
+        void adapter.send(msg.channelId, { channelId: msg.channelId, text: fullText }).catch((sendErr: unknown) => {
+          this.logger.log({
+            sessionId: null,
+            eventType: "message:outbound",
+            component: "router",
+            payload: { action: "send_error", adapterId: adapter.id, channelId: msg.channelId, error: toErrorMessage(sendErr) },
+          });
+        });
       }).catch((err) => {
         const errorText = err instanceof Error
           ? `Sorry, something went wrong: ${err.message}`
           : "Sorry, an unexpected error occurred.";
-        void adapter.send(msg.channelId, { channelId: msg.channelId, text: errorText });
+        void adapter.send(msg.channelId, { channelId: msg.channelId, text: errorText }).catch((sendErr: unknown) => {
+          this.logger.log({
+            sessionId: null,
+            eventType: "message:outbound",
+            component: "router",
+            payload: { action: "send_error", adapterId: adapter.id, channelId: msg.channelId, error: toErrorMessage(sendErr) },
+          });
+        });
       });
     }
   }

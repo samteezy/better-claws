@@ -85,6 +85,7 @@ export class SignalAdapter implements ChannelAdapter {
 
   private callback: ((msg: InboundMessage) => void) | null = null;
   private running = false;
+  private pollCount = 0;
 
   // HTTP polling state
   private pollTimer: NodeJS.Timeout | null = null;
@@ -185,6 +186,16 @@ export class SignalAdapter implements ChannelAdapter {
 
   private async poll(): Promise<void> {
     if (!this.running) return;
+
+    this.pollCount++;
+    if (this.pollCount % 20 === 0) {
+      this.logger.log({
+        sessionId: null,
+        eventType: "config:change",
+        component: "signal",
+        payload: { action: "poll_heartbeat", pollCount: this.pollCount },
+      });
+    }
 
     try {
       const items = await this.receiveMessages();
@@ -308,9 +319,9 @@ export class SignalAdapter implements ChannelAdapter {
     const data = envelope.dataMessage;
 
     if (!data?.message) return;
-    if (envelope.source === this.number) return;
 
     const isGroup = data.groupInfo?.groupId != null;
+    if (!isGroup && envelope.source === this.number) return;
     const channelId = isGroup
       ? `${GROUP_PREFIX}${data.groupInfo!.groupId}`
       : envelope.source;
