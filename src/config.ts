@@ -102,7 +102,11 @@ export function resolveEnvSecrets(obj: unknown): unknown {
   return obj;
 }
 
-function deepMerge<T extends Record<string, unknown>>(
+export function deriveLocalConfigPath(configPath: string): string {
+  return configPath.replace(/\.json$/, ".local.json");
+}
+
+export function deepMerge<T extends Record<string, unknown>>(
   target: T,
   source: Record<string, unknown>,
 ): T {

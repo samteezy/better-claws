@@ -9,7 +9,7 @@ import { join, extname, resolve } from "node:path";
 import { createErrorClass, type BetterClawsConfig, type ToolPolicy } from "../types.js";
 import type { StructuredLogger } from "../logger/structured-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
-import { saveConfig } from "../config.js";
+import { saveConfig, deepMerge } from "../config.js";
 import { authenticateBearer, readBody } from "../utils/http.js";
 import { workingMemoryRegistry } from "../tools/built-in/memory.js";
 import { toErrorMessage } from "../utils/errors.js";
@@ -50,6 +50,10 @@ export interface DashboardContext {
   readonly configPath?: string;
   /** Raw config as read from disk (with env: references intact). Used for saving. */
   rawConfig?: Record<string, unknown>;
+  /** Path to the local config override file. Dashboard writes target this file. */
+  readonly localConfigPath?: string;
+  /** Raw local config as read from disk. Dashboard's write target (deep-merged on save). */
+  rawLocalConfig?: Record<string, unknown>;
   /** Scheduler instance for schedule management. */
   readonly scheduler?: import("../scheduler/scheduler.js").Scheduler;
   /** Long-term memory store instance for memory management. */
@@ -790,14 +794,9 @@ export class DashboardServer {
       return;
     }
 
-    // Merge section into config
-    const currentSection = (this.context.config as unknown as Record<string, unknown>)[sectionKey];
-    const merged = typeof currentSection === "object" && currentSection !== null && !Array.isArray(currentSection)
-      ? { ...currentSection as Record<string, unknown>, ...body }
-      : body;
-
     try {
-      await this.persistConfig({ [sectionKey]: merged });
+      // Write only what the user submitted — persistConfig deep-merges into .local.json
+      await this.persistConfig({ [sectionKey]: body });
     } catch (err) {
       this.sendJson(res, 500, {
         error: `Failed to save config: ${toErrorMessage(err)}`,
@@ -805,7 +804,11 @@ export class DashboardServer {
       return;
     }
 
-    // Update in-memory config
+    // Update in-memory effective config for display
+    const currentSection = (this.context.config as unknown as Record<string, unknown>)[sectionKey];
+    const merged = typeof currentSection === "object" && currentSection !== null && !Array.isArray(currentSection)
+      ? { ...currentSection as Record<string, unknown>, ...body }
+      : body;
     (this.context.config as unknown as Record<string, unknown>)[sectionKey] = merged;
 
     this.logger.log({
@@ -821,16 +824,18 @@ export class DashboardServer {
   // ── Config persistence helper ───────────────────────────────────────────
 
   private async persistConfig(updates: Record<string, unknown>): Promise<void> {
-    if (!this.context.rawConfig) {
-      throw new DashboardError("No raw config available for saving", "NO_RAW_CONFIG");
+    if (!this.context.localConfigPath) {
+      throw new DashboardError(
+        "No local config path configured — cannot persist settings",
+        "NO_LOCAL_CONFIG_PATH",
+      );
     }
 
-    // Merge updates into raw config
-    for (const [key, value] of Object.entries(updates)) {
-      this.context.rawConfig[key] = value;
-    }
+    const current = this.context.rawLocalConfig ?? {};
+    const next = deepMerge(current, updates);
+    this.context.rawLocalConfig = next;
 
-    await saveConfig(this.context.rawConfig, this.context.configPath);
+    await saveConfig(next, this.context.localConfigPath);
   }
 
   // ── Restart endpoint ─────────────────────────────────────────────────

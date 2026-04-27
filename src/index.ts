@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { loadConfig, resolveWeakLlmConfig, saveConfig } from "./config.js";
+import { loadConfig, resolveWeakLlmConfig, saveConfig, deriveLocalConfigPath } from "./config.js";
 import { StructuredLogger } from "./logger/structured-logger.js";
 import { LlmClient } from "./llm/llm-client.js";
 import { ToolRegistry } from "./tools/registry.js";
@@ -40,6 +40,8 @@ export async function createApp(config: BetterClawsConfig, options?: {
   dashboard?: boolean;
   configPath?: string;
   rawConfig?: Record<string, unknown>;
+  localConfigPath?: string;
+  rawLocalConfig?: Record<string, unknown>;
 }): Promise<{
   router: MessageRouter;
   dashboard: DashboardServer | null;
@@ -370,6 +372,8 @@ export async function createApp(config: BetterClawsConfig, options?: {
         })),
         configPath: options?.configPath,
         rawConfig: options?.rawConfig,
+        localConfigPath: options?.localConfigPath,
+        rawLocalConfig: options?.rawLocalConfig ?? {},
         scheduler,
         longTermStore,
         suggestionStore,
@@ -415,6 +419,15 @@ async function main(): Promise<void> {
     // Config file may not exist — start with empty object
   }
 
+  const resolvedLocalConfigPath = deriveLocalConfigPath(resolvedConfigPath);
+  let rawLocalConfig: Record<string, unknown> = {};
+  try {
+    const localRaw = await readFile(resolvedLocalConfigPath, "utf-8");
+    rawLocalConfig = JSON.parse(localRaw) as Record<string, unknown>;
+  } catch {
+    // ENOENT is fine — dashboard will create it on first save
+  }
+
   // ── Welcome banner ─────────────────────────────────────────────────────
   process.stdout.write("\n");
   process.stdout.write("  " + sage(bold("betterClaws")) + " " + dim("v0.1.0") + "\n");
@@ -437,6 +450,8 @@ async function main(): Promise<void> {
     dashboard: dashboardFlag || undefined,
     configPath: resolvedConfigPath,
     rawConfig,
+    localConfigPath: resolvedLocalConfigPath,
+    rawLocalConfig,
   });
 
   if (dashboard) {
