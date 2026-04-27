@@ -171,7 +171,8 @@ export class SignalAdapter implements ChannelAdapter {
   async send(channelId: string, message: OutboundMessage): Promise<void> {
     const isGroup = channelId.startsWith(GROUP_PREFIX);
     const recipient = isGroup
-      ? `${SIGNAL_GROUP_RECIPIENT_PREFIX}${channelId.slice(GROUP_PREFIX.length)}`
+      ? SIGNAL_GROUP_RECIPIENT_PREFIX +
+        Buffer.from(channelId.slice(GROUP_PREFIX.length), "utf8").toString("base64")
       : channelId;
 
     await this.callApi("POST", `/v2/send`, {

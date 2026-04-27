@@ -246,7 +246,8 @@ describe("SignalAdapter", () => {
       });
 
       const body = mock.calls[0]!.body as Record<string, unknown>;
-      assert.deepEqual(body["recipients"], ["group.abc123xyz"]);
+      const expected = "group." + Buffer.from("abc123xyz", "utf8").toString("base64");
+      assert.deepEqual(body["recipients"], [expected]);
     });
 
     it("throws SignalError with NETWORK_ERROR on fetch failure", async () => {
