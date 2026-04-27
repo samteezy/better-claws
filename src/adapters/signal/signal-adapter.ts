@@ -29,11 +29,13 @@ interface SignalEnvelope {
   readonly timestamp?: number;
 }
 
-interface SignalWsMessage {
+// Both HTTP and WebSocket responses share the envelope shape; account is optional.
+interface SignalMessage {
   readonly envelope: SignalEnvelope;
+  readonly account?: string;
 }
 
-function isSignalWsMessage(data: unknown): data is SignalWsMessage {
+function isSignalMessage(data: unknown): data is SignalMessage {
   return (
     typeof data === "object" &&
     data !== null &&
@@ -48,12 +50,19 @@ function isSignalWsMessage(data: unknown): data is SignalWsMessage {
 export interface SignalAdapterOptions {
   readonly apiUrl: string;
   readonly number: string;
-  /** Base delay in ms between reconnect attempts (doubles each attempt, caps at 60s). Default: 3000. */
+  /**
+   * "http"      — long-poll via GET /v1/receive (default; works in normal mode)
+   * "websocket" — persistent WebSocket stream (requires JSON-RPC mode)
+   */
+  readonly mode?: "http" | "websocket";
+  /** HTTP mode: interval between polls. WebSocket mode: base reconnect delay. Default: 3000. */
   readonly pollingIntervalMs?: number;
+  /** HTTP mode: server-side long-poll timeout in seconds. Default: 10. */
+  readonly pollingTimeoutSecs?: number;
   readonly logger: StructuredLogger;
   /** Override fetch for testing. */
   readonly fetchFn?: typeof fetch;
-  /** Override WebSocket constructor for testing. */
+  /** Override WebSocket constructor for testing (websocket mode only). */
   readonly wsFactory?: (url: string) => WebSocket;
 }
 
@@ -66,15 +75,22 @@ export class SignalAdapter implements ChannelAdapter {
   readonly name = "Signal";
 
   private readonly apiUrl: string;
-  private readonly wsUrl: string;
   private readonly number: string;
-  private readonly baseReconnectDelayMs: number;
+  private readonly mode: "http" | "websocket";
+  private readonly pollingIntervalMs: number;
+  private readonly pollingTimeoutSecs: number;
   private readonly logger: StructuredLogger;
   private readonly fetchFn: typeof fetch;
   private readonly wsFactory: (url: string) => WebSocket;
 
   private callback: ((msg: InboundMessage) => void) | null = null;
   private running = false;
+
+  // HTTP polling state
+  private pollTimer: NodeJS.Timeout | null = null;
+
+  // WebSocket state
+  private readonly wsUrl: string;
   private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectDelay: number;
@@ -92,8 +108,10 @@ export class SignalAdapter implements ChannelAdapter {
     this.apiUrl = options.apiUrl.replace(/\/+$/, "");
     this.wsUrl = this.apiUrl.replace(/^http/, "ws");
     this.number = options.number;
-    this.baseReconnectDelayMs = options.pollingIntervalMs ?? 3000;
-    this.reconnectDelay = this.baseReconnectDelayMs;
+    this.mode = options.mode ?? "http";
+    this.pollingIntervalMs = options.pollingIntervalMs ?? 3000;
+    this.pollingTimeoutSecs = options.pollingTimeoutSecs ?? 10;
+    this.reconnectDelay = this.pollingIntervalMs;
     this.logger = options.logger;
     this.fetchFn = options.fetchFn ?? fetch;
     this.wsFactory = options.wsFactory ?? ((url: string) => new WebSocket(url));
@@ -105,13 +123,23 @@ export class SignalAdapter implements ChannelAdapter {
       sessionId: null,
       eventType: "config:change",
       component: "signal",
-      payload: { action: "start", reconnectDelayMs: this.baseReconnectDelayMs },
+      payload: { action: "start", mode: this.mode },
     });
-    this.connect();
+    if (this.mode === "websocket") {
+      this.connect();
+    } else {
+      this.schedulePoll();
+    }
   }
 
   async stop(): Promise<void> {
     this.running = false;
+    // HTTP mode cleanup
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer);
+      this.pollTimer = null;
+    }
+    // WebSocket mode cleanup
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -146,6 +174,68 @@ export class SignalAdapter implements ChannelAdapter {
     });
   }
 
+  // ── HTTP polling ──────────────────────────────────────────────────────────
+
+  private schedulePoll(): void {
+    if (!this.running) return;
+    this.pollTimer = setTimeout(() => {
+      void this.poll();
+    }, this.pollingIntervalMs);
+  }
+
+  private async poll(): Promise<void> {
+    if (!this.running) return;
+
+    try {
+      const items = await this.receiveMessages();
+      for (const item of items) {
+        this.processMessage(item);
+      }
+    } catch (err) {
+      this.logger.log({
+        sessionId: null,
+        eventType: "message:inbound",
+        component: "signal",
+        payload: { error: toErrorMessage(err), action: "poll_error" },
+      });
+    }
+
+    this.schedulePoll();
+  }
+
+  private async receiveMessages(): Promise<readonly SignalMessage[]> {
+    const encodedNumber = encodeURIComponent(this.number);
+    const path = `/v1/receive/${encodedNumber}?timeout=${this.pollingTimeoutSecs}`;
+    const url = `${this.apiUrl}${path}`;
+    // 2× server timeout gives enough buffer for signal-cli processing overhead.
+    const abortMs = this.pollingTimeoutSecs * 2 * 1000;
+
+    let response: Response;
+    try {
+      response = await this.fetchFn(url, {
+        method: "GET",
+        signal: AbortSignal.timeout(abortMs),
+      });
+    } catch (err) {
+      throw new SignalError(
+        `Network error calling GET ${path}: ${toErrorMessage(err)}`,
+        "NETWORK_ERROR",
+      );
+    }
+
+    if (response.status === 204) return [];
+
+    let result: unknown;
+    try {
+      result = await response.json();
+    } catch {
+      return [];
+    }
+
+    if (!Array.isArray(result)) return [];
+    return result as SignalMessage[];
+  }
+
   // ── WebSocket ─────────────────────────────────────────────────────────────
 
   private connect(): void {
@@ -157,7 +247,7 @@ export class SignalAdapter implements ChannelAdapter {
     this.ws = ws;
 
     ws.onopen = () => {
-      this.reconnectDelay = this.baseReconnectDelayMs;
+      this.reconnectDelay = this.pollingIntervalMs;
       this.logger.log({
         sessionId: null,
         eventType: "config:change",
@@ -174,8 +264,8 @@ export class SignalAdapter implements ChannelAdapter {
       } catch {
         return;
       }
-      if (isSignalWsMessage(data)) {
-        this.processEnvelope(data);
+      if (isSignalMessage(data)) {
+        this.processMessage(data);
       }
     };
 
@@ -211,7 +301,9 @@ export class SignalAdapter implements ChannelAdapter {
     }, delay);
   }
 
-  private processEnvelope(item: SignalWsMessage): void {
+  // ── Shared message processing ─────────────────────────────────────────────
+
+  private processMessage(item: SignalMessage): void {
     const { envelope } = item;
     const data = envelope.dataMessage;
 
@@ -249,7 +341,7 @@ export class SignalAdapter implements ChannelAdapter {
     this.callback?.(inbound);
   }
 
-  // ── API helpers (send only) ───────────────────────────────────────────────
+  // ── API helpers ──────────────────────────────────────────────────────────
 
   private async callApi<T>(
     method: "GET" | "POST",

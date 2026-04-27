@@ -298,6 +298,7 @@ export interface AdapterConfig {
   // Signal
   readonly apiUrl?: string;
   readonly number?: string;
+  readonly mode?: "http" | "websocket";
   // Webhook
   readonly host?: string;
   readonly port?: number;

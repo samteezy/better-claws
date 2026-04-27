@@ -61,6 +61,7 @@ export function createAdapter(
       return new SignalAdapter({
         apiUrl: config.apiUrl!,
         number: config.number!,
+        mode: config.mode,
         logger,
       });
 
