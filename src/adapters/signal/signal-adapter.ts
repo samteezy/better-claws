@@ -261,6 +261,12 @@ export class SignalAdapter implements ChannelAdapter {
 
     const encodedNumber = encodeURIComponent(this.number);
     const url = `${this.wsUrl}/v1/receive/${encodedNumber}`;
+    this.logger.log({
+      sessionId: null,
+      eventType: "config:change",
+      component: "signal",
+      payload: { action: "ws_connecting", url },
+    });
     const ws = this.wsFactory(url);
     this.ws = ws;
 
@@ -284,26 +290,44 @@ export class SignalAdapter implements ChannelAdapter {
       }
       if (isSignalMessage(data)) {
         this.processMessage(data);
+      } else {
+        this.logger.log({
+          sessionId: null,
+          eventType: "message:inbound",
+          component: "signal",
+          payload: {
+            action: "ws_message_unrecognized",
+            sample: event.data.slice(0, 120),
+          },
+        });
       }
     };
 
-    ws.onerror = () => {
+    ws.onerror = (event: Event) => {
+      // Node's `ws` ErrorEvent carries `message` and `error`; browsers do not.
+      const ev = event as Event & { message?: unknown; error?: unknown };
+      const error = toErrorMessage(ev.error ?? ev.message ?? event);
       this.logger.log({
         sessionId: null,
         eventType: "message:inbound",
         component: "signal",
-        payload: { action: "ws_error" },
+        payload: { action: "ws_error", error },
       });
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
       this.ws = null;
       if (!this.running) return;
       this.logger.log({
         sessionId: null,
         eventType: "message:inbound",
         component: "signal",
-        payload: { action: "ws_closed", reconnectDelayMs: this.reconnectDelay },
+        payload: {
+          action: "ws_closed",
+          code: event.code,
+          reason: event.reason,
+          reconnectDelayMs: this.reconnectDelay,
+        },
       });
       this.scheduleReconnect();
     };

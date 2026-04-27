@@ -48,16 +48,24 @@ class MockWebSocket {
     }
   }
 
-  simulateError(): void {
+  simulateError(message?: string): void {
     if (this.onerror) {
-      this.onerror.call(this as unknown as WebSocket, new Event("error"));
+      const ev = new Event("error") as Event & { message?: string };
+      if (message !== undefined) ev.message = message;
+      this.onerror.call(this as unknown as WebSocket, ev);
     }
   }
 
-  simulateClose(code = 1006): void {
+  simulateClose(code = 1006, reason = ""): void {
     this.readyState = 3;
     if (this.onclose) {
-      this.onclose.call(this as unknown as WebSocket, { code, reason: "" } as CloseEvent);
+      this.onclose.call(this as unknown as WebSocket, { code, reason } as CloseEvent);
+    }
+  }
+
+  simulateRawMessage(data: string): void {
+    if (this.onmessage) {
+      this.onmessage.call(this as unknown as WebSocket, { data } as MessageEvent);
     }
   }
 }
@@ -527,6 +535,96 @@ describe("SignalAdapter", () => {
         (l) => (l["payload"] as Record<string, unknown>)["action"] === "ws_error",
       );
       assert.ok(errLog, "should log ws_error");
+
+      await adapter.stop();
+    });
+
+    it("includes error detail in ws_error payload", async () => {
+      const logger = createMockLogger();
+      const { adapter, wsMock } = makeAdapter({ mode: "websocket", logger });
+
+      await adapter.start();
+      wsMock.instances[0]!.simulateError("connect ECONNREFUSED 127.0.0.1:8080");
+
+      const errLog = logger.logs.find(
+        (l) => (l["payload"] as Record<string, unknown>)["action"] === "ws_error",
+      );
+      assert.ok(errLog);
+      const payload = errLog["payload"] as Record<string, unknown>;
+      assert.equal(typeof payload["error"], "string");
+      assert.ok(
+        (payload["error"] as string).includes("ECONNREFUSED"),
+        `expected error to include ECONNREFUSED, got: ${String(payload["error"])}`,
+      );
+
+      await adapter.stop();
+    });
+
+    it("logs ws_connecting with the resolved url before opening", async () => {
+      const logger = createMockLogger();
+      const { adapter } = makeAdapter({
+        mode: "websocket",
+        number: "+15551234567",
+        logger,
+      });
+
+      await adapter.start();
+
+      const connectingLog = logger.logs.find(
+        (l) =>
+          (l["payload"] as Record<string, unknown>)["action"] === "ws_connecting",
+      );
+      assert.ok(connectingLog, "should log ws_connecting");
+      const payload = connectingLog["payload"] as Record<string, unknown>;
+      assert.equal(typeof payload["url"], "string");
+      assert.ok((payload["url"] as string).startsWith("ws://"));
+      assert.ok((payload["url"] as string).includes("%2B15551234567"));
+
+      await adapter.stop();
+    });
+
+    it("includes code and reason in ws_closed payload", async () => {
+      const logger = createMockLogger();
+      const { adapter, wsMock } = makeAdapter({
+        mode: "websocket",
+        pollingIntervalMs: 10,
+        logger,
+      });
+
+      await adapter.start();
+      wsMock.instances[0]!.simulateClose(1006, "abnormal closure");
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      const closeLog = logger.logs.find(
+        (l) => (l["payload"] as Record<string, unknown>)["action"] === "ws_closed",
+      );
+      assert.ok(closeLog);
+      const payload = closeLog["payload"] as Record<string, unknown>;
+      assert.equal(payload["code"], 1006);
+      assert.equal(payload["reason"], "abnormal closure");
+
+      await adapter.stop();
+    });
+
+    it("logs ws_message_unrecognized for JSON without an envelope", async () => {
+      const logger = createMockLogger();
+      const { adapter, wsMock } = makeAdapter({ mode: "websocket", logger });
+      adapter.onMessage(() => {});
+
+      await adapter.start();
+      wsMock.instances[0]!.simulateRawMessage(
+        JSON.stringify({ jsonrpc: "2.0", method: "receive", params: { foo: 1 } }),
+      );
+
+      const unrecognized = logger.logs.find(
+        (l) =>
+          (l["payload"] as Record<string, unknown>)["action"] ===
+          "ws_message_unrecognized",
+      );
+      assert.ok(unrecognized, "should log ws_message_unrecognized");
+      const payload = unrecognized["payload"] as Record<string, unknown>;
+      assert.equal(typeof payload["sample"], "string");
+      assert.ok((payload["sample"] as string).includes("jsonrpc"));
 
       await adapter.stop();
     });
