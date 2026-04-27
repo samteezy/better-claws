@@ -299,6 +299,8 @@ export interface AdapterConfig {
   readonly apiUrl?: string;
   readonly number?: string;
   readonly mode?: "http" | "websocket";
+  readonly pollingIntervalMs?: number;
+  readonly pollingTimeoutSecs?: number;
   // Webhook
   readonly host?: string;
   readonly port?: number;

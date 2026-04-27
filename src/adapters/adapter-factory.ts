@@ -62,6 +62,8 @@ export function createAdapter(
         apiUrl: config.apiUrl!,
         number: config.number!,
         mode: config.mode,
+        pollingIntervalMs: config.pollingIntervalMs,
+        pollingTimeoutSecs: config.pollingTimeoutSecs,
         logger,
       });
 
