@@ -21,11 +21,16 @@ interface SignalDataMessage {
   readonly groupInfo?: SignalGroupInfo;
 }
 
+interface SignalSyncMessage {
+  readonly sentMessage?: SignalDataMessage;
+}
+
 interface SignalEnvelope {
   readonly source: string;
   readonly sourceNumber?: string;
   readonly sourceName?: string;
   readonly dataMessage?: SignalDataMessage;
+  readonly syncMessage?: SignalSyncMessage;
   readonly timestamp?: number;
 }
 
@@ -316,7 +321,9 @@ export class SignalAdapter implements ChannelAdapter {
 
   private processMessage(item: SignalMessage): void {
     const { envelope } = item;
-    const data = envelope.dataMessage;
+    // Regular inbound messages use dataMessage; messages sent from the registered
+    // device are delivered back as syncMessage.sentMessage.
+    const data = envelope.dataMessage ?? envelope.syncMessage?.sentMessage;
 
     if (!data?.message) return;
 
