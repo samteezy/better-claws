@@ -169,13 +169,13 @@ export class SignalAdapter implements ChannelAdapter {
 
   async send(channelId: string, message: OutboundMessage): Promise<void> {
     const isGroup = channelId.startsWith(GROUP_PREFIX);
-    const recipientId = isGroup
-      ? channelId.slice(GROUP_PREFIX.length)
+    const recipient = isGroup
+      ? `group.${channelId.slice(GROUP_PREFIX.length)}`
       : channelId;
 
     await this.callApi("POST", `/v2/send`, {
       number: this.number,
-      recipients: [recipientId],
+      recipients: [recipient],
       message: message.text,
     });
   }

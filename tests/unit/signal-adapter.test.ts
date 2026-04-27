@@ -236,7 +236,7 @@ describe("SignalAdapter", () => {
       assert.equal(body["message"], "Hello Signal!");
     });
 
-    it("sends group message by stripping group: prefix", async () => {
+    it("sends group message with group. prefix on recipient", async () => {
       const mock = createMockFetch([{ ok: true, status: 200, result: {} }]);
       const { adapter } = makeAdapter({ fetchFn: mock.fn });
 
@@ -246,7 +246,7 @@ describe("SignalAdapter", () => {
       });
 
       const body = mock.calls[0]!.body as Record<string, unknown>;
-      assert.deepEqual(body["recipients"], ["abc123xyz"]);
+      assert.deepEqual(body["recipients"], ["group.abc123xyz"]);
     });
 
     it("throws SignalError with NETWORK_ERROR on fetch failure", async () => {
