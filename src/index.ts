@@ -32,7 +32,57 @@ import { CurationWorker } from "./memory/curation-worker.js";
 import { AgendaStore } from "./memory/agenda-store.js";
 import { ReflectionJob } from "./router/reflection-job.js";
 import { setAgendaStore } from "./tools/built-in/agenda.js";
-import { sage, stone, bold, dim, glyphs } from "./utils/ansi.js";
+import { sage, stone, rose, bold, dim, glyphs } from "./utils/ansi.js";
+
+// ── LLM startup probe ─────────────────────────────────────────────────────────
+
+const PROBE_TOOL = {
+  name: "probe",
+  description: "Startup connectivity probe.",
+  parameters: { type: "object", properties: {} },
+  capabilities: [] as never[],
+};
+
+async function probeLlm(
+  client: LlmClient,
+  logger: StructuredLogger,
+  retries: number,
+): Promise<void> {
+  const label = (key: string, value: string) =>
+    "  " + stone(key.padEnd(12)) + value + "\n";
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) {
+      const delayMs = 1000 * 2 ** (attempt - 1);
+      process.stdout.write(label("LLM", stone(dim(`retry ${attempt}/${retries}…`))));
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+    try {
+      await client.chat([{ role: "user", content: "ping" }], [PROBE_TOOL]);
+      logger.log({
+        sessionId: null,
+        eventType: "startup:llm_probe",
+        component: "startup",
+        payload: { status: "ok", attempt },
+      });
+      process.stdout.write(label("LLM", sage("online")));
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+
+  const msg = toErrorMessage(lastErr);
+  logger.log({
+    sessionId: null,
+    eventType: "startup:llm_probe",
+    component: "startup",
+    payload: { status: "failed", error: msg, retries },
+  });
+  process.stdout.write(label("LLM", rose(`unreachable — ${msg}`)));
+  throw lastErr;
+}
 
 // ── App Factory ───────────────────────────────────────────────────────────────
 
@@ -77,6 +127,11 @@ export async function createApp(config: BetterClawsConfig, options?: {
         logger,
       })
     : null;
+
+  const probeRetries = config.llm.probeRetries ?? 2;
+  if (probeRetries > 0) {
+    await probeLlm(llmClient, logger, probeRetries);
+  }
 
   const toolRegistry = new ToolRegistry({
     builtInTools,

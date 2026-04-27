@@ -244,6 +244,7 @@ export const EVENT_TYPES = [
   "confirmation:send_error",
   "message:reflect",
   "agenda:write",
+  "startup:llm_probe",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -290,6 +291,8 @@ export interface LlmConfig {
   readonly maxTokens: number;
   readonly temperature: number;
   readonly weak?: WeakLlmConfig;
+  /** Probe retries at startup. Default 2. Set to 0 to skip the probe. */
+  readonly probeRetries?: number;
 }
 
 export interface AdapterConfig {
