@@ -811,6 +811,11 @@ export class MessageRouter {
           tool_calls: completedToolCalls,
         });
 
+        await this.sessionManager.appendToLog(session.id, {
+          type: "assistantTurn",
+          message: { content: iterationText, tool_calls: completedToolCalls },
+        });
+
         for (const toolCall of completedToolCalls) {
           if (signal.aborted) break;
 
@@ -1122,6 +1127,7 @@ export class MessageRouter {
     await this.sessionManager.appendToLog(sessionId, {
       type: "toolResult",
       toolName,
+      callId: toolCall.id,
       result,
     });
 

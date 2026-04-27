@@ -215,10 +215,24 @@ export class PromptBuilder {
       tail.unshift(msg);
     }
 
-    const kept = 1 + tail.length;
+    // Drop any `tool` messages not immediately preceded by an `assistant` with tool_calls.
+    // These can appear when the backward walk cuts off the assistant+tool_calls message
+    // but keeps the tool results that followed it.
+    const combined: ChatMessage[] = [first, ...tail];
+    const safe: ChatMessage[] = [];
+    for (const msg of combined) {
+      if (msg.role === "tool") {
+        const prev = safe[safe.length - 1];
+        if (!prev || prev.role !== "assistant" || !prev.tool_calls?.length) {
+          continue;
+        }
+      }
+      safe.push(msg);
+    }
+
     return {
-      messages: [first, ...tail],
-      truncatedCount: history.length - kept,
+      messages: safe,
+      truncatedCount: history.length - safe.length,
     };
   }
 

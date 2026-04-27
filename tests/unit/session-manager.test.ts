@@ -304,6 +304,78 @@ describe("SessionManager", () => {
       assert.ok(history[0]!.content.includes("result data"));
     });
 
+    it("uses callId over toolName when present on toolResult entries", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const entry: SessionLogEntry = {
+        type: "toolResult",
+        toolName: "shell",
+        callId: "call_abc123",
+        result: { success: true, output: "result data", durationMs: 50 },
+      };
+
+      await sessionManager.appendToLog(session.id, entry);
+      const history = await sessionManager.getHistory(session.id);
+
+      assert.equal(history.length, 1);
+      assert.equal(history[0]!.tool_call_id, "call_abc123");
+    });
+
+    it("converts assistantTurn entries to assistant ChatMessages with tool_calls", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const entry: SessionLogEntry = {
+        type: "assistantTurn",
+        message: {
+          content: "Let me look that up.",
+          tool_calls: [
+            { id: "call_xyz", type: "function", function: { name: "web_search", arguments: '{"q":"test"}' } },
+          ],
+        },
+      };
+
+      await sessionManager.appendToLog(session.id, entry);
+      const history = await sessionManager.getHistory(session.id);
+
+      assert.equal(history.length, 1);
+      assert.equal(history[0]!.role, "assistant");
+      assert.equal(history[0]!.content, "Let me look that up.");
+      assert.equal(history[0]!.tool_calls?.length, 1);
+      assert.equal(history[0]!.tool_calls?.[0]?.id, "call_xyz");
+    });
+
+    it("reconstructs a valid tool-using turn with assistantTurn + toolResult ordering", async () => {
+      const session = await sessionManager.getOrCreate("telegram", "chat-123", "user-456");
+
+      const entries: SessionLogEntry[] = [
+        { type: "inbound", message: { id: "msg-1", channelId: "ch", text: "check email", senderId: "u", adapterId: "telegram", timestamp: 1 } },
+        {
+          type: "assistantTurn",
+          message: {
+            content: "",
+            tool_calls: [{ id: "call_1", type: "function", function: { name: "email_list", arguments: "{}" } }],
+          },
+        },
+        { type: "toolResult", toolName: "email_list", callId: "call_1", result: { success: true, output: ["msg1"], durationMs: 10 } },
+        { type: "outbound", message: { channelId: "ch", text: "Here are your emails...", timestamp: 2 } },
+      ];
+
+      for (const e of entries) {
+        await sessionManager.appendToLog(session.id, e);
+      }
+
+      const history = await sessionManager.getHistory(session.id);
+
+      assert.equal(history.length, 4);
+      assert.equal(history[0]!.role, "user");
+      assert.equal(history[1]!.role, "assistant");
+      assert.equal(history[1]!.tool_calls?.[0]?.id, "call_1");
+      assert.equal(history[2]!.role, "tool");
+      assert.equal(history[2]!.tool_call_id, "call_1");
+      assert.equal(history[3]!.role, "assistant");
+      assert.equal(history[3]!.content, "Here are your emails...");
+    });
+
     it("returns empty array for nonexistent session", async () => {
       const history = await sessionManager.getHistory("nonexistent-session");
 

@@ -492,6 +492,58 @@ describe("PromptBuilder", () => {
     });
   });
 
+  describe("orphaned tool message cleanup", () => {
+    it("drops tool messages not preceded by assistant+tool_calls when truncation cuts the pair", () => {
+      // Budget is tight — the assistant+tool_calls message from the first turn won't fit,
+      // but the tool result that followed it might. Verify the tool result is dropped too.
+      const assistantWithCalls = createMessage("assistant", "", [
+        { id: "call_1", type: "function", function: { name: "search", arguments: "{}" } },
+      ]);
+      // Make it large enough that it won't fit alongside recent messages
+      const largeToolResult: ChatMessage = { role: "tool", content: "x".repeat(200), tool_call_id: "call_1" };
+
+      const builder = createBuilder({ tokenBudget: 120 });
+      const history: ChatMessage[] = [
+        createMessage("user", "first question"),
+        assistantWithCalls,
+        largeToolResult,
+        createMessage("assistant", "Here is the answer."),
+        createMessage("user", "follow-up"),
+        createMessage("assistant", "Follow-up answer."),
+      ];
+
+      const result = builder.build({ history, tools: [] });
+
+      // No tool message should appear without its assistant+tool_calls pair
+      const messages = result.messages;
+      for (let i = 0; i < messages.length; i++) {
+        if (messages[i]!.role === "tool") {
+          const prev = messages[i - 1];
+          assert.ok(prev && prev.role === "assistant" && prev.tool_calls?.length, `tool message at index ${i} must be preceded by assistant+tool_calls`);
+        }
+      }
+    });
+
+    it("keeps tool messages that are properly preceded by assistant+tool_calls", () => {
+      const assistantWithCalls = createMessage("assistant", "", [
+        { id: "call_2", type: "function", function: { name: "calc", arguments: "{}" } },
+      ]);
+      const toolResult: ChatMessage = { role: "tool", content: "42", tool_call_id: "call_2" };
+
+      const builder = createBuilder({ tokenBudget: 2000 });
+      const history: ChatMessage[] = [
+        createMessage("user", "question"),
+        assistantWithCalls,
+        toolResult,
+        createMessage("assistant", "The answer is 42."),
+      ];
+
+      const result = builder.build({ history, tools: [] });
+      const roles = result.messages.slice(1).map((m) => m.role); // skip system
+      assert.deepEqual(roles, ["user", "assistant", "tool", "assistant"]);
+    });
+  });
+
   describe("estimated tokens accuracy", () => {
     it("returns reasonable estimated token count", () => {
       const builder = createBuilder({ charsPerToken: 4 });

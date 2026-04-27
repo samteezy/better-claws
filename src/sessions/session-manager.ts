@@ -201,11 +201,18 @@ export class SessionManager {
         case "outbound":
           messages.push({ role: "assistant", content: entry.message.text });
           break;
+        case "assistantTurn":
+          messages.push({
+            role: "assistant",
+            content: entry.message.content,
+            tool_calls: entry.message.tool_calls,
+          });
+          break;
         case "toolResult":
           messages.push({
             role: "tool",
-            content: JSON.stringify(entry.result.output),
-            tool_call_id: entry.toolName,
+            content: JSON.stringify(entry.result.output ?? entry.result.error),
+            tool_call_id: entry.callId ?? entry.toolName,
           });
           break;
         case "toolCall":

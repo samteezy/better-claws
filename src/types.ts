@@ -535,7 +535,11 @@ export type SessionLogEntry =
   | { readonly type: "inbound"; readonly message: InboundMessage }
   | { readonly type: "outbound"; readonly message: OutboundMessage }
   | { readonly type: "toolCall"; readonly toolCall: ToolCall }
-  | { readonly type: "toolResult"; readonly toolName: string; readonly result: ToolResult }
+  | {
+      readonly type: "assistantTurn";
+      readonly message: { readonly content: string; readonly tool_calls: readonly ToolCall[] };
+    }
+  | { readonly type: "toolResult"; readonly toolName: string; readonly callId?: string; readonly result: ToolResult }
   | {
       readonly type: "compaction";
       readonly summary: string;
