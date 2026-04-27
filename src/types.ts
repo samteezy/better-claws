@@ -241,6 +241,7 @@ export const EVENT_TYPES = [
   "message:queue",
   "confirmation:request",
   "confirmation:result",
+  "confirmation:send_error",
   "message:reflect",
   "agenda:write",
 ] as const;

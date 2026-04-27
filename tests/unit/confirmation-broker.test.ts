@@ -150,6 +150,42 @@ describe("ConfirmationBroker", () => {
     });
   });
 
+  // ── Adapter send failure tolerance ──────────────────────────────────────
+
+  describe("adapter send failure", () => {
+    function createFailingAdapter(error: Error) {
+      return {
+        id: "test-adapter",
+        name: "test",
+        async start() {},
+        async stop() {},
+        onMessage() {},
+        async send() {
+          throw error;
+        },
+      } as unknown as ChannelAdapter;
+    }
+
+    it("does not reject when adapter.send throws; pending entry is registered and user reply still resolves", async () => {
+      const adapter = createFailingAdapter(
+        new Error("Network error calling POST /v2/send: The operation was aborted due to timeout"),
+      );
+      const promise = broker.requestAndWait(adapter, "ch-1", "usr-1", "adp-1", "file-write", createToolCall());
+
+      await tick();
+      assert.equal(broker.hasPending(KEY), true);
+
+      const sendErrLog = logger.calls.find((c) => c.eventType === "confirmation:send_error");
+      assert.ok(sendErrLog, "expected confirmation:send_error log entry");
+      assert.equal(sendErrLog!.payload["tool"], "file-write");
+      assert.ok(String(sendErrLog!.payload["error"]).includes("/v2/send"));
+
+      assert.equal(broker.resolve(KEY, "yes"), true);
+      const result = await promise;
+      assert.equal(result.verdict, "allow");
+    });
+  });
+
   // ── Reply parsing ───────────────────────────────────────────────────────
 
   describe("resolve — verdict parsing", () => {

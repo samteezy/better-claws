@@ -74,7 +74,7 @@ export interface SignalAdapterOptions {
 const GROUP_PREFIX = "group:";
 const SIGNAL_GROUP_RECIPIENT_PREFIX = "group.";
 const MAX_RECONNECT_DELAY_MS = 60_000;
-const SEND_TIMEOUT_MS = 30_000;
+const SEND_TIMEOUT_MS = 60_000;
 
 export class SignalAdapter implements ChannelAdapter {
   readonly id = "signal";

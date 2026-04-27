@@ -66,7 +66,6 @@ export class ConfirmationBroker {
 
     const params = formatParamSummary(toolCall);
     const prompt = formatPrompt(toolName, params);
-    await adapter.send(channelId, { channelId, text: prompt, metadata: { _confirmationKey: key, _confirmationTool: toolName, _confirmationParams: params } });
 
     this.logger.log({
       sessionId: null,
@@ -75,8 +74,8 @@ export class ConfirmationBroker {
       payload: { tool: toolName, key },
     });
 
-    return new Promise<ConfirmationResult>((resolve) => {
-      const settle = (result: ConfirmationResult): void => {
+    const result = new Promise<ConfirmationResult>((resolve) => {
+      const settle = (settled: ConfirmationResult): void => {
         clearTimeout(timer);
         this.pending.delete(key);
         if (signal) signal.removeEventListener("abort", onAbort);
@@ -88,13 +87,13 @@ export class ConfirmationBroker {
           payload: {
             tool: toolName,
             key,
-            verdict: result.verdict,
-            reason: result.reason,
+            verdict: settled.verdict,
+            reason: settled.reason,
             durationMs: Date.now() - createdAt,
           },
         });
 
-        resolve(result);
+        resolve(settled);
       };
 
       const createdAt = Date.now();
@@ -123,6 +122,23 @@ export class ConfirmationBroker {
         createdAt,
       });
     });
+
+    try {
+      await adapter.send(channelId, { channelId, text: prompt, metadata: { _confirmationKey: key, _confirmationTool: toolName, _confirmationParams: params } });
+    } catch (err) {
+      this.logger.log({
+        sessionId: null,
+        eventType: "confirmation:send_error",
+        component: "confirmation",
+        payload: {
+          tool: toolName,
+          key,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+
+    return result;
   }
 
   resolve(key: string, messageText: string): boolean {
